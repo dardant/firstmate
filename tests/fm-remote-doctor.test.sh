@@ -103,93 +103,93 @@ SH
   cat > "$CASE_BIN/launchctl" <<'SH'
 #!/usr/bin/env bash
 set -u
-printf '%s\n' "$*" >> "$FM_FAKE_LAUNCHCTL_LOG"
+printf '%s\n' "$*" >> "$FAKE_LAUNCHCTL_LOG"
 domain=${2:-}
 label=${domain##*/}
-loaded="$FM_FAKE_STATE/loaded-$label"
+loaded="$FAKE_STATE/loaded-$label"
 case "${1:-}" in
   print)
     case "$domain" in
       user/*/*)
-        [ -f "$FM_FAKE_STATE/user-loaded-$label" ] || exit 113
-        cat "$FM_FAKE_STATE/user-loaded-$label"
+        [ -f "$FAKE_STATE/user-loaded-$label" ] || exit 113
+        cat "$FAKE_STATE/user-loaded-$label"
         ;;
       */dev.firstmate.herdr.fm-remote)
         [ -f "$loaded" ] || exit 113
         cat "$loaded"
         ;;
       */dev.firstmate.herdr)
-        [ -f "$FM_FAKE_STATE/interactive-loaded" ] || exit 113
+        [ -f "$FAKE_STATE/interactive-loaded" ] || exit 113
         printf 'interactive default job\n'
         ;;
       */*/*) [ -f "$loaded" ] || exit 113; cat "$loaded" ;;
-      *) [ -f "$FM_FAKE_STATE/gui-session" ] || exit 113 ;;
+      *) [ -f "$FAKE_STATE/gui-session" ] || exit 113 ;;
     esac
     exit 0
     ;;
   bootout)
-    [ ! -f "$FM_FAKE_STATE/bootout-fail" ] || { printf 'Boot-out failed: operation not permitted\n' >&2; exit 6; }
+    [ ! -f "$FAKE_STATE/bootout-fail" ] || { printf 'Boot-out failed: operation not permitted\n' >&2; exit 6; }
     case "$domain" in
       */dev.firstmate.herdr.fm-remote) rm -f "$loaded" ;;
-      */dev.firstmate.herdr) rm -f "$FM_FAKE_STATE/interactive-loaded" ;;
+      */dev.firstmate.herdr) rm -f "$FAKE_STATE/interactive-loaded" ;;
       *) rm -f "$loaded" ;;
     esac
     exit 0
     ;;
   bootstrap)
     # launchd refuses a gui/<uid> domain that has no login session.
-    [ -f "$FM_FAKE_STATE/gui-session" ] || { printf 'Bootstrap failed: 5: Input/output error\n' >&2; exit 5; }
+    [ -f "$FAKE_STATE/gui-session" ] || { printf 'Bootstrap failed: 5: Input/output error\n' >&2; exit 5; }
     [ ! -f "$loaded" ] || { printf 'Bootstrap failed: service already loaded\n' >&2; exit 5; }
     plist=${3:-}
     label=${plist##*/}
     label=${label%.plist}
-    loaded="$FM_FAKE_STATE/loaded-$label"
+    loaded="$FAKE_STATE/loaded-$label"
     [ ! -f "$loaded" ] || { printf 'Bootstrap failed: service already loaded\n' >&2; exit 5; }
     case "$label" in
       dev.firstmate.remote-job)
         cat > "$loaded" <<EOF
-path = $FM_FAKE_JOB_PLIST
-program = $FM_FAKE_JOB_WORKER
+path = $FAKE_JOB_PLIST
+program = $FAKE_JOB_WORKER
 properties = keepalive | runatload | inferred program
 EOF
         ;;
       *)
         cat > "$loaded" <<EOF
-path = $FM_FAKE_PLIST
-program = $FM_FAKE_LOGIN_SHELL
+path = $FAKE_PLIST
+program = $FAKE_LOGIN_SHELL
 arguments = {
-	$FM_FAKE_LOGIN_SHELL
+	$FAKE_LOGIN_SHELL
 	-l
 	-c
-	exec '$FM_FAKE_GUARD' '$FM_FAKE_HERDR_BIN' 'fm-remote'
+	exec '$FAKE_GUARD' '$FAKE_HERDR_BIN' 'fm-remote'
 }
-stdout path = $FM_FAKE_LAUNCH_AGENT_LOG
-stderr path = $FM_FAKE_LAUNCH_AGENT_LOG
+stdout path = $FAKE_LAUNCH_AGENT_LOG
+stderr path = $FAKE_LAUNCH_AGENT_LOG
 semaphores = {
 	successful exit => 0
 }
 properties = runatload | inferred program
 EOF
-        if [ ! -f "$FM_FAKE_STATE/bootstrap-does-not-start" ]; then
-          printf 'true\n' > "$FM_FAKE_HERDR_RUNNING"
-          printf '%s\n' "$FM_FAKE_AQUA_PID" > "$FM_FAKE_STATE/socket-owner"
+        if [ ! -f "$FAKE_STATE/bootstrap-does-not-start" ]; then
+          printf 'true\n' > "$FAKE_HERDR_RUNNING"
+          printf '%s\n' "$FAKE_AQUA_PID" > "$FAKE_STATE/socket-owner"
         fi
         ;;
     esac
     exit 0
     ;;
   kickstart)
-    [ ! -f "$FM_FAKE_STATE/kickstart-fail" ] || { printf 'Kickstart failed: service unavailable\n' >&2; exit 6; }
+    [ ! -f "$FAKE_STATE/kickstart-fail" ] || { printf 'Kickstart failed: service unavailable\n' >&2; exit 6; }
     case "$label" in
       dev.firstmate.remote-job) : ;;
       *)
         # The real job execs the guard, which stops a foreign server and
         # becomes the Aqua-born owner; the fixture models that outcome.
-        printf '%s\n' "$FM_FAKE_AQUA_PID" > "$FM_FAKE_STATE/socket-owner"
-        if [ -f "$FM_FAKE_STATE/kickstart-delay" ]; then
-          cp "$FM_FAKE_STATE/kickstart-delay" "$FM_FAKE_STATE/herdr-delay"
+        printf '%s\n' "$FAKE_AQUA_PID" > "$FAKE_STATE/socket-owner"
+        if [ -f "$FAKE_STATE/kickstart-delay" ]; then
+          cp "$FAKE_STATE/kickstart-delay" "$FAKE_STATE/herdr-delay"
         else
-          printf 'true\n' > "$FM_FAKE_HERDR_RUNNING"
+          printf 'true\n' > "$FAKE_HERDR_RUNNING"
         fi
         ;;
     esac
@@ -205,7 +205,7 @@ SH
   for forbidden in fdesetup security defaults; do
     cat > "$CASE_BIN/$forbidden" <<SH
 #!/usr/bin/env bash
-printf '$forbidden %s\n' "\$*" >> "\$FM_FAKE_FORBIDDEN_LOG"
+printf '$forbidden %s\n' "\$*" >> "\$FAKE_FORBIDDEN_LOG"
 exit 0
 SH
     chmod +x "$CASE_BIN/$forbidden"
@@ -215,26 +215,26 @@ SH
   # Aqua holder when a case never chose one.
   cat > "$CASE_BIN/lsof" <<'SH'
 #!/usr/bin/env bash
-pid=$(cat "$FM_FAKE_STATE/socket-owner" 2>/dev/null || printf '%s' "$FM_FAKE_AQUA_PID")
+pid=$(cat "$FAKE_STATE/socket-owner" 2>/dev/null || printf '%s' "$FAKE_AQUA_PID")
 [ -n "$pid" ] || exit 0
 printf 'p%s\n' "$pid"
-printf 'n%s\n' "$FM_FAKE_HERDR_SOCKET"
+printf 'n%s\n' "$FAKE_HERDR_SOCKET"
 SH
   chmod +x "$CASE_BIN/lsof"
 
   cat > "$CASE_BIN/dscl" <<'SH'
 #!/usr/bin/env bash
 set -u
-[ "${FM_FAKE_DSCL_FAIL:-0}" != 1 ] || exit 1
-[ "${FM_FAKE_DSCL_HANG:-0}" != 1 ] || exec /bin/sleep 30
+[ "${FAKE_DSCL_FAIL:-0}" != 1 ] || exit 1
+[ "${FAKE_DSCL_HANG:-0}" != 1 ] || exec /bin/sleep 30
 if [ "${1:-}" = . ] && [ "${2:-}" = -read ] && [ "${4:-}" = UserShell ]; then
-  count_file="$FM_FAKE_STATE/dscl-count"
+  count_file="$FAKE_STATE/dscl-count"
   count=$(cat "$count_file" 2>/dev/null || printf 0)
   count=$((count + 1))
   printf '%s\n' "$count" > "$count_file"
-  shell=${FM_FAKE_LOGIN_SHELL:-/bin/sh}
-  if [ "$count" -gt 1 ] && [ -n "${FM_FAKE_SECOND_LOGIN_SHELL:-}" ]; then
-    shell=$FM_FAKE_SECOND_LOGIN_SHELL
+  shell=${FAKE_LOGIN_SHELL:-/bin/sh}
+  if [ "$count" -gt 1 ] && [ -n "${FAKE_SECOND_LOGIN_SHELL:-}" ]; then
+    shell=$FAKE_SECOND_LOGIN_SHELL
   fi
   printf 'UserShell: %s\n' "$shell"
   exit 0
@@ -246,24 +246,24 @@ SH
     cat > "$CASE_BIN/herdr" <<'SH'
 #!/usr/bin/env bash
 set -u
-running=$(cat "$FM_FAKE_HERDR_RUNNING" 2>/dev/null || printf 'false')
+running=$(cat "$FAKE_HERDR_RUNNING" 2>/dev/null || printf 'false')
 case "${1:-} ${2:-}" in
   "status --json")
-    if [ -f "$FM_FAKE_STATE/herdr-delay" ]; then
-      delay=$(cat "$FM_FAKE_STATE/herdr-delay")
+    if [ -f "$FAKE_STATE/herdr-delay" ]; then
+      delay=$(cat "$FAKE_STATE/herdr-delay")
       if [ "$delay" -gt 0 ]; then
-        printf '%s\n' "$((delay - 1))" > "$FM_FAKE_STATE/herdr-delay"
+        printf '%s\n' "$((delay - 1))" > "$FAKE_STATE/herdr-delay"
         running=false
       else
-        rm -f "$FM_FAKE_STATE/herdr-delay"
-        printf 'true\n' > "$FM_FAKE_HERDR_RUNNING"
+        rm -f "$FAKE_STATE/herdr-delay"
+        printf 'true\n' > "$FAKE_HERDR_RUNNING"
         running=true
       fi
     fi
-    printf '{"client":{"version":"0.7.5","protocol":16},"server":{"running":%s,"socket":"%s"}}\n' "$running" "$FM_FAKE_HERDR_SOCKET"
+    printf '{"client":{"version":"0.7.5","protocol":16},"server":{"running":%s,"socket":"%s"}}\n' "$running" "$FAKE_HERDR_SOCKET"
     ;;
   "server "*|"server ")
-    printf 'true\n' > "$FM_FAKE_HERDR_RUNNING"
+    printf 'true\n' > "$FAKE_HERDR_RUNNING"
     ;;
 esac
 exit 0
@@ -302,22 +302,22 @@ doctor() {
     HOME="$CASE_HOME" \
     FM_HOME="$CASE_PROJECT_HOME" \
     PATH="$CASE_HOME/.local/bin:$CASE_BIN:$BASE_PATH" \
-    FM_FAKE_STATE="$CASE_STATE" \
-    FM_FAKE_LAUNCHCTL_LOG="$CASE_LAUNCHCTL_LOG" \
-    FM_FAKE_FORBIDDEN_LOG="$CASE_FORBIDDEN_LOG" \
-    FM_FAKE_HERDR_RUNNING="$CASE_HERDR_RUNNING" \
-    FM_FAKE_HERDR_BIN="$CASE_BIN/herdr" \
-    FM_FAKE_HERDR_SOCKET="$CASE_STATE/herdr.sock" \
-    FM_FAKE_GUARD="$GUARD" \
-    FM_FAKE_AQUA_PID="$AQUA_HOLDER_PID" \
-    FM_FAKE_PLIST="$CASE_PLIST" \
-    FM_FAKE_JOB_PLIST="$CASE_JOB_PLIST" \
-    FM_FAKE_JOB_WORKER="$ROOT/bin/fm-remote-job-worker.sh" \
-    FM_FAKE_LAUNCH_AGENT_LOG="$CASE_HOME/Library/Logs/$LABEL.log" \
-    FM_FAKE_LOGIN_SHELL="${CASE_LOGIN_SHELL:-/bin/sh}" \
-    FM_FAKE_SECOND_LOGIN_SHELL="${CASE_SECOND_LOGIN_SHELL:-}" \
-    FM_FAKE_DSCL_FAIL="${CASE_DSCL_FAIL:-0}" \
-    FM_FAKE_DSCL_HANG="${CASE_DSCL_HANG:-0}" \
+    FAKE_STATE="$CASE_STATE" \
+    FAKE_LAUNCHCTL_LOG="$CASE_LAUNCHCTL_LOG" \
+    FAKE_FORBIDDEN_LOG="$CASE_FORBIDDEN_LOG" \
+    FAKE_HERDR_RUNNING="$CASE_HERDR_RUNNING" \
+    FAKE_HERDR_BIN="$CASE_BIN/herdr" \
+    FAKE_HERDR_SOCKET="$CASE_STATE/herdr.sock" \
+    FAKE_GUARD="$GUARD" \
+    FAKE_AQUA_PID="$AQUA_HOLDER_PID" \
+    FAKE_PLIST="$CASE_PLIST" \
+    FAKE_JOB_PLIST="$CASE_JOB_PLIST" \
+    FAKE_JOB_WORKER="$ROOT/bin/fm-remote-job-worker.sh" \
+    FAKE_LAUNCH_AGENT_LOG="$CASE_HOME/Library/Logs/$LABEL.log" \
+    FAKE_LOGIN_SHELL="${CASE_LOGIN_SHELL:-/bin/sh}" \
+    FAKE_SECOND_LOGIN_SHELL="${CASE_SECOND_LOGIN_SHELL:-}" \
+    FAKE_DSCL_FAIL="${CASE_DSCL_FAIL:-0}" \
+    FAKE_DSCL_HANG="${CASE_DSCL_HANG:-0}" \
     FM_LAUNCH_AGENT_SHELL="$([ "${CASE_RESOLVE_DSCL:-0}" = 1 ] || printf '%s' "$CASE_LOGIN_SHELL")" \
     SHELL="${CASE_ENV_SHELL-${SHELL-}}" \
     FM_REMOTE_JOB_PLATFORM_OVERRIDE="${CASE_PLATFORM_OVERRIDE-}" \
