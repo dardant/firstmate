@@ -1,0 +1,1 @@
+not ok - a ship claude launched with allowlist=absent from a marked pane must not inherit CLAUDE_CODE_CHILD_SESSION (expected 'unset', got '1')

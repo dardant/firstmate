@@ -1,0 +1,4 @@
+ok - ship and scout claude launches drop the inherited parent-session marker in both allowlist postures
+ok - an allowlisted marker still never reaches the launched claude
+ok - a claude secondmate launch drops the inherited parent-session marker in both allowlist postures
+ok - relaunch drops the inherited parent-session marker for the replacement claude

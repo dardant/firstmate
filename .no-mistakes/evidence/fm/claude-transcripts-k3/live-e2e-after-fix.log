@@ -1,0 +1,3 @@
+warning: secondmate transcript-claude-sm sync skipped before launch: primary default-branch commit cannot be resolved
+ok - a claude launched from a marked Herdr pane keeps its transcript (claude 2.1.272 (Claude Code), herdr herdr 0.9.0)
+ok - the lab pane shell carried the marker that the launch removed
