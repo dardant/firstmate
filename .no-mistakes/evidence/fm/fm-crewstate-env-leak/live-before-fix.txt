@@ -1,0 +1,21 @@
+== code under test: d7fde23 (base, extracted to temp)
+== lab session: fm-lab-crewleak-base-33201-17496
+provisioned
+lab server stopped
+{"name":"fm-lab-crewleak-base-33201-17496","running":false}
+== fm-crew-state.sh lrt -> rc=0 elapsed=482s (timeout 90 => rc 124)
+state: unknown · source: none · backend target gone: fm-lab-crewleak-base-33201-17496:w1:p1
+{"name":"fm-lab-crewleak-base-33201-17496","running":false}
+== server pid: none (initrd=\initrd.img WSL_ROOT_INIT=1 panic=-1 nr_cpus=16 hv_utils.timesync_implicit=1 console=hvc0 debug pty.legacy_count=0 WSL_ENABLE_CRASH_DUMP=1)
+== FM_* names in the live server environment:
+/home/dardan/.no-mistakes/evidence/01M32PY98V08ZNZ2VMVA8NVGGT/live-crewstate-leak.sh: line 41: /proc//environ: No such file or directory
+  (none)
+/home/dardan/.no-mistakes/evidence/01M32PY98V08ZNZ2VMVA8NVGGT/live-crewstate-leak.sh: line 42: /proc//environ: No such file or directory
+== HERDR_SESSION in server env: 
+{"id":"cli:workspace:create","error":{"code":"server_not_running","message":"no herdr server is running at /home/dardan/.config/herdr/sessions/fm-lab-crewleak-base-33201-17496/herdr.sock; run `herdr session attach fm-lab-crewleak-base-33201-17496` to start or attach it"}}
+{"id":"cli:pane:process_info","error":{"code":"server_not_running","message":"no herdr server is running at /home/dardan/.config/herdr/sessions/fm-lab-crewleak-base-33201-17496/herdr.sock; run `herdr session attach fm-lab-crewleak-base-33201-17496` to start or attach it"}}
+== new pane  shell pid ; FM_* names in the pane shell environment:
+/home/dardan/.no-mistakes/evidence/01M32PY98V08ZNZ2VMVA8NVGGT/live-crewstate-leak.sh: line 49: /proc//environ: No such file or directory
+  (none)
+== teardown
+teardown ok

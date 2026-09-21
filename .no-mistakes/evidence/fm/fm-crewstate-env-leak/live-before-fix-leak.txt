@@ -1,0 +1,15 @@
+== base d7fde23, lab fm-lab-crewleak-base-33201-17496: fm-crew-state.sh started at Mon Sep 21 15:29:33 2026 and is still running at Mon Sep 21 15:36:24 EDT 2026 (timeout 90 did not end the capture)
+    PID    PPID     ELAPSED COMMAND
+  33416     337       06:50 bash /tmp/fm-base.Y1xCkT/bin/fm-crew-state.sh lrt
+  33418   33416       06:50 herdr server --session fm-lab-crewleak-base-33201-17496
+== FM_* in the live server env (pid 33418), values of FM_CREW_STATE_* shown:
+  FM_CREW_STATE_META_OVERRIDE=/tmp/fm-crewleak.NaaQ0l/snap/lrt.meta
+  FM_CREW_STATE_STATUS_OVERRIDE=/tmp/fm-crewleak.NaaQ0l/snap/lrt.status
+== new pane w1:p1 shell pid 94724; FM_* in the pane shell env:
+  FM_CREW_STATE_META_OVERRIDE=/tmp/fm-crewleak.NaaQ0l/snap/lrt.meta
+  FM_CREW_STATE_STATUS_OVERRIDE=/tmp/fm-crewleak.NaaQ0l/snap/lrt.status
+== inside a pane of the base-started lab server (inherits the leaked overrides; snapshot temp dir deleted):
+$ fm-crew-state.sh realtask
+state: unknown · source: none · no metadata for realtask
+$ env -u FM_CREW_STATE_META_OVERRIDE -u FM_CREW_STATE_STATUS_OVERRIDE fm-crew-state.sh realtask
+state: unknown · source: pane · harness state unavailable (unknown missing)

@@ -1,0 +1,16 @@
+== code under test: 7f55d8c
+== lab session: fm-lab-crewleak-after-103618-27003
+provisioned
+lab server stopped
+{"name":"fm-lab-crewleak-after-103618-27003","running":false}
+== fm-crew-state.sh lrt -> rc=0 elapsed=0s (timeout 90 => rc 124)
+state: unknown · source: none · backend target gone: fm-lab-crewleak-after-103618-27003:w1:p1
+{"name":"fm-lab-crewleak-after-103618-27003","running":true}
+== server pid: 103830 (herdr server --session fm-lab-crewleak-after-103618-27003 )
+== FM_* names in the live server environment:
+  (none)
+== HERDR_SESSION in server env: HERDR_SESSION=fm-lab-crewleak-after-103618-27003
+== new pane w1:p1 shell pid 103906; FM_* names in the pane shell environment:
+  (none)
+== teardown
+teardown ok
