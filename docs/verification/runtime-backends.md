@@ -716,6 +716,38 @@ Two findings from the run shaped the shipped behavior: an OpenCode vendor update
 Kimi was not installed on the verification machine; its receive path is the same one-line-plus-shell contract, and the portable ladder and enqueue regressions in `tests/fm-task-inbox.test.sh` and `tests/fm-send-inbox.test.sh` cover every harness-independent half.
 This guard is the refresh command after any harness upgrade; it spends a small number of real tokens per installed harness, reports an absent harness explicitly, and refuses a run that verified nothing.
 
+## Claude transcript persistence
+
+A Claude primary's tool shells carry `CLAUDE_CODE_CHILD_SESSION=1`, and a Claude agent started with that marker treats itself as a nested child session: it writes no transcript and skips prompt history.
+The Claude launch in `bin/fm-spawn.sh` therefore runs `claude` under `env -u CLAUDE_CODE_CHILD_SESSION` for every ship, scout, secondmate, and relaunch, on every backend.
+Removal, rather than `CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1`, is deliberate: forcing persistence would leave the agent's other child-session defaults in place, while Claude Code itself strips this marker when it launches an independent session.
+
+Verified on 2026-09-21 with Claude Code 2.1.272, Herdr 0.9.0, and tmux 3.4 on Linux x86_64 (WSL2).
+
+- Herdr passes its server's startup environment to every pane, so a Herdr server started from a Claude primary's shell hands the marker to every worker pane; before the fix, a real claude secondmate launched this way rendered `⚠ Transcript saving is off - inherited CLAUDE_CODE_CHILD_SESSION marker` and wrote no transcript.
+- On tmux, Claude Code 2.1.272 keeps saving when the same marker also appears in `tmux show-environment -g`, which is where a tmux server started from a Claude shell holds it; a new window's pane receives only that global environment, so tmux never showed the warning, though the marker still reached the agent.
+- Zellij, cmux, and Orca were not installed on the verification machine; the launch-side removal does not depend on how a pane received the marker, which `tests/fm-spawn-claude-child-session.test.sh` pins for every backend-independent launch shape.
+- `CLAUDECODE`, `CLAUDE_CODE_SESSION_ID`, `CLAUDE_CODE_SESSION_ATTENDED`, `CLAUDE_PID`, and the messaging-socket pair also leak into panes, but 2.1.272 either overwrites them at startup or reads them only on non-interactive, desktop, or remote entrypoints, so an interactive worker behaves the same with or without them.
+
+```sh
+FM_CLAUDE_TRANSCRIPT_LIVE_E2E=1 tests/fm-spawn-claude-transcript-live-e2e.test.sh
+```
+
+Observed output with the fix:
+
+```text
+ok - a claude launched from a marked Herdr pane keeps its transcript (claude 2.1.272 (Claude Code), herdr herdr 0.9.0)
+ok - the lab pane shell carried the marker that the launch removed
+```
+
+Observed output with the launch reverted to the unfixed command (the vendor footer's em dash is transcribed as a plain dash, per repo style):
+
+```text
+not ok - the launched claude reports transcript saving off (claude 2.1.272 (Claude Code), herdr herdr 0.9.0):   ⚠ Transcript saving is off - inherited CLAUDE_CODE_CHILD_SESSION marker · restart with CLAUDE_CODE_FORCE_SESSION_PE…
+```
+
+Rerun this guard after a Claude Code upgrade; it submits one short prompt on the model named by `FM_CLAUDE_TRANSCRIPT_LIVE_MODEL`.
+
 ## Gemini
 
 The Gemini crewmate adapter was verified on 2026-09-04 with gemini-cli 0.58.0 on Linux, Node v24.20.0, tmux 3.4.
