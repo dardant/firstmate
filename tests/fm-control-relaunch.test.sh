@@ -56,7 +56,7 @@ make_tmux_stub() {  # <dir>
   cat > "$fb/tmux" <<'SH'
 #!/usr/bin/env bash
 set -u
-D=$FM_FAKE_DIR
+D=$FAKE_DIR
 case "${1:-}" in
   send-keys)
     shift
@@ -77,24 +77,24 @@ case "${1:-}" in
       case "$payload" in
         /exit|/quit)
           printf 'zsh' > "$D/command"
-          [ -z "${FM_FAKE_EXIT_TRANSPORT_FAIL_AFTER_STOP:-}" ] || exit 1
+          [ -z "${FAKE_EXIT_TRANSPORT_FAIL_AFTER_STOP:-}" ] || exit 1
           ;;
         *'encode launch-brief'*)
           cat "$D/becomes" > "$D/command"
-          [ -z "${FM_FAKE_LAUNCH_TRANSPORT_FAIL_AFTER_START:-}" ] || exit 1
+          [ -z "${FAKE_LAUNCH_TRANSPORT_FAIL_AFTER_START:-}" ] || exit 1
           ;;
       esac
     else
       printf '%s\n' "$payload" >> "$D/keys"
       case "$payload" in
         'export GOTMPDIR='*)
-          if [ -n "${FM_FAKE_TRACE_PREPARE:-}" ]; then
-            : > "$FM_FAKE_TRACE_PREPARE"
-            while [ ! -e "$FM_FAKE_TRACE_RELEASE" ]; do /bin/sleep 0.01; done
+          if [ -n "${FAKE_TRACE_PREPARE:-}" ]; then
+            : > "$FAKE_TRACE_PREPARE"
+            while [ ! -e "$FAKE_TRACE_RELEASE" ]; do /bin/sleep 0.01; done
           fi
           ;;
         'export TRACEPARENT='*)
-          [ -z "${FM_FAKE_TRACE_EXPORTED:-}" ] || : > "$FM_FAKE_TRACE_EXPORTED"
+          [ -z "${FAKE_TRACE_EXPORTED:-}" ] || : > "$FAKE_TRACE_EXPORTED"
           ;;
       esac
     fi
@@ -105,8 +105,8 @@ case "${1:-}" in
         *cursor_y*) printf '1\n'; exit 0 ;;
         *pane_current_command*) cat "$D/command"; printf '\n'; exit 0 ;;
         *pane_current_path*)
-          if [ -n "${FM_FAKE_CWD_RACE_READY:-}" ]; then
-            : > "$FM_FAKE_CWD_RACE_READY"
+          if [ -n "${FAKE_CWD_RACE_READY:-}" ]; then
+            : > "$FAKE_CWD_RACE_READY"
             /bin/sleep 1
           fi
           cat "$D/cwd"; printf '\n'; exit 0 ;;
@@ -114,7 +114,7 @@ case "${1:-}" in
     done
     printf 'fakepane\n'; exit 0 ;;
   capture-pane)
-    [ -z "${FM_FAKE_COMPOSER_READ_FAIL:-}" ] || exit 1
+    [ -z "${FAKE_COMPOSER_READ_FAIL:-}" ] || exit 1
     if [ -s "$D/composer" ]; then
       printf '╭────╮\n│ %s  │\n╰────╯\n' "$(cat "$D/composer")"
     else
@@ -174,7 +174,7 @@ SH
   chmod +x "$fb/tmux"
   cat > "$fb/sleep" <<'SH'
 #!/usr/bin/env bash
-[ -z "${FM_FAKE_LOCK_WAITING:-}" ] || : > "$FM_FAKE_LOCK_WAITING"
+[ -z "${FAKE_LOCK_WAITING:-}" ] || : > "$FAKE_LOCK_WAITING"
 exit 0
 SH
   chmod +x "$fb/sleep"
@@ -235,17 +235,17 @@ run_control() {  # <case-dir> <args...>
   mkdir -p "$dir/user-home"
   env -u HERDR_ENV -u HERDR_PANE_ID -u HERDR_SESSION -u HERDR_SOCKET_PATH \
     -u HERDR_TAB_ID -u HERDR_WORKSPACE_ID \
-    PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_FAKE_DIR="$dir/fake" \
+    PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FAKE_DIR="$dir/fake" \
     HOME="$dir/user-home" CLAUDE_CONFIG_DIR='' \
     FM_SPAWN_NO_GUARD=1 GROK_HOME="$dir/grokhome" \
     FM_CONTROL_POLL=0.01 FM_CONTROL_EXIT_WAIT=0.05 FM_CONTROL_LAUNCH_WAIT=0.05 \
-    FM_REAL_GIT="${FM_REAL_GIT:-}" FM_FAKE_GIT_FAILURE="${FM_FAKE_GIT_FAILURE:-}" \
-    FM_REAL_MV="${FM_REAL_MV:-}" FM_FAKE_COMPLETE_JOURNAL_MV_FAIL="${FM_FAKE_COMPLETE_JOURNAL_MV_FAIL:-}" \
-    FM_FAKE_META_PUBLISH_MV_FAIL="${FM_FAKE_META_PUBLISH_MV_FAIL:-}" \
-    FM_FAKE_TRACE_PREPARE="${FM_FAKE_TRACE_PREPARE:-}" \
-    FM_FAKE_TRACE_RELEASE="${FM_FAKE_TRACE_RELEASE:-}" \
-    FM_FAKE_META_WRITER_READY="${FM_FAKE_META_WRITER_READY:-}" \
-    FM_FAKE_TRACE_EXPORTED="${FM_FAKE_TRACE_EXPORTED:-}" \
+    FM_REAL_GIT="${FM_REAL_GIT:-}" FAKE_GIT_FAILURE="${FAKE_GIT_FAILURE:-}" \
+    FM_REAL_MV="${FM_REAL_MV:-}" FAKE_COMPLETE_JOURNAL_MV_FAIL="${FAKE_COMPLETE_JOURNAL_MV_FAIL:-}" \
+    FAKE_META_PUBLISH_MV_FAIL="${FAKE_META_PUBLISH_MV_FAIL:-}" \
+    FAKE_TRACE_PREPARE="${FAKE_TRACE_PREPARE:-}" \
+    FAKE_TRACE_RELEASE="${FAKE_TRACE_RELEASE:-}" \
+    FAKE_META_WRITER_READY="${FAKE_META_WRITER_READY:-}" \
+    FAKE_TRACE_EXPORTED="${FAKE_TRACE_EXPORTED:-}" \
     "$CONTROL" "$@" 2>&1
 }
 
@@ -257,7 +257,7 @@ run_spawn() {  # <case-dir> <args...>
   mkdir -p "$dir/user-home"
   env -u HERDR_ENV -u HERDR_PANE_ID -u HERDR_SESSION -u HERDR_SOCKET_PATH \
     -u HERDR_TAB_ID -u HERDR_WORKSPACE_ID \
-    PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_FAKE_DIR="$dir/fake" \
+    PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FAKE_DIR="$dir/fake" \
     HOME="$dir/user-home" CLAUDE_CONFIG_DIR='' \
     FM_SPAWN_NO_GUARD=1 GROK_HOME="$dir/grokhome" \
     "$SPAWN" "$@" 2>&1
@@ -274,7 +274,7 @@ journal_field() {  # <case-dir> <id> <key>
 make_git_failure_stub() {  # <case-dir>
   cat > "$1/fakebin/git" <<'SH'
 #!/usr/bin/env bash
-case "${FM_FAKE_GIT_FAILURE:-}:$*" in
+case "${FAKE_GIT_FAILURE:-}:$*" in
   head:*' rev-parse --verify HEAD'|head:*' symbolic-ref -q HEAD') exit 128 ;;
   status:*' status --porcelain') exit 128 ;;
 esac
@@ -286,16 +286,16 @@ SH
 make_mv_failure_stub() {  # <case-dir>
   cat > "$1/fakebin/mv" <<'SH'
 #!/usr/bin/env bash
-if [ -n "${FM_FAKE_COMPLETE_JOURNAL_MV_FAIL:-}" ]; then
+if [ -n "${FAKE_COMPLETE_JOURNAL_MV_FAIL:-}" ]; then
   for path in "$@"; do
     if [ -f "$path" ] && grep -Fqx 'phase=complete' "$path"; then
       exit 1
     fi
   done
 fi
-if [ -n "${FM_FAKE_META_PUBLISH_MV_FAIL:-}" ]; then
+if [ -n "${FAKE_META_PUBLISH_MV_FAIL:-}" ]; then
   for path in "$@"; do
-    [ "$path" != "$FM_FAKE_META_PUBLISH_MV_FAIL" ] || exit 1
+    [ "$path" != "$FAKE_META_PUBLISH_MV_FAIL" ] || exit 1
   done
 fi
 source_path=
@@ -304,11 +304,11 @@ for path in "$@"; do
   source_path=$target_path
   target_path=$path
 done
-if [ -n "${FM_FAKE_META_WRITER_TARGET:-}" ] \
-   && [ "$target_path" = "$FM_FAKE_META_WRITER_TARGET" ] \
+if [ -n "${FAKE_META_WRITER_TARGET:-}" ] \
+   && [ "$target_path" = "$FAKE_META_WRITER_TARGET" ] \
    && grep -q '^x_request=' "$source_path" 2>/dev/null; then
-  : > "$FM_FAKE_META_WRITER_READY"
-  while [ ! -e "$FM_FAKE_META_WRITER_RELEASE" ]; do /bin/sleep 0.01; done
+  : > "$FAKE_META_WRITER_READY"
+  while [ ! -e "$FAKE_META_WRITER_RELEASE" ]; do /bin/sleep 0.01; done
 fi
 exec "$FM_REAL_MV" "$@"
 SH
@@ -319,7 +319,7 @@ make_rm_failure_stub() {  # <case-dir>
   cat > "$1/fakebin/rm" <<'SH'
 #!/usr/bin/env bash
 for arg in "$@"; do
-  if [ -n "${FM_FAKE_RM_FAIL_PATH:-}" ] && [ "$arg" = "$FM_FAKE_RM_FAIL_PATH" ]; then
+  if [ -n "${FAKE_RM_FAIL_PATH:-}" ] && [ "$arg" = "$FAKE_RM_FAIL_PATH" ]; then
     exit 1
   fi
 done
@@ -410,7 +410,7 @@ test_relaunch_refuses_before_exit_when_the_composer_state_is_unproven() {
   dir=$(new_case unproven-exit rl44)
   add_ship_task "$dir" rl44 claude
 
-  out=$(FM_FAKE_COMPOSER_READ_FAIL=1 \
+  out=$(FAKE_COMPOSER_READ_FAIL=1 \
     run_control "$dir" rl44 relaunch --note "preserve on an unreadable composer"); rc=$?
 
   expect_code 1 "$rc" "a relaunch must refuse before typing an exit command when the composer state cannot be proven empty"
@@ -500,8 +500,8 @@ test_relaunch_serializes_concurrent_durable_metadata_publication() {
   ready="$dir/meta-writer-ready"
   release="$dir/meta-writer-release"
   FM_REAL_MV=$(command -v mv) \
-    FM_FAKE_TRACE_PREPARE="$prepare" \
-    FM_FAKE_TRACE_RELEASE="$launch_release" \
+    FAKE_TRACE_PREPARE="$prepare" \
+    FAKE_TRACE_RELEASE="$launch_release" \
     run_control "$dir" rl28 relaunch --note "continue after publication" > "$dir/control.out" &
   control_pid=$!
   while [ ! -e "$prepare" ] && [ "$i" -lt 500 ]; do
@@ -515,10 +515,10 @@ test_relaunch_serializes_concurrent_durable_metadata_publication() {
   }
   env PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_ROOT_OVERRIDE="$ROOT" \
     FM_REAL_MV="$(command -v mv)" \
-    FM_FAKE_LOCK_WAITING="$waiting" \
-    FM_FAKE_META_WRITER_TARGET="$dir/home/state/rl28.meta" \
-    FM_FAKE_META_WRITER_READY="$ready" \
-    FM_FAKE_META_WRITER_RELEASE="$release" \
+    FAKE_LOCK_WAITING="$waiting" \
+    FAKE_META_WRITER_TARGET="$dir/home/state/rl28.meta" \
+    FAKE_META_WRITER_READY="$ready" \
+    FAKE_META_WRITER_RELEASE="$release" \
     "$X_LINK" rl28 request-28 --carry-count 1 --carry-ts 1700000000 \
       --carry-platform x --carry-max 280 > "$dir/link.out" 2>&1 &
   link_pid=$!
@@ -806,7 +806,7 @@ test_wiring_removal_failure_refuses_before_replacement_arm() {
   printf '{}\n' > "$hook"
   real_rm=$(command -v rm)
   make_rm_failure_stub "$dir"
-  out=$(FM_REAL_RM="$real_rm" FM_FAKE_RM_FAIL_PATH="$hook" \
+  out=$(FM_REAL_RM="$real_rm" FAKE_RM_FAIL_PATH="$hook" \
     run_control "$dir" rl29 relaunch --note "retry after wiring cleanup"); rc=$?
   expect_code 1 "$rc" "an undeletable prior hook must fail closed"$'\n'"$out"
   assert_contains "$out" "could not retire claude wiring" \
@@ -1194,7 +1194,7 @@ test_checkpoint_refuses_uninspectable_head_and_status() {
   dir=$(new_case badhead rl22)
   add_ship_task "$dir" rl22 claude
   make_git_failure_stub "$dir"
-  out=$(FM_REAL_GIT="$real_git" FM_FAKE_GIT_FAILURE=head \
+  out=$(FM_REAL_GIT="$real_git" FAKE_GIT_FAILURE=head \
     run_control "$dir" rl22 relaunch --note "x"); rc=$?
   expect_code 1 "$rc" "an uninspectable HEAD should refuse"
   assert_contains "$out" "HEAD cannot be inspected" "the refusal should name the failed HEAD proof"
@@ -1203,7 +1203,7 @@ test_checkpoint_refuses_uninspectable_head_and_status() {
   dir=$(new_case badstatus rl23)
   add_ship_task "$dir" rl23 claude
   make_git_failure_stub "$dir"
-  out=$(FM_REAL_GIT="$real_git" FM_FAKE_GIT_FAILURE=status \
+  out=$(FM_REAL_GIT="$real_git" FAKE_GIT_FAILURE=status \
     run_control "$dir" rl23 relaunch --note "x"); rc=$?
   expect_code 1 "$rc" "an uninspectable worktree status should refuse"
   assert_contains "$out" "status cannot be inspected" "the refusal should name the failed dirty-state proof"
@@ -1241,7 +1241,7 @@ test_prepublication_failure_keeps_concurrent_durable_metadata() {
   dir=$(new_case rollback-race rl30)
   add_ship_task "$dir" rl30 claude
   printf '%s' "$dir/proj" > "$dir/fake/cwd"
-  FM_FAKE_CWD_RACE_READY="$dir/cwd-race-ready" \
+  FAKE_CWD_RACE_READY="$dir/cwd-race-ready" \
     run_control "$dir" rl30 relaunch --harness codex --note "preserve concurrent metadata" \
       > "$dir/control.out" &
   control_pid=$!
@@ -1274,7 +1274,7 @@ test_post_publication_launch_failure_keeps_the_new_record() {
   dir=$(new_case published rl24)
   add_ship_task "$dir" rl24 claude
   printf 'codex' > "$dir/fake/becomes"
-  out=$(FM_FAKE_LAUNCH_TRANSPORT_FAIL_AFTER_START=1 \
+  out=$(FAKE_LAUNCH_TRANSPORT_FAIL_AFTER_START=1 \
     run_control "$dir" rl24 relaunch --harness codex --note "keep the published record"); rc=$?
   expect_code 1 "$rc" "a post-publication launch failure should fail closed"$'\n'"$out"
   [ "$(meta_field "$dir" rl24 harness)" = codex ] \
@@ -1290,7 +1290,7 @@ test_stop_transport_failure_reconciles_a_dead_agent() {
   local dir out rc
   dir=$(new_case stopfail rl25)
   add_ship_task "$dir" rl25 claude
-  out=$(FM_FAKE_EXIT_TRANSPORT_FAIL_AFTER_STOP=1 \
+  out=$(FAKE_EXIT_TRANSPORT_FAIL_AFTER_STOP=1 \
     run_control "$dir" rl25 relaunch --note "preserve this after stop"); rc=$?
   expect_code 1 "$rc" "a stop transport failure should fail closed"$'\n'"$out"
   [ "$(cat "$dir/fake/command")" = zsh ] || fail "the fixture should stop the old agent before reporting transport failure"
@@ -1311,7 +1311,7 @@ test_complete_journal_failure_rolls_back_from_durable_phase() {
   printf 'codex' > "$dir/fake/becomes"
   real_mv=$(command -v mv)
   make_mv_failure_stub "$dir"
-  out=$(FM_REAL_MV="$real_mv" FM_FAKE_COMPLETE_JOURNAL_MV_FAIL=1 \
+  out=$(FM_REAL_MV="$real_mv" FAKE_COMPLETE_JOURNAL_MV_FAIL=1 \
     run_control "$dir" rl27 relaunch --harness codex --note "keep durable phase honest"); rc=$?
   expect_code 1 "$rc" "a failed complete journal replacement should fail closed"$'\n'"$out"
   [ "$(journal_field "$dir" rl27 phase)" = failed:launching ] \
@@ -1334,7 +1334,7 @@ test_prepublication_abort_retires_replacement_wiring_and_busy_state() {
   meta="$dir/home/state/rl28.meta"
   real_mv=$(command -v mv)
   make_mv_failure_stub "$dir"
-  out=$(FM_REAL_MV="$real_mv" FM_FAKE_META_PUBLISH_MV_FAIL="$meta" \
+  out=$(FM_REAL_MV="$real_mv" FAKE_META_PUBLISH_MV_FAIL="$meta" \
     run_control "$dir" rl28 relaunch --note "clean partial replacement state"); rc=$?
   expect_code 1 "$rc" "a failed metadata publication should fail closed"$'\n'"$out"
   [ "$(meta_field "$dir" rl28 harness)" = claude ] \
@@ -1819,7 +1819,7 @@ make_herdr_stub() {  # <case-dir>
   cat > "$fb/herdr" <<'SH'
 #!/usr/bin/env bash
 set -u
-D=$FM_FAKE_DIR
+D=$FAKE_DIR
 printf '%s\n' "$*" >> "$D/herdr-log"
 if [ "${1:-}" = status ] && [ "${2:-}" = --json ]; then
   if [ -f "$D/herdr-stopped" ]; then

@@ -1994,6 +1994,63 @@ SH
   pass "a herdr CLI that fails to answer reads unknown/unreachable, never gone"
 }
 
+# Regression (2026-09 crew-state override leak): a state read for a herdr task
+# whose server is down starts that server, and the server hands its startup
+# environment to every later pane. The fleet snapshot scopes the
+# FM_CREW_STATE_* overrides to its single crew-state call, so a server started
+# by that call froze stale override paths into the primary session and every
+# worker, and the read never returned because a leftover shell kept the
+# caller's capture open for the server's lifetime. The read must return promptly
+# and the server it starts must carry no Firstmate FM_* variable.
+test_herdr_server_started_by_a_read_keeps_overrides_out() {
+  command -v jq >/dev/null 2>&1 || { pass "herdr server-start leak test skipped without jq"; return; }
+  reset_fakes
+  local d; d=$(new_case herdr-server-leak)
+  make_repo_on_branch "$d/wt" fm/feat-herdr-leak
+  make_fakebin "$d" >/dev/null
+  # A stopped server that starts on `server` and then stays up like the real
+  # one, recording the environment it was started with.
+  cat > "$d/fakebin/herdr" <<'SH'
+#!/usr/bin/env bash
+set -u
+case "${1:-}" in
+  status)
+    if [ -e "$FAKE_HERDR_DIR/running" ]; then printf '{"server":{"running":true}}\n'
+    else printf '{"server":{"running":false}}\n'; fi
+    exit 0 ;;
+  server)
+    env > "$FAKE_HERDR_DIR/server-env"
+    printf '%s\n' "$$" > "$FAKE_HERDR_DIR/server-pid"
+    : > "$FAKE_HERDR_DIR/running"
+    exec sleep 30 ;;
+esac
+exit 1
+SH
+  chmod +x "$d/fakebin/herdr"
+  mkdir -p "$d/captured"
+  fm_write_meta "$d/captured/feat-herdr-leak.meta" "window=lab:w1:p2" "worktree=$d/wt" "kind=ship" \
+    "backend=herdr" "harness=claude"
+  : > "$d/captured/feat-herdr-leak.status"
+  FM_FAKE_AXI_STATUS=""
+  FM_FAKE_RUNS_LIST=""
+  local out start elapsed leaked
+  start=$(date +%s)
+  out=$(FAKE_HERDR_DIR="$d" \
+    FM_CREW_STATE_META_OVERRIDE="$d/captured/feat-herdr-leak.meta" \
+    FM_CREW_STATE_STATUS_OVERRIDE="$d/captured/feat-herdr-leak.status" \
+    run_crew_state "$d" feat-herdr-leak)
+  elapsed=$(( $(date +%s) - start ))
+  [ -s "$d/server-pid" ] && kill "$(cat "$d/server-pid")" 2>/dev/null
+  [ -f "$d/server-env" ] || fail "the read never started the stopped herdr server (out: $out)"
+  # Report variable names only: the recorded environment may hold secrets.
+  leaked=$(grep '^FM_' "$d/server-env" | cut -d= -f1 | tr '\n' ' ')
+  [ -z "$leaked" ] || fail "the started server inherited Firstmate variables: $leaked"
+  grep -qx "FAKE_HERDR_DIR=$d" "$d/server-env" || fail "unrelated launcher environment must reach the server"
+  [ "$elapsed" -lt 15 ] || fail "the read stayed open ${elapsed}s behind the server it started"
+  assert_contains "$out" "state: " "the read must still report a state line"
+  pass "a read that starts the herdr server returns promptly and keeps FM_* overrides out of it"
+}
+
 # Decision follow-up (2026-09-05 review): an `alive` endpoint answer is
 # authoritative even when the heavy scrollback read failed - the live state is
 # classified by the normal flow, never discarded as unreachable.
@@ -4879,6 +4936,7 @@ test_no_run_footer_text_alone_is_not_working
 test_no_run_grok_uses_isolated_fallback
 test_no_run_herdr_unknown_uses_backend_capture
 test_no_run_herdr_cli_failure_reads_unreachable_not_gone
+test_herdr_server_started_by_a_read_keeps_overrides_out
 test_no_run_herdr_alive_with_failed_read_stays_live
 test_no_run_herdr_husk_dead_still_reads_gone
 test_no_run_herdr_idle_agent_status_outranked_by_record
