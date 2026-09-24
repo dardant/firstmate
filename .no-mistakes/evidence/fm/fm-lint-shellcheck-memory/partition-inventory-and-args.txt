@@ -1,0 +1,21 @@
+$ bin/fm-lint.sh --list-files  (CI=true, full canonical set)
+414
+partition 1of4: 104 roots, 3471180 bytes
+partition 2of4: 103 roots, 3471063 bytes
+partition 3of4: 104 roots, 3471130 bytes
+partition 4of4: 103 roots, 3470974 bytes
+union == full set: yes
+duplicates across partitions: 0
+legacy 1of2+2of2 union == full set: yes
+
+--- adversarial partition arguments ---
+$ fm-lint.sh --partition 0of4 --list-files -> fm-lint.sh: --partition must be <k>of<n> with 1 <= k <= n <= 9, got 0of4. (exit 2)
+$ fm-lint.sh --partition 5of4 --list-files -> fm-lint.sh: --partition must be <k>of<n> with 1 <= k <= n <= 9, got 5of4. (exit 2)
+$ fm-lint.sh --partition 1of10 --list-files -> fm-lint.sh: --partition must be <k>of<n> with 1 <= k <= n <= 9, got 1of10. (exit 2)
+$ fm-lint.sh --partition 4of3 --list-files -> fm-lint.sh: --partition must be <k>of<n> with 1 <= k <= n <= 9, got 4of3. (exit 2)
+$ fm-lint.sh --partition abc --list-files -> fm-lint.sh: --partition must be <k>of<n> with 1 <= k <= n <= 9, got abc. (exit 2)
+$ fm-lint.sh --partition 1of0 --list-files -> fm-lint.sh: --partition must be <k>of<n> with 1 <= k <= n <= 9, got 1of0. (exit 2)
+$ fm-lint.sh --partition -> fm-lint.sh: --partition requires <k>of<n>. (exit 2)
+$ fm-lint.sh --partition 1of4 --fast -> fm-lint.sh: --partition requires full canonical lint; omit --fast and explicit paths. (exit 2)
+$ fm-lint.sh --partition 1of4 bin/fm-lint.sh -> fm-lint.sh: --partition requires full canonical lint; omit --fast and explicit paths. (exit 2)
+$ fm-lint.sh --partition 1of4 --jobs 3 -> fm-lint.sh: jobs must be 1 or 2, got 3. (exit 2)

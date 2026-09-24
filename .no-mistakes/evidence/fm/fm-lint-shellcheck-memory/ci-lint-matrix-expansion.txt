@@ -1,0 +1,6 @@
+lint matrix partitions: [1, 2, 3, 4] (strategy.job-total=4)
+job 'Lint 1': bin/fm-lint.sh --partition 1of4
+job 'Lint 2': bin/fm-lint.sh --partition 2of4
+job 'Lint 3': bin/fm-lint.sh --partition 3of4
+job 'Lint 4': bin/fm-lint.sh --partition 4of4
+actionlint ci.yml: clean
