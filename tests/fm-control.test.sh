@@ -884,21 +884,21 @@ test_exit_answers_claude_background_work_dialog() {
   pass "fm-control exit: Claude's background-work dialog is answered with its exit-and-stop choice"
 }
 
-test_exit_refuses_claude_dialog_pointing_elsewhere() {
+test_exit_leaves_claude_dialog_pointing_elsewhere() {
   local dir out rc
   dir=$(new_case claude-bg-dialog-stay)
   add_task "$dir" t1 claude
   alive_as "$dir" claude
   claude_exit_dialog_screen 3 > "$dir/fake/dialog"
   out=$(FM_FAKE_EXIT_DIALOG="$dir/fake/dialog" run_control "$dir" t1 exit); rc=$?
-  expect_code 1 "$rc" "a dialog whose pointer is not on the exit choice should refuse"
-  assert_contains "$out" "exit-dialog=unanswerable" \
-    "the refusal should name the unanswerable dialog"
+  expect_code 1 "$rc" "a dialog whose pointer is not on the exit choice should leave the exit unconfirmed"
+  assert_contains "$out" "exit=unconfirmed exit-dialog=none" \
+    "the failure should report an unconfirmed exit with no dialog answered"
   [ "$(grep -c '^Enter$' "$dir/fake/keys")" = 1 ] \
-    || fail "an unanswerable dialog must receive no answering key, got: $(tr '\n' ' ' < "$dir/fake/keys")"
+    || fail "a dialog pointing elsewhere must receive no answering key, got: $(tr '\n' ' ' < "$dir/fake/keys")"
   [ "$(cat "$dir/fake/command")" = claude ] \
-    || fail "the agent must still be running after the refusal"
-  pass "fm-control exit: a Claude exit dialog not pointing at its exit choice is refused, not guessed at"
+    || fail "the agent must still be running after the unconfirmed exit"
+  pass "fm-control exit: a Claude exit dialog not pointing at its exit choice is left untouched, not guessed at"
 }
 
 # The dialog recognizer is harness-scoped and needs the dialog to be what is
@@ -911,7 +911,7 @@ test_exit_confirmation_recognizer_is_scoped() {
   [ "$key" = Enter ] || fail "the real Claude dialog should be answered with Enter, got '$key'"
   rc=0
   claude_exit_dialog_screen 2 | fm_control_exit_confirmation_key claude >/dev/null || rc=$?
-  [ "$rc" = 2 ] || fail "a pointer on 'Move to background' must be unanswerable (2), got $rc"
+  [ "$rc" = 1 ] || fail "a pointer on 'Move to background' must not be recognized, got $rc"
   rc=0
   { claude_exit_dialog_screen 1
     printf '%s\n' '────────────────' '❯ ' '────────────────' '  ⏵⏵ bypass permissions on'
@@ -1028,7 +1028,7 @@ test_interrupt_revalidates_agent_after_acknowledgement_wait
 test_exit_accepts_agent_stopped_by_busy_interrupt
 test_agent_that_does_not_stop_fails_closed
 test_exit_answers_claude_background_work_dialog
-test_exit_refuses_claude_dialog_pointing_elsewhere
+test_exit_leaves_claude_dialog_pointing_elsewhere
 test_exit_confirmation_recognizer_is_scoped
 test_grok_interrupt_without_acknowledgement_reports_unconfirmed
 test_grok_idle_footer_does_not_confirm_cancellation

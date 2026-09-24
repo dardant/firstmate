@@ -48,7 +48,7 @@ It renders "Background work is running", lists what will stop, and offers `1. Ex
 Left alone it waits indefinitely, which is how an `exit` or `relaunch` that only waited for the agent to stop used to give up with the old agent still running.
 `fm-control.sh <id> exit` and `relaunch` now recognize that dialog and answer it once with Enter, which picks `Exit and stop tasks`; `fm_control_exit_confirmation_key` in `../../../bin/fm-control-lib.sh` owns the recognized shape and why only that choice satisfies exit.
 It stops the harness-owned background processes, such as a `no-mistakes axi respond` waiter, while the worktree and every uncommitted change stay untouched; a validation round the waiter was reading keeps running in the no-mistakes daemon.
-A dialog whose pointer is not on that choice is refused rather than steered, and Escape (`fm-control.sh <id> interrupt`) backs out to `Stay` with the background work still running.
+A dialog whose pointer is not on that choice is left untouched rather than steered, so the exit ends `exit=unconfirmed` with the agent still running, and Escape (`fm-control.sh <id> interrupt`) backs out to `Stay` with the background work still running.
 `../../../tests/fm-control-claude-exit-dialog-live-e2e.test.sh` re-proves the shape against the real binary; run it after every Claude Code upgrade.
 
 ## Composer ghost

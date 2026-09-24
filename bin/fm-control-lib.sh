@@ -196,9 +196,8 @@ fm_control_exit_command() {  # <harness>
 # fm_control_exit_confirmation_key: whether the visible viewport on stdin shows
 # <harness>'s own confirmation dialog for its exit command, and which key
 # answers it with a real exit. Prints the key and returns 0 when the verified
-# answerable shape is showing, returns 2 when the harness's dialog is showing
-# in a shape this table cannot answer safely, and returns 1 otherwise. Always
-# consumes stdin; pure, like the rest of this file.
+# answerable shape is showing, and returns 1 otherwise. Always consumes stdin;
+# pure, like the rest of this file.
 #
 # Claude is the one adapter with such a dialog. When `/exit` is submitted while
 # a background shell or task is running, Claude does not exit but renders
@@ -212,7 +211,8 @@ fm_control_exit_command() {  # <harness>
 # background tasks ends harness-owned processes only; the worktree and every
 # uncommitted change are untouched. Enter picks the highlighted first choice,
 # so the shape is answerable only when the pointer sits on it; a dialog with the
-# pointer elsewhere returns 2 rather than being steered by guessed arrow keys.
+# pointer elsewhere is not recognized rather than being steered by guessed
+# arrow keys.
 # The heading, the choice line, and the footer as the last non-blank line are
 # all required, so a transcript that merely quotes the dialog above an ordinary
 # composer never matches.
@@ -226,7 +226,7 @@ fm_control_exit_confirmation_key() {  # <harness>  (viewport on stdin)
   last=$(printf '%s\n' "$buf" | grep -v '^[[:space:]]*$' | tail -n 1)
   printf '%s\n' "$last" | grep -qE '^[[:space:]]*Enter to confirm' || return 1
   printf '%s\n' "$buf" | grep -qE '^[[:space:]]*Background work is running[[:space:]]*$' || return 1
-  printf '%s\n' "$buf" | grep -qE '^[[:space:]]*❯[[:space:]]*1\.[[:space:]]+Exit and stop tasks[[:space:]]*$' || return 2
+  printf '%s\n' "$buf" | grep -qE '^[[:space:]]*❯[[:space:]]*1\.[[:space:]]+Exit and stop tasks[[:space:]]*$' || return 1
   printf 'Enter'
 }
 
