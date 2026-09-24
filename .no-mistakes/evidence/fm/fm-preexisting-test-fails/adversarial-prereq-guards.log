@@ -1,0 +1,12 @@
+$ CI=true bash tests/fm-ci-workflow.test.sh
+not ok - ruby is required to parse .github/workflows/ci.yml as YAML, and the CI runner does not provide it
+rc=1
+$ GITHUB_ACTIONS=true bash tests/fm-nm-test-contract.test.sh
+not ok - ruby is required to parse .no-mistakes.yaml for this contract, and the CI runner does not provide it
+rc=1
+$ FM_COMPOSER_CODEX_IDLE_LIVE=1 bash tests/fm-composer-codex-idle-live-e2e.test.sh
+not ok - live guard was requested but codex (codex-cli 0.154.0) has not trusted /home/dardan/.no-mistakes/worktrees/a2097c65a770/01M38Z6H0DFYES7FSEJT4H0MCB; run codex there once and accept its directory-trust prompt
+rc=1
+$ FM_LIVE=1 bash tests/fm-composer-codex-idle-live-e2e.test.sh
+not ok - live guard was requested but codex (codex-cli 0.154.0) has not trusted /home/dardan/.no-mistakes/worktrees/a2097c65a770/01M38Z6H0DFYES7FSEJT4H0MCB; run codex there once and accept its directory-trust prompt
+rc=1

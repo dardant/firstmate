@@ -1,0 +1,1 @@
+skip: ruby not found (required to parse .github/workflows/ci.yml as YAML)

@@ -1,0 +1,12 @@
+ok - a default-on guard runs wherever its tools are installed
+ok - an absent tool is a named capability skip, not a silent pass
+ok - a prompt-submitting guard stays off until it is asked for
+ok - a guard's own variable turns it on
+ok - a demanded run refuses to pass as a skip
+ok - FM_LIVE switches the whole family
+ok - a guard's own setting wins over FM_LIVE
+ok - any entry point of a multi-mode guard turns it on
+ok - the shared gate carries the gate-refusal bypass into every live guard
+ok - all 35 live guards refuse together on FM_LIVE=0
+ok - a missing prerequisite skips on a developer host and fails in CI
+ok - a prerequisite found missing after the gate skips unless the run was requested
