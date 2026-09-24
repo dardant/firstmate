@@ -27,9 +27,14 @@
 # Refresh docs/verification/runtime-backends.md ("Composer classification
 # matrix") from this guard's output after any codex upgrade.
 #
-# Folder trust: codex is launched with the repo root as cwd, which the
-# operator's machine has normally already trusted; a trust dialog is a real
-# unreadable-composer state and correctly fails the check.
+# Folder trust: codex is launched with the repo root as cwd. Codex asks once per
+# repository whether to trust it and persists the answer in the operator's own
+# ~/.codex, and a per-invocation `-c projects...trust_level` override does not
+# answer it (codex-cli 0.154.0). Answering it here would manufacture operator
+# consent, so a host whose codex has not trusted this repository reports that as
+# a missing live prerequisite through fm_live_unavailable: a named skip by
+# default, a failure when the guard was requested. The operator clears it by
+# running codex in this repository once and accepting the prompt.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -95,7 +100,9 @@ i=0
 tmux_verdict=''
 cursorless_verdict=''
 styled=''
+screen=''
 dismissed=0
+untrusted=0
 while [ "$i" -lt "$budget" ]; do
   tmux_verdict=$(fm_tmux_composer_state "$SESSION:$WIN")
   styled=$(tmux capture-pane -e -p -t "$SESSION:$WIN" 2>/dev/null | tail -n "$FM_COMPOSER_CAPTURE_LINES")
@@ -103,6 +110,13 @@ while [ "$i" -lt "$budget" ]; do
   if [ "$tmux_verdict" = empty ] && [ "$cursorless_verdict" = empty ]; then
     break
   fi
+  screen=$(tmux capture-pane -p -t "$SESSION:$WIN" 2>/dev/null)
+  case "$screen" in
+    *'Do you trust the contents of this directory'*)
+      untrusted=1
+      break
+      ;;
+  esac
   i=$((i + 1))
   # A fresh codex may park on a vendor update-available modal (observed live
   # on codex 0.146.0), which the strict classifier correctly refuses to call a
@@ -111,13 +125,17 @@ while [ "$i" -lt "$budget" ]; do
   # upgrade. A trust prompt also accepts Escape, but there it exits codex and
   # erases the actionable failure surface, so it is left alone.
   if [ "$dismissed" -eq 0 ] && [ "$i" -ge $((budget / 3)) ]; then
-    if ! tmux capture-pane -p -t "$SESSION:$WIN" 2>/dev/null | grep -qi 'trust'; then
+    if ! printf '%s' "$screen" | grep -qi 'trust'; then
       tmux send-keys -t "$SESSION:$WIN" Escape 2>/dev/null || true
     fi
     dismissed=1
   fi
   sleep 1
 done
+
+if [ "$untrusted" -eq 1 ]; then
+  fm_live_unavailable "codex ($VERSION) has not trusted $ROOT; run codex there once and accept its directory-trust prompt"
+fi
 
 # Report what codex actually drew, so a refreshed verification record can say
 # whether the starfield was exercised rather than assuming it.
@@ -136,8 +154,10 @@ if [ "$tmux_verdict" = empty ] && [ "$cursorless_verdict" = empty ]; then
   CHECKED=$((CHECKED + 1))
   pass "codex ($VERSION): real idle screen classifies empty on the cursor-anchored tmux read and the cursorless styled read"
 else
-  printf '# codex pane tail at failure:\n' >&2
-  printf '%s\n' "$plain" | grep '[^[:space:]]' | tail -8 | sed 's/^/#   /' >&2
+  # The whole visible screen, not the composer tail: a modal drawn at the top
+  # leaves the bottom rows blank.
+  printf '# codex screen at failure:\n' >&2
+  tmux capture-pane -p -t "$SESSION:$WIN" 2>/dev/null | grep '[^[:space:]]' | tail -12 | sed 's/^/#   /' >&2
   fail "codex ($VERSION): idle screen never classified empty (tmux read: ${tmux_verdict:-unreadable}, cursorless styled read: ${cursorless_verdict:-unreadable})"
 fi
 

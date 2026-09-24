@@ -488,7 +488,7 @@ test_relaunch_preserves_durable_task_metadata() {
 }
 
 test_relaunch_serializes_concurrent_durable_metadata_publication() {
-  local dir control_pid link_pid rc i=0 traceparent prepare launch_release waiting ready release
+  local dir control_pid link_pid rc traceparent prepare launch_release waiting ready release
   dir=$(new_case metadata-race rl28)
   add_ship_task "$dir" rl28 claude
   printf '%s\n' "$$" > "$dir/home/state/.lock"
@@ -504,14 +504,17 @@ test_relaunch_serializes_concurrent_durable_metadata_publication() {
     FAKE_TRACE_RELEASE="$launch_release" \
     run_control "$dir" rl28 relaunch --note "continue after publication" > "$dir/control.out" &
   control_pid=$!
-  while [ ! -e "$prepare" ] && [ "$i" -lt 500 ]; do
-    /bin/sleep 0.01
-    i=$((i + 1))
-  done
-  [ -e "$prepare" ] || {
+  # Each wait below is a hang detector, not a speed budget: reaching a marker
+  # runs fm-control and fm-spawn end to end, which takes seconds on a loaded
+  # host. The subshell keeps this case's own release-and-reap path on failure,
+  # because a blocked stub left behind would spin after the case root is gone.
+  (fm_wait_for_marker "$prepare" "$control_pid" \
+    "relaunch exited before trace delivery" \
+    "relaunch did not reach trace delivery") || {
+    : > "$launch_release"
     kill "$control_pid" 2>/dev/null || true
     wait "$control_pid" 2>/dev/null || true
-    fail "relaunch did not reach trace delivery"
+    exit 1
   }
   env PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_ROOT_OVERRIDE="$ROOT" \
     FM_REAL_MV="$(command -v mv)" \
@@ -522,12 +525,16 @@ test_relaunch_serializes_concurrent_durable_metadata_publication() {
     "$X_LINK" rl28 request-28 --carry-count 1 --carry-ts 1700000000 \
       --carry-platform x --carry-max 280 > "$dir/link.out" 2>&1 &
   link_pid=$!
-  i=0
-  while [ ! -e "$waiting" ] && [ "$i" -lt 500 ]; do
-    /bin/sleep 0.01
-    i=$((i + 1))
-  done
-  [ -e "$waiting" ] && [ ! -e "$ready" ] || {
+  (fm_wait_for_marker "$waiting" "$link_pid" \
+    "a durable metadata writer finished during relaunch delivery instead of waiting for it" \
+    "a durable metadata writer never reached the relaunch's metadata lock") || {
+    : > "$launch_release"
+    : > "$release"
+    wait "$link_pid" 2>/dev/null || true
+    wait "$control_pid" 2>/dev/null || true
+    exit 1
+  }
+  [ ! -e "$ready" ] || {
     : > "$launch_release"
     : > "$release"
     wait "$link_pid" 2>/dev/null || true
@@ -535,16 +542,14 @@ test_relaunch_serializes_concurrent_durable_metadata_publication() {
     fail "a durable metadata writer was not blocked during relaunch delivery"
   }
   : > "$launch_release"
-  i=0
-  while [ ! -e "$ready" ] && [ "$i" -lt 500 ]; do
-    /bin/sleep 0.01
-    i=$((i + 1))
-  done
-  [ -e "$ready" ] || {
+  (fm_wait_for_marker "$ready" "$link_pid" \
+    "durable metadata writer exited without resuming after relaunch delivery committed" \
+    "durable metadata writer did not resume after relaunch delivery committed") || {
+    : > "$release"
     kill "$link_pid" "$control_pid" 2>/dev/null || true
     wait "$link_pid" 2>/dev/null || true
     wait "$control_pid" 2>/dev/null || true
-    fail "durable metadata writer did not resume after relaunch delivery committed"
+    exit 1
   }
   : > "$release"
   wait "$link_pid"; rc=$?
@@ -1237,7 +1242,7 @@ test_launch_failure_keeps_the_prior_record_and_reports_it() {
 }
 
 test_prepublication_failure_keeps_concurrent_durable_metadata() {
-  local dir control_pid link_out rc i=0
+  local dir control_pid link_out rc
   dir=$(new_case rollback-race rl30)
   add_ship_task "$dir" rl30 claude
   printf '%s' "$dir/proj" > "$dir/fake/cwd"
@@ -1245,14 +1250,12 @@ test_prepublication_failure_keeps_concurrent_durable_metadata() {
     run_control "$dir" rl30 relaunch --harness codex --note "preserve concurrent metadata" \
       > "$dir/control.out" &
   control_pid=$!
-  while [ ! -e "$dir/cwd-race-ready" ] && [ "$i" -lt 200 ]; do
-    /bin/sleep 0.01
-    i=$((i + 1))
-  done
-  [ -e "$dir/cwd-race-ready" ] || {
+  (fm_wait_for_marker "$dir/cwd-race-ready" "$control_pid" \
+    "relaunch exited before its pre-publication endpoint check" \
+    "relaunch did not reach its pre-publication endpoint check") || {
     kill "$control_pid" 2>/dev/null || true
     wait "$control_pid" 2>/dev/null || true
-    fail "relaunch did not reach its pre-publication endpoint check"
+    exit 1
   }
   link_out=$(env PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_ROOT_OVERRIDE="$ROOT" \
     "$X_LINK" rl30 request-30 --carry-count 2 --carry-ts 1700000000 \

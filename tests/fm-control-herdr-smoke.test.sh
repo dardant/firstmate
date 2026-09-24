@@ -23,7 +23,8 @@ set -u
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-fail() { printf 'not ok - %s\n' "$1" >&2; cleanup_all; exit 1; }
+# The EXIT trap owns cleanup, so a failure tears the lab down exactly once.
+fail() { printf 'not ok - %s\n' "$1" >&2; exit 1; }
 pass() { printf 'ok - %s\n' "$1"; }
 
 command -v herdr >/dev/null 2>&1 || { echo "skip: herdr not found"; exit 0; }
@@ -54,6 +55,9 @@ Exercise Herdr lifecycle control safely.
 
 ## Firstmate spec
 Keep the isolated endpoint and worktree intact.
+
+# Definition of done
+Delivery contract: mode=no-mistakes
 EOF
 
 # A real git worktree so the control plane's checkpoint has a real local copy.
@@ -67,6 +71,19 @@ git -C "$PROJ" -c user.name='Firstmate Tests' -c user.email='tests@example.inval
 git -C "$PROJ" worktree add --quiet -b hsmoke "$WT"
 PROJ_REAL=$(cd "$PROJ" && pwd -P)
 WT_REAL=$(cd "$WT" && pwd -P)
+
+# The lab server's panes run a neutral shell, not the developer's own: a themed
+# prompt such as starship's default `❯` is exactly Claude's composer glyph, so
+# the composer guard would read the pane's command line as pending text and the
+# exit case below would assert a verdict that depends on the host's shell setup.
+# Herdr's terminal.default_shell falls back to SHELL, which the server inherits
+# from the client call that starts it.
+cat > "$SCRATCH/neutral-shell" <<'SH'
+#!/bin/sh
+PS1='$ ' exec /bin/bash --noprofile --norc
+SH
+chmod +x "$SCRATCH/neutral-shell"
+export SHELL="$SCRATCH/neutral-shell"
 
 # shellcheck source=/dev/null
 . "$ROOT/bin/fm-backend.sh"

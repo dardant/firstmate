@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Behavior tests for tests/lib.sh's fm_live_gate, the single decision every
 # live-harness guard opens with, and for the wiring that makes that decision
-# reach the whole family. Its sibling fm_require_tool, the prerequisite gate for
-# deterministic suites, is driven the same way at the end.
+# reach the whole family. Its late-prerequisite exit fm_live_unavailable and its
+# sibling fm_require_tool, the prerequisite gate for deterministic suites, are
+# driven the same way at the end.
 #
 # The gate is what turns "a live guard exists" into "a live guard actually ran
 # on the machine that has the harness", so the cases below drive it the way a
@@ -200,12 +201,41 @@ EOF
   pass "all $checked live guards refuse together on FM_LIVE=0"
 }
 
+test_a_late_missing_prerequisite_follows_the_gate_rule() {
+  local path result request
+  path="$TMP_ROOT/unavailable.test.sh"
+  {
+    printf '#!/usr/bin/env bash\nset -u\n'
+    printf '. "%s/tests/lib.sh"\n' "$ROOT"
+    printf 'fm_live_gate default-on FM_FAKE_LIVE fmfakeharness\n'
+    printf 'fm_live_unavailable "fmfakeharness has not trusted the fixture"\n'
+    printf 'printf "ran\\n"\n'
+  } > "$path"
+  chmod +x "$path"
+
+  result=$(run_guard "$path")
+  [ "$(printf '%s' "$result" | sed -n 1p)" = 0 ] || fail "an unrequested guard must skip on a late missing prerequisite: $result"
+  assert_contains "$result" "skip: live: fmfakeharness has not trusted the fixture" \
+    "a late prerequisite skip must name what the host is missing"
+  assert_not_contains "$result" ran "a late prerequisite skip must stop the guard"
+
+  for request in FM_FAKE_LIVE=1 FM_LIVE=1; do
+    result=$(run_guard "$path" "$request")
+    [ "$(printf '%s' "$result" | sed -n 1p)" = 1 ] || fail "$request must turn a late missing prerequisite into a failure: $result"
+    assert_contains "$result" "live guard was requested but fmfakeharness has not trusted the fixture" \
+      "the requested failure must name the missing prerequisite"
+    assert_not_contains "$result" "skip:" "a requested run must never report a late prerequisite as a skip"
+  done
+}
+
 test_require_tool_skips_locally_and_fails_in_ci() {
   local path result ci
   path="$TMP_ROOT/require-tool.test.sh"
   {
     printf '#!/usr/bin/env bash\nset -u\n'
     printf '. "%s/tests/lib.sh"\n' "$ROOT"
+    # The guard reads its own $1, so the literal is deliberate.
+    # shellcheck disable=SC2016
     printf 'fm_require_tool "$1" "to parse the fixture"\n'
     printf 'printf "ran\\n"\n'
   } > "$path"
@@ -256,3 +286,5 @@ pass "the shared gate carries the gate-refusal bypass into every live guard"
 test_every_live_guard_is_wired_to_the_shared_gate
 test_require_tool_skips_locally_and_fails_in_ci
 pass "a missing prerequisite skips on a developer host and fails in CI"
+test_a_late_missing_prerequisite_follows_the_gate_rule
+pass "a prerequisite found missing after the gate skips unless the run was requested"

@@ -2225,11 +2225,9 @@ SH
       "$ROOT/bin/fm-config-push.sh" > "$first_out" 2>&1
   ) &
   first_pid=$!
-  for _ in $(seq 1 100); do
-    [ -e "$entered" ] && break
-    sleep 0.02
-  done
-  [ -e "$entered" ] || fail "first config push did not reach pointer delivery"
+  fm_wait_for_marker "$entered" "$first_pid" \
+    "first config push exited before pointer delivery" \
+    "first config push did not reach pointer delivery"
   first_instr=$(reread_instruction_path "$w/sm") \
     || fail "first concurrent push did not publish its generation"
   printf 'two\n' > "$w/home/config/crew-harness"
