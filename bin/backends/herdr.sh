@@ -2139,6 +2139,41 @@ fm_backend_herdr_pane_process_state() {  # <session> <pane_id>
   printf '%s' "$verdict"
 }
 
+# fm_backend_herdr_agent_pids: the pids of the verified harness processes in
+# <target>'s foreground, one per line, read from the same `pane process-info`
+# view and shared classifier the liveness proof above uses. Prints nothing
+# when the view is unreadable or holds no harness.
+fm_backend_herdr_agent_pids() {  # <target>
+  local info count i pid name argv0 args
+  fm_backend_herdr_parse_target "$1" || return 0
+  info=$(fm_backend_herdr_cli "$FM_BACKEND_HERDR_SESSION" pane process-info --pane "$FM_BACKEND_HERDR_PANE" 2>/dev/null) \
+    || return 0
+  printf '%s' "$info" | jq -e --arg pane "$FM_BACKEND_HERDR_PANE" '
+    .result.type == "pane_process_info"
+    and .result.process_info.pane_id == $pane
+  ' >/dev/null 2>&1 || return 0
+  count=$(printf '%s' "$info" | jq -er \
+    '.result.process_info.foreground_processes | select(type == "array") | length' 2>/dev/null) \
+    || return 0
+  i=0
+  while [ "$i" -lt "$count" ]; do
+    pid=$(printf '%s' "$info" | jq -r --argjson i "$i" \
+      '.result.process_info.foreground_processes[$i].pid | select(type == "number" and . > 1) | floor' 2>/dev/null)
+    name=$(printf '%s' "$info" | jq -r --argjson i "$i" \
+      '.result.process_info.foreground_processes[$i].name // empty' 2>/dev/null)
+    argv0=$(printf '%s' "$info" | jq -r --argjson i "$i" '
+      .result.process_info.foreground_processes[$i] as $p
+      | (($p.argv // [])[0]) // $p.argv0 // empty' 2>/dev/null)
+    args=$(printf '%s' "$info" | jq -r --argjson i "$i" '
+      .result.process_info.foreground_processes[$i] as $p
+      | $p.cmdline // (($p.argv // []) | join(" ")) // empty' 2>/dev/null)
+    if [ -n "$pid" ] && [ "$(fm_agent_process_classify "$name" "$argv0" "$args" "$pid")" = agent ]; then
+      printf '%s\n' "$pid"
+    fi
+    i=$((i + 1))
+  done
+}
+
 # fm_backend_herdr_pane_process_state_sample: one instantaneous observation
 # for fm_backend_herdr_pane_process_state, which owns the verdict contract and
 # the settle retry.

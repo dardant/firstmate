@@ -47,6 +47,11 @@ The clear is refused before anything is sent when the recorded backend cannot de
 
 `exit` reads the composer's state before typing the exit command and requires the exact `empty` verdict; a `pending` verdict refuses by naming the pending text, and any other verdict (`unknown`, `pending-unproven`, or an unreadable read) refuses as not proven empty, matching the fail-safe contract every other consumer that can overwrite composer input follows.
 
+No key ever reaches a pane that shows one of the harness's recognized launch dialogs, whatever the busy record says, because a key there answers a question that belongs to the operator: on Claude Code 2.1.280, Escape on the "Allow external CLAUDE.md file imports?" dialog records the same standing decline as choosing "No".
+`interrupt` refuses on such a pane, and so does any verb whose pane cannot be captured, since the dialog cannot then be ruled out.
+`exit`, and therefore `relaunch`, stop a parked agent by sending SIGTERM to the harness processes the backend's process-level view attributes to the endpoint, then require the same gone postcondition; a pane with no attributable harness process refuses.
+`bin/fm-busy-lib.sh`'s `fm_busy_launch_prompt_parked` owns the dialog signatures, and [runtime backend verification](verification/runtime-backends.md#claude-external-imports-dialog-answers) owns the evidence.
+
 **Teardown and discard are not verbs and will not become verbs.**
 `exit` stops an agent and preserves everything else.
 Removing a worktree, closing an endpoint, or discarding work stays with [`bin/fm-teardown.sh`](../bin/fm-teardown.sh), which owns the landed-work test.

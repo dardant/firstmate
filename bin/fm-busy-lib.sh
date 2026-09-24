@@ -915,10 +915,11 @@ fm_busy_agy_tail_busy() {
 # ("Quick safety check: Is this a project you created or one you trust?",
 # re-verified live on Claude Code 2.1.278, docs/verification/runtime-backends.md
 # "Launch-prompt backstop signatures") and its separate external-CLAUDE.md-
-# imports dialog ("Allow external CLAUDE.md file imports?", verified by
-# disassembly, .agents/skills/harness-adapters/references/harness/claude.md
-# "Hook trust" sibling section). fm-claude-trust.sh pre-registers both before
-# launch; this is the backstop for when that registration did not take effect.
+# imports dialog ("Allow external CLAUDE.md file imports?", rendered live on
+# Claude Code 2.1.280, docs/verification/runtime-backends.md "Claude external-
+# imports dialog answers"). fm-claude-trust.sh pre-registers trust before
+# launch; this is the backstop for when a dialog renders anyway, and
+# bin/fm-control.sh also reads it to keep every key out of such a pane.
 # Each dialog's own question text is paired with one of its own rendered
 # option/footer lines, both required together: the question text alone is
 # plausible self-referential prose a firstmate-repo worker could easily render

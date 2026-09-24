@@ -508,6 +508,36 @@ The lab home was deleted and the test entry was removed from the store and verif
 That automated spawn case runs against a fake claude, so it asserts the store entry and the launch command and nothing more; the live arms above are what establish that the entry actually suppresses the dialog.
 The composer-classification record below observes the same gate from the other side, where an untrusted worktree left Claude, Grok, and Muse unverified because the guard reads a first-launch trust dialog as an unreadable composer.
 
+### Claude external-imports dialog answers
+
+Verified 2026-09-24 on Claude Code 2.1.280 on Linux, each arm a fresh throwaway git project whose `CLAUDE.md` imports a file outside it, launched in its own tmux pane against an isolated `CLAUDE_CONFIG_DIR` whose store pre-registered only `hasTrustDialogAccepted` for that project.
+
+```sh
+tmux -L <sock> new-session -d -s <arm> -x 160 -y 45 -c <project> "env CLAUDE_CONFIG_DIR=<cfg> claude"
+```
+
+```
+  Allow external CLAUDE.md file imports?
+  This project's CLAUDE.md imports files outside the current working directory. Never allow this for third-party repositories.
+  ❯ No, disable external imports
+    Yes, allow external imports
+  Enter to confirm · Esc to cancel
+```
+
+Each arm then delivered one input and read the project entry back from the store.
+
+| Input | Pane afterwards | `hasClaudeMdExternalIncludesApproved` / `WarningShown` |
+| --- | --- | --- |
+| Escape | composer | `false` / `true` |
+| Enter (on the preselected "No") | composer | `false` / `true` |
+| Ctrl-C, twice | dialog still showing | absent / absent |
+| SIGTERM to the `claude` process | agent gone | absent / absent |
+
+Escape therefore records exactly the decline "No" records, a later launch in a declined project reaches the composer with no dialog, and only a signal leaves the question unanswered.
+Two more arms located what raises the dialog: a user-scope `CLAUDE.md` in the config directory importing a sibling file did not, and a project whose parent directory holds a `CLAUDE.md` with `@AGENTS.md` did, listing that parent `AGENTS.md` as the external import - the shape of a primary clone under a firstmate home's `projects/`.
+The same fixture then drove the shipped `bin/fm-control.sh` against a real parked pane: before this change `interrupt` delivered Escape and the store read `false` / `true`, and after it `interrupt` refused, `exit` stopped the agent by signal, and the entry stayed absent / absent.
+`tests/fm-control.test.sh` pins the no-key contract and the signal stop against a stand-in process, and `tests/fm-claude-trust.test.sh` pins the decline-preserving registration and `--reset-imports-decline`.
+
 ## Launch-prompt backstop signatures
 
 `bin/fm-busy-lib.sh`'s launch-prompt backstop (`fm_busy_launch_prompt_parked`) reclassifies a launch whose busy record is still pinned at the fm-spawn seed as `unknown launch-prompt`, rather than `busy fm-spawn`, when the captured pane matches that harness's own recognized trust, sign-in, or first-run dialog.
