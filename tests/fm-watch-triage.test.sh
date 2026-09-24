@@ -2319,6 +2319,42 @@ test_finished_scout_with_resolved_line_never_wedge_escalates() {
   pass "a finished scout whose last line is a resolved decision is never wedge-escalated, and a new question still surfaces"
 }
 
+# A decision answered the way firstmate answers it: the real fm-send
+# --resolve-key enqueues the answer as an inbox steer and appends its resolved
+# line. The crew then finishes, so that steer precedes its done and leaves the
+# finish on record. A ship or scout done closes every open decision, so a later
+# answer to the same key is refused before anything is enqueued and can never
+# reopen the parked crew.
+test_answered_decision_then_finish_stays_quiet() {
+  local dir state window none rc
+  window="test:fm-answered-scout"
+  none='state: unknown · source: none · no current-state source available'
+  dir=$(finish_stale_case answered-scout "$window" 'kind=scout\n' \
+    'needs-decision [at=1790200000] [key=scope]: pick A or B\n')
+  state="$dir/state"
+  env PATH="$dir/fakebin:$PATH" FM_ROOT_OVERRIDE="$dir" FM_HOME="$dir" FM_SEND_SETTLE=0 \
+    "$ROOT/bin/fm-send.sh" answered-scout --resolve-key scope 'A' >/dev/null 2>&1; rc=$?
+  [ "$rc" -eq 0 ] || fail "fm-send --resolve-key did not deliver the answer (rc=$rc)"
+  [ -e "$state/answered-scout.inbox/001.msg" ] || fail "the answer was not enqueued as an inbox steer"
+  grep -F 'resolved [key=scope]' "$state/answered-scout.status" >/dev/null \
+    || fail "the answer did not append its resolved line"
+  mv "$state/answered-scout.inbox/001.msg" "$state/answered-scout.inbox/handled/"
+  sleep 1
+  printf 'done [at=%s]: report written to data/scout/report.md\n' "$(date +%s)" >> "$state/answered-scout.status"
+  finish_stale_reseen "$dir" answered-scout
+
+  finish_stale_round "$dir" "$window" 'report written, idle' FM_FAKE_CREW_STATE="$none" \
+    || fail "a scout that finished after its answered decision was surfaced: $(cat "$dir/watch.out")"
+
+  env PATH="$dir/fakebin:$PATH" FM_ROOT_OVERRIDE="$dir" FM_HOME="$dir" FM_SEND_SETTLE=0 \
+    "$ROOT/bin/fm-send.sh" answered-scout --resolve-key scope 'B after all' >/dev/null 2>&1; rc=$?
+  [ "$rc" -ne 0 ] || fail "an answer to a decision the finish closed was delivered"
+  [ ! -e "$state/answered-scout.inbox/002.msg" ] || fail "a refused answer still enqueued a steer"
+  finish_stale_round "$dir" "$window" 'report written, idle | recap: report done' FM_FAKE_CREW_STATE="$none" \
+    || fail "a refused answer reopened the finished scout: $(cat "$dir/watch.out")"
+  pass "a decision answered through fm-send before the finish leaves a finished scout quiet"
+}
+
 test_unfinished_crew_with_resolved_line_still_surfaces() {
   local dir window
   window="test:fm-resumed"
@@ -6217,6 +6253,7 @@ test_nonterminal_stale_not_working_surfaced
 test_finish_on_record_redrawing_pane_stays_quiet
 test_finish_on_record_reopened_by_later_steer
 test_finished_scout_with_resolved_line_never_wedge_escalates
+test_answered_decision_then_finish_stays_quiet
 test_unfinished_crew_with_resolved_line_still_surfaces
 test_nonterminal_stale_paused_absorbed_then_resurfaced
 test_exited_declared_pause_is_bounded_but_live_gate_surfaces
