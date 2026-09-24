@@ -2138,6 +2138,155 @@ test_nonterminal_stale_not_working_surfaced() {
   pass "a not-provably-working non-terminal stale is surfaced immediately (never left to wait out the timer)"
 }
 
+# --- a finish already on record stays quiet on a stale or redrawing pane ------
+# 2026-09-23/24 claude+herdr: ships that reported done with checks green and sat
+# awaiting merge, and a scout whose last status line was a resolved decision,
+# kept drawing stale wakes for their idle panes. Each redraw of a done pane
+# (Claude's session recap) was a new hash the terminal path re-alarmed, and a
+# resolved last line sent a stable pane down the non-terminal path, which
+# surfaced it and then wedge-escalated it every STALE_ESCALATE_SECS. A crew with
+# nothing running whose final `done` is already on record has nothing new to say
+# about its pane, while a ship whose `done` only committed its implementation
+# (no recorded PR yet) keeps alarming.
+
+# Run one watcher over <window> with its pane showing <text>, primed as already
+# stale so the first poll classifies it. 0 if the watcher absorbed (still alive
+# after a whole poll cycle, nothing queued), 1 if it exited on a wake.
+finish_stale_round() {  # <dir> <window> <text> [env assignments...]
+  local dir=$1 window=$2 text=$3 state key pid
+  shift 3
+  state="$dir/state"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  printf '%s' "$text" > "$dir/pane.txt"
+  printf '%s' "$(hash_text "$text")" > "$state/.hash-$key"
+  printf '1\n' > "$state/.count-$key"
+  : > "$dir/watch.out"
+  env PATH="$dir/fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$dir/pane.txt" \
+    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$dir/fakebin/fm-crew-state.sh" FM_POLL=1 FM_SIGNAL_GRACE=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$@" "$WATCH" > "$dir/watch.out" &
+  pid=$!
+  if wait_poll_cycle "$state" "$pid"; then
+    reap "$pid"
+    [ ! -s "$state/.wake-queue" ] || return 1
+    ack_stopped_cycle "$state" || fail "could not acknowledge an intentional watcher stop"
+    return 0
+  fi
+  wait "$pid" 2>/dev/null || true
+  return 1
+}
+
+# Build a case whose task <name> records <meta-lines> and <status-lines>, with the
+# status log already seen so only the stale path is exercised.
+finish_stale_case() {  # <name> <window> <meta-lines> <status-lines>
+  local dir state task=$1
+  dir=$(make_case "$1"); state="$dir/state"
+  printf 'window=%s\n%b' "$2" "$3" > "$state/$task.meta"
+  printf '%b' "$4" > "$state/$task.status"
+  printf '%s' "$(seen_sig "$state/$task.status")" > "$state/.seen-${task}_status"
+  printf '%s\n' "$dir"
+}
+
+# Re-prime <task>'s status suppressor after a fixture append, so the append is
+# not surfaced as a status signal ahead of the stale path under test.
+finish_stale_reseen() {  # <dir> <task>
+  printf '%s' "$(seen_sig "$1/state/$2.status")" > "$1/state/.seen-${2}_status"
+}
+
+test_finish_on_record_redrawing_pane_stays_quiet() {
+  local dir state window key idle
+  window="test:fm-held-pr"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  idle='state: done · source: status-log · PR https://example.invalid/pull/1 checks green · run still monitoring PR'
+  dir=$(finish_stale_case held-pr "$window" \
+    'kind=ship\nmode=no-mistakes\npr=https://example.invalid/pull/1\n' \
+    'done [at=1790200000]: implementation committed\nworking [at=1790200100]: validation started\ndone [at=1790200900]: PR https://example.invalid/pull/1 checks green\n')
+  state="$dir/state"
+
+  finish_stale_round "$dir" "$window" 'idle composer, done 12:47 AM' FM_FAKE_CREW_STATE="$idle" \
+    || fail "a PR awaiting merge had its quiet pane surfaced: $(cat "$dir/watch.out")"
+  [ "$(cat "$state/.stale-$key" 2>/dev/null)" = "$(hash_text 'idle composer, done 12:47 AM')" ] \
+    || fail "the absorbed pane did not advance the stale suppressor"
+  [ ! -e "$state/.stale-since-$key" ] || fail "a PR awaiting merge started a wedge timer"
+
+  # The recap redraw: a new hash on the same finished pane, with nothing new in
+  # the status log. Before the fix every such hash re-alarmed the done line.
+  finish_stale_round "$dir" "$window" 'idle composer, done 12:47 AM | recap: PR ready, waiting on merge' \
+    FM_FAKE_CREW_STATE="$idle" \
+    || fail "a PR awaiting merge re-alarmed on a redraw: $(cat "$dir/watch.out")"
+  grep -F "absorbed stale (finish already on record" "$state/.watch-triage.log" >/dev/null \
+    || fail "the finish-on-record absorb left no triage record"
+
+  # A pipeline still running keeps the provably-working path and its wedge timer,
+  # so a finish on record never hides a run that is actually executing.
+  finish_stale_round "$dir" "$window" 'idle composer | ci monitor' \
+    FM_FAKE_CREW_STATE='state: working · source: run-step · ci running' FM_STALE_ESCALATE_SECS=999 \
+    || fail "a provably-working pane was surfaced: $(cat "$dir/watch.out")"
+  [ -s "$state/.stale-since-$key" ] || fail "a provably-working pane lost its wedge timer to the finish on record"
+
+  # Control: the same done line from a ship whose PR firstmate has not recorded
+  # is only its implementation report, so the identical redraw still alarms.
+  sed -i.bak '/^pr=/d' "$state/held-pr.meta"
+  finish_stale_round "$dir" "$window" 'idle composer, done 12:47 AM | recap: second redraw' \
+    FM_FAKE_CREW_STATE="$idle" \
+    && fail "a ship with no recorded PR was absorbed as parked awaiting merge"
+  grep -Fx "stale: $window" "$dir/watch.out" >/dev/null \
+    || fail "the no-recorded-PR control did not surface the stale wake"
+  pass "a finish on record stays quiet on a quiet or redrawing pane, while a running pipeline and an unrecorded PR still take their usual paths"
+}
+
+test_finished_scout_with_resolved_line_never_wedge_escalates() {
+  local dir state window key text none
+  window="test:fm-done-scout"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  # What bin/fm-crew-state.sh reports for an idle crew whose last line is a
+  # resolved decision: the resolved line is not a state, so no source names one.
+  none='state: unknown · source: none · no current-state source available'
+  text='report written, idle'
+  dir=$(finish_stale_case done-scout "$window" 'kind=scout\n' \
+    'needs-decision [at=1790200000] [key=scope]: pick A or B\ndone [at=1790200060]: report written to data/scout/report.md\nresolved [key=scope] [at=1790200120]: answered: A\nnote [at=1790200130]: report linked in the backlog\n')
+  state="$dir/state"
+  status_is_captain_relevant "$(last_status_line "$state/done-scout.status")" \
+    && fail "fixture drift: the scout's last line must take the non-terminal path"
+
+  finish_stale_round "$dir" "$window" "$text" FM_FAKE_CREW_STATE="$none" FM_STALE_ESCALATE_SECS=1 \
+    || fail "a finished scout's quiet pane was surfaced: $(cat "$dir/watch.out")"
+  [ "$(cat "$state/.stale-done-$key" 2>/dev/null)" = "$(hash_text "$text")" ] \
+    || fail "the finished scout's pane hash was not remembered as absorbed"
+
+  # The same stable hash across polls with a one-second wedge threshold: before
+  # the fix the timer reset and escalated a possible wedge at every threshold.
+  finish_stale_round "$dir" "$window" "$text" FM_FAKE_CREW_STATE="$none" FM_STALE_ESCALATE_SECS=1 \
+    || fail "a finished scout's stable pane was wedge-escalated: $(cat "$dir/watch.out")"
+  sleep 1.2
+  finish_stale_round "$dir" "$window" "$text" FM_FAKE_CREW_STATE="$none" FM_STALE_ESCALATE_SECS=1 \
+    || fail "a finished scout's stable pane was wedge-escalated after the threshold: $(cat "$dir/watch.out")"
+  [ ! -e "$state/.stale-since-$key" ] || fail "a finished scout's stable pane ran a wedge timer"
+
+  # Control: a new question after the report reopens the scout, so its next quiet
+  # pane surfaces at once and the absorbed hash is forgotten.
+  printf 'needs-decision [at=1790200200] [key=followup]: extend the audit?\n' >> "$state/done-scout.status"
+  finish_stale_reseen "$dir" done-scout
+  finish_stale_round "$dir" "$window" 'asked a follow-up, idle' FM_FAKE_CREW_STATE="$none" \
+    && fail "a scout with a new open question was absorbed as finished"
+  grep -F "stale: $window" "$dir/watch.out" >/dev/null || fail "the reopened scout did not surface"
+  [ ! -e "$state/.stale-done-$key" ] || fail "the absorbed marker outlived a surfaced pane"
+  pass "a finished scout whose last line is a resolved decision is never wedge-escalated, and a new question still surfaces"
+}
+
+test_unfinished_crew_with_resolved_line_still_surfaces() {
+  local dir window
+  window="test:fm-resumed"
+  # The decision was answered, but the crew never declared a finish: its quiet
+  # pane is exactly the inconclusive state that must surface.
+  dir=$(finish_stale_case resumed "$window" 'kind=scout\n' \
+    'working [at=1790200000]: auditing\nneeds-decision [at=1790200060] [key=scope]: pick A or B\nresolved [key=scope] [at=1790200120]: answered: A\n')
+  finish_stale_round "$dir" "$window" 'answered, idle' \
+    FM_FAKE_CREW_STATE='state: unknown · source: none · no current-state source available' \
+    && fail "a crew that never declared a finish was absorbed"
+  grep -Fx "stale: $window" "$dir/watch.out" >/dev/null || fail "the unfinished crew did not surface"
+  pass "a crew whose resolved decision followed no finish still surfaces its quiet pane"
+}
+
 # --- non-terminal stale, crew DECLARED a pause: absorbed, re-surfaced on a long
 #     cadence, never wedge-escalated ------------------------------------------
 # The live 2026-07-09/10 case: a crew intentionally held awaiting an upstream tool
@@ -6019,6 +6168,9 @@ test_busy_declared_pause_is_rechecked_not_wedge_escalated
 test_afk_busy_declared_pause_hands_off_plain_stale
 test_afk_busy_declared_pause_ticking_pane_hands_off_once
 test_nonterminal_stale_not_working_surfaced
+test_finish_on_record_redrawing_pane_stays_quiet
+test_finished_scout_with_resolved_line_never_wedge_escalates
+test_unfinished_crew_with_resolved_line_still_surfaces
 test_nonterminal_stale_paused_absorbed_then_resurfaced
 test_exited_declared_pause_is_bounded_but_live_gate_surfaces
 test_absorbed_replacement_wait_does_not_inherit_the_old_throttle
