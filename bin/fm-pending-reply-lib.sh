@@ -1132,7 +1132,7 @@ fm_pending_reply_close_escalation() {  # <state-dir> <corr_id>
   local STATE FM_WAKE_QUEUE FM_WAKE_QUEUE_LOCK
   STATE=$state
   lock="$state/.pending-reply-$corr.lock"
-  # shellcheck source=bin/fm-wake-lib.sh
+  # shellcheck source=/dev/null
   . "$_FM_PENDING_REPLY_LIB_DIR/fm-wake-lib.sh"
   fm_lock_acquire_wait "$lock" || return 1
   _fm_pending_reply_close_escalation_locked "$@" || rc=$?
@@ -1198,7 +1198,7 @@ fm_pending_reply_maybe_escalate() {  # <state-dir> <corr_id>
   local STATE FM_WAKE_QUEUE FM_WAKE_QUEUE_LOCK
   STATE=$state
   lock="$state/.pending-reply-$corr.lock"
-  # shellcheck source=bin/fm-wake-lib.sh
+  # shellcheck source=/dev/null
   . "$_FM_PENDING_REPLY_LIB_DIR/fm-wake-lib.sh"
   fm_lock_acquire_wait "$lock" || return 1
   _fm_pending_reply_maybe_escalate_locked "$@" || rc=$?
@@ -1353,7 +1353,7 @@ fm_pending_reply_restatement_copy_same_basename() {  # <state-dir> <corr_id> <se
   [ "$stranded" != "$parent_status" ] || return 1
   line=$(fm_pending_reply_find_resolve_line "$stranded" "$corr")
   [ -n "$line" ] || return 1
-  # shellcheck source=bin/fm-parent-channel-lib.sh
+  # shellcheck source=/dev/null
   . "$_FM_PENDING_REPLY_LIB_DIR/fm-parent-channel-lib.sh"
   fm_parent_channel_append_once "$parent_status" "$line"
 }

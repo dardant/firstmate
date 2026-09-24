@@ -490,7 +490,7 @@ mail_poll() {
     echo "fm-mail: $SCRIPT_DIR/fm-wake-lib.sh missing; cannot poll" >&2
     return 1
   fi
-  # shellcheck source=bin/fm-wake-lib.sh
+  # shellcheck source=/dev/null
   # shellcheck disable=SC1091
   . "$SCRIPT_DIR/fm-wake-lib.sh"
   fm_lock_acquire_wait "$STATE_DIR/.mail-seen.lock"
