@@ -14,8 +14,9 @@
 # isolated lab, registers a Claude session reference on the task pane the way
 # Herdr's own Claude integration does, restarts the lab server through the
 # guarded helper, and requires that Herdr's resume runs in the recorded
-# worktree. No model is called: the resumed `claude` is a stand-in on the lab
-# server's PATH that records its working directory.
+# worktree, with a lab viewer attached the way the captain's terminal is. No
+# model is called: the resumed `claude` is a stand-in on the lab server's PATH
+# that records its working directory.
 #
 # Safety (tests/herdr-test-safety.sh): every Herdr call goes through
 # bin/fm-herdr-lab.sh, which appends the named session flag and verifies the
@@ -30,6 +31,7 @@ pass() { printf 'ok - %s\n' "$1"; }
 command -v herdr >/dev/null 2>&1 || { echo "skip: herdr not found"; exit 0; }
 command -v jq >/dev/null 2>&1 || { echo "skip: jq not found (required by the herdr adapter)"; exit 0; }
 command -v treehouse >/dev/null 2>&1 || { echo "skip: treehouse not found (required by fm-spawn.sh)"; exit 0; }
+command -v python3 >/dev/null 2>&1 || { echo "skip: python3 not found (required by the lab viewer)"; exit 0; }
 
 # shellcheck source=tests/herdr-test-safety.sh
 . "$ROOT/tests/herdr-test-safety.sh"
@@ -146,6 +148,10 @@ fi
 
 "$HERDR_LAB_HELPER" stop "$HERDR_LAB_SESSION" >/dev/null || fail "could not stop the lab session"
 "$HERDR_LAB_HELPER" provision "$HERDR_LAB_SESSION" || fail "could not restart the lab session"
+# Herdr 0.7.4 spawns restored panes, and so runs their resume, only once a
+# client attaches, as the captain's own terminal does after a real restart.
+"$HERDR_LAB_HELPER" viewer start "$HERDR_LAB_SESSION" >/dev/null \
+  || fail "could not attach a foreground viewer to the restarted lab session"
 for _ in $(seq 1 300); do
   grep -q '^resume' "$AGENT_LOG" && break
   sleep 0.1

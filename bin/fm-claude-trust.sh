@@ -466,7 +466,11 @@ case "$MODE" in
   reset) WRITE_ARGS=("$STORE" "$MODE" "$PROJ_CANON" "$PROJ_CANON" "$TRUST_FLAG" "$IMPORT_FLAGS") ;;
   *) WRITE_ARGS=("$STORE" "$MODE" "$TARGET_REAL" "" "$TRUST_FLAG" "$IMPORT_FLAGS") ;;
 esac
-if ! WRITE_RESULT=$(node - "${WRITE_ARGS[@]}" <<'NODE'
+# A function rather than the heredoc inline in $(...): stock macOS Bash 3.2
+# scans a heredoc inside command substitution for quotes, so an apostrophe in
+# the program text breaks the parse.
+write_store() {
+  node - "$@" <<'NODE'
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
@@ -593,7 +597,8 @@ try {
 console.error(`error: ${store} did not retain the change for ${target}${project && project !== target ? ` and ${project}` : ""} after 3 attempts`);
 process.exit(1);
 NODE
-); then
+}
+if ! WRITE_RESULT=$(write_store "${WRITE_ARGS[@]}"); then
   case "$MODE" in
     worktree) refuse "could not record trust for '$TARGET_REAL' and project '$PROJ_CANON' in '$STORE'" ;;
     reset) refuse "could not remove the decline for project '$PROJ_CANON' in '$STORE'" ;;
