@@ -2103,8 +2103,8 @@ fm_backend_herdr_explicit_close_pane_confirmed() {  # <session> <pane_id>
 #   shell      - every foreground process is a recognized shell AND no
 #                descendant of the pane shell is a verified harness: positive
 #                proof the pane is shell-only. The descendant walk is what makes
-#                this safe for the crew shape, where a nested `treehouse get`
-#                shell sits under the pane's top shell.
+#                this safe for the shape the interactive `treehouse get` leaves,
+#                where its nested shell sits under the pane's top shell.
 #   other      - the foreground group holds something that is neither: a tool
 #                the agent is running in its own process group, a pager, a
 #                stranger's process. Not a shell-only pane. An idle shell
@@ -2286,9 +2286,10 @@ EOF
 #                 proves the pane is shell-only: the registered agent's process
 #                 has exited and Herdr kept its registration (issue #4115;
 #                 Herdr does not release a Pi registration on TUI shutdown when
-#                 a nested shell sits under the pane's top shell, the crew
-#                 shape). This is the explicit agent-free reason: the pane is
-#                 recoverable, and the record it carries is not evidence of a
+#                 a nested shell sits under the pane's top shell, the shape
+#                 the interactive `treehouse get` leaves). This is the
+#                 explicit agent-free reason: the pane is recoverable, and
+#                 the record it carries is not evidence of a
 #                 running agent. No registered status outranks the process
 #                 view, because a killed mid-turn agent leaves `working`
 #                 behind just as a quit one leaves `idle`.
