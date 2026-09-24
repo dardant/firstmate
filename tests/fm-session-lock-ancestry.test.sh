@@ -467,13 +467,11 @@ make_primary_home() {  # <dir>
   # owner, exactly as a real session does at session start.
   cat > "$dir/session.sh" <<'SH'
 #!/usr/bin/env bash
-if [ "${FM_FIXTURE_ORPHAN_HERE:-0}" = 1 ]; then
-  i=0
-  while [ "$i" -lt 200 ] && [ "$(ps -o ppid= -p $$ 2>/dev/null | tr -d ' ')" = "$PPID" ]; do
-    sleep 0.05
-    i=$((i + 1))
-  done
-fi
+i=0
+while [ "$i" -lt 200 ] && [ "$(ps -o ppid= -p $$ 2>/dev/null | tr -d ' ')" = "$FM_FIXTURE_LAUNCHER_PID" ]; do
+  sleep 0.05
+  i=$((i + 1))
+done
 printf '%s\n' "$$" > "$FM_HOME/state/session-pid"
 printf '%s\n' "$$" > "$FM_HOME/state/.lock"
 "$FM_HOME/bin/fm-claude-stop-autoarm.sh" </dev/null > "$FM_HOME/state/hook.out" 2>&1
@@ -482,7 +480,7 @@ SH
   cat > "$dir/daemon.sh" <<'SH'
 #!/usr/bin/env bash
 i=0
-while [ "$i" -lt 200 ] && [ "$(ps -o ppid= -p $$ 2>/dev/null | tr -d ' ')" = "$PPID" ]; do
+while [ "$i" -lt 200 ] && [ "$(ps -o ppid= -p $$ 2>/dev/null | tr -d ' ')" = "$FM_FIXTURE_LAUNCHER_PID" ]; do
   sleep 0.05
   i=$((i + 1))
 done
@@ -497,19 +495,19 @@ SH
 # launcher exits immediately, so the tree is reparented to the orphan reaper and
 # the ancestry walk terminates inside the fixture.
 # The reaper is pid 1 on a plain host but a subreaper elsewhere (WSL's
-# per-session /init, a systemd user manager), so each fixture script waits for
-# its parent to change rather than for pid 1. Returns once the hook has recorded its exit
-# code.
+# per-session /init, a systemd user manager), so the launcher passes its own pid
+# and each fixture script waits only while that launcher is still its parent.
+# Returns once the hook has recorded its exit code.
 run_fixture_tree() {  # <dir> <session-bin> [<daemon-bin>]
   local dir=$1 session_bin=$2 daemon_bin=${3:-} i
   if [ -n "$daemon_bin" ]; then
     env -u CLAUDE_CODE_SESSION_ID -u CLAUDE_PID \
-      FM_HOME="$dir" FM_SESSION_BIN="$session_bin" FM_FIXTURE_ORPHAN_HERE=0 \
-      bash -c '"$0" "$1" &' "$daemon_bin" "$dir/daemon.sh"
+      FM_HOME="$dir" FM_SESSION_BIN="$session_bin" \
+      bash -c 'FM_FIXTURE_LAUNCHER_PID=$$ "$0" "$1" &' "$daemon_bin" "$dir/daemon.sh"
   else
     env -u CLAUDE_CODE_SESSION_ID -u CLAUDE_PID \
-      FM_HOME="$dir" FM_FIXTURE_ORPHAN_HERE=1 \
-      bash -c '"$0" "$1" &' "$session_bin" "$dir/session.sh"
+      FM_HOME="$dir" \
+      bash -c 'FM_FIXTURE_LAUNCHER_PID=$$ "$0" "$1" &' "$session_bin" "$dir/session.sh"
   fi
   i=0
   while [ "$i" -lt 400 ] && [ ! -s "$dir/state/hook.rc" ]; do
@@ -609,7 +607,7 @@ make_background_session_home() {  # <dir>
   cat > "$dir/frontend.sh" <<'SH'
 #!/usr/bin/env bash
 i=0
-while [ "$i" -lt 200 ] && [ "$(ps -o ppid= -p $$ 2>/dev/null | tr -d ' ')" = "$PPID" ]; do
+while [ "$i" -lt 200 ] && [ "$(ps -o ppid= -p $$ 2>/dev/null | tr -d ' ')" = "$FM_FIXTURE_LAUNCHER_PID" ]; do
   sleep 0.05
   i=$((i + 1))
 done
@@ -740,7 +738,7 @@ test_e2e_background_session_keeps_its_lock_across_a_recycled_chain() {
   env -u CLAUDE_CODE_SESSION_ID -u CLAUDE_PID \
     FM_HOME="$dir" FM_FIXTURE_CLAUDE="$NAMED_CLAUDE" FM_POLL=1 FM_HEARTBEAT=999999 \
     FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=0 \
-    bash -c '"$0" "$1" &' "$NAMED_CLAUDE" "$dir/frontend.sh"
+    bash -c 'FM_FIXTURE_LAUNCHER_PID=$$ "$0" "$1" &' "$NAMED_CLAUDE" "$dir/frontend.sh"
   wait_for_file "$dir/state/frontend-lock.rc" "the front-end's lock result"
   wait_for_file "$dir/state/spare-pid" "the bg-spare"
   frontend=$(tr -d '[:space:]' < "$dir/state/frontend-pid")

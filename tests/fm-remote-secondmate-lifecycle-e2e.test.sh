@@ -44,7 +44,6 @@ cleanup() {
   # root - a path unique to this fixture - until none is left.
   # shellcheck source=bin/fm-remote-job-lib.sh
   . "$ROOT/bin/fm-remote-job-lib.sh"
-  FM_REMOTE_JOB_STATE="$TMP_ROOT/remote-jobs"
   for _ in 1 2 3 4 5; do
     worker_pid=$(ps -eo pid=,args= 2>/dev/null \
       | awk -v worker="$REMOTE_ROOT/bin/fm-remote-job-worker.sh" '$3 == worker { print $1 }')
