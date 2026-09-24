@@ -1,0 +1,10 @@
+17:02:26 head: PR ship reported done (implementation committed) but no pr= recorded yet; pane redrawing every 10s
+17:02:29 WAKE: signal: /tmp/fm-live-finish.lhW9ZG/s4-head/state/noprship.status 
+17:02:35 WAKE: stale: fm-lab-finishquiet-3877687-3479:w1:p1 
+17:02:43 WAKE: stale: fm-lab-finishquiet-3877687-3479:w1:p1 
+17:02:54 WAKE: stale: fm-lab-finishquiet-3877687-3479:w1:p1 
+17:03:06 WAKE: stale: fm-lab-finishquiet-3877687-3479:w1:p1 
+17:03:14 WAKE: stale: fm-lab-finishquiet-3877687-3479:w1:p1 
+17:03:24 WAKE: stale: fm-lab-finishquiet-3877687-3479:w1:p1 
+17:03:27 watcher still blocking at window end (no wake)
+stale wakes: 6

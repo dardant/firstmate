@@ -1,0 +1,3 @@
+16:56:45 start head: scout done then crew-written resolved line, stable idle Claude pane, FM_STALE_ESCALATE_SECS=20
+16:56:47 WAKE: signal: /tmp/fm-live-finish.lhW9ZG/s2-head/state/donescout.status 
+16:58:15 watcher still blocking at window end (no wake)

@@ -1,0 +1,4 @@
+17:01:25 head: crew declares a new done after the follow-up; pane keeps redrawing every 10s
+17:01:27 WAKE: signal: /tmp/fm-live-finish.lhW9ZG/s1-head/state/heldpr.status 
+17:02:26 watcher still blocking at window end (no wake)
+stale wakes: 0

@@ -1,0 +1,3 @@
+16:53:36 start head: ship done + pr= recorded, idle Claude pane redrawing every 10s
+16:53:38 WAKE: signal: /tmp/fm-live-finish.lhW9ZG/s1-head/state/heldpr.status 
+16:55:07 watcher still blocking at window end (no wake)

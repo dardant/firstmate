@@ -1,0 +1,81 @@
+Live check in isolated Herdr lab fm-lab-finishquiet-3877687-3479, Claude Code 2.1.280 (Claude Code), herdr herdr 0.9.0
+
+=== control pane, launched WITHOUT CLAUDE_CODE_ENABLE_AWAY_SUMMARY, /config filtered for 'recap':
+ ▐▛███▛█   Claude Code v2.1.280
+▝▜██████▀  Opus 5.5 (1M context) with high effort · Claude Max
+  ▝▝ ▝▝    ~/projects/agents/firstmate
+
+
+❯ /config
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Settings  Status   Config   Usage   Stats
+
+
+  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+  │ ⌕ Search settings…                                                                                               │
+  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+  ❯ Auto-compact                               false
+    Continue automatically at usage limit      true
+    Switch models when a message is flagged    Not asked yet
+    Show tips                                  true
+    Reduce motion                              false
+    Thinking mode                              true
+    Fast mode (Opus 5.5)                       false
+    Prompt suggestions                         false
+    Session recap                              true
+    Rewind code (checkpoints)                  true
+    Dynamic workflows                          true
+    Ultracode keyword trigger                  true
+    Dynamic workflow size                      medium (default)
+    Verbose output                             false
+    Terminal progress bar                      true
+    Show turn duration                         true
+    Time format                                auto
+    Default permission mode                    Manual
+    Worktree base ref                          fresh
+    Use auto mode during plan                  true
+  ↓ 26 more below
+
+  Enter/Space to change · / to search · Esc to close
+
+=== worker pane, launched with the fm-spawn claude launch env (CLAUDE_CODE_ENABLE_AWAY_SUMMARY=false), same filter:
+ ▐▛███▛█   Claude Code v2.1.280
+▝▜██████▀  Opus 5.5 (1M context) with high effort · Claude Max
+  ▝▝ ▝▝    ~/projects/agents/firstmate
+
+
+❯ /config
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Settings  Status   Config   Usage   Stats
+
+
+  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+  │ ⌕ Search settings…                                                                                               │
+  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+  ❯ Auto-compact                               false
+    Continue automatically at usage limit      true
+    Switch models when a message is flagged    Not asked yet
+    Show tips                                  true
+    Reduce motion                              false
+    Thinking mode                              true
+    Fast mode (Opus 5.5)                       false
+    Prompt suggestions                         false
+    Session recap                              false
+    Rewind code (checkpoints)                  true
+    Dynamic workflows                          true
+    Ultracode keyword trigger                  true
+    Dynamic workflow size                      medium (default)
+    Verbose output                             false
+    Terminal progress bar                      true
+    Show turn duration                         true
+    Time format                                auto
+    Default permission mode                    Manual
+    Worktree base ref                          fresh
+    Use auto mode during plan                  true
+  ↓ 26 more below
+
+  Enter/Space to change · / to search · Esc to close

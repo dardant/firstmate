@@ -1,0 +1,52 @@
+16:59:55 head: real fm-send follow-up steer to the parked PR ship (done + pr= on record); lab-only home, FM_GATE_REFUSE_BYPASS=1 as tests/herdr-test-safety.sh does
+fm-send rc=0
+/tmp/fm-live-finish.lhW9ZG/s1-head/state/heldpr.inbox:
+001.msg
+handled
+
+/tmp/fm-live-finish.lhW9ZG/s1-head/state/heldpr.inbox/handled:
+--- pane right after the doorbell:
+  ▝▝ ▝▝    ~/projects/agents/firstmate
+
+
+❯ : Firstmate instruction waiting: list '/tmp/fm-live-finish.lhW9ZG/s1-head/state/heldpr.inbox'/*.msg and, in numeric
+  order, read and act on each, then mv each handled file to
+  '/tmp/fm-live-finish.lhW9ZG/s1-head/state/heldpr.inbox'/handled/.
+
+✻ Thinking… (3s · ↓ 75 tokens · thought for 2s)
+
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Opus 5.5 (1M context) | 1M ctx | 943k left (94%)
+  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents
+17:00:12 WAKE: stale: fm-lab-finishquiet-3877687-3479:w1:p1 
+17:01:15 watcher still blocking at window end (no wake)
+--- inbox after:
+/tmp/fm-live-finish.lhW9ZG/s1-head/state/heldpr.inbox:
+handled
+
+/tmp/fm-live-finish.lhW9ZG/s1-head/state/heldpr.inbox/handled:
+001.msg
+--- triage log tail:
+[2026-09-24T12:54:33-0400] absorbed stale (finish already on record, crew parked): fm-lab-finishquiet-3877687-3479:w1:p1
+[2026-09-24T12:54:44-0400] absorbed stale (finish already on record, crew parked): fm-lab-finishquiet-3877687-3479:w1:p1
+[2026-09-24T12:54:54-0400] absorbed stale (finish already on record, crew parked): fm-lab-finishquiet-3877687-3479:w1:p1
+[2026-09-24T12:55:03-0400] absorbed stale (finish already on record, crew parked): fm-lab-finishquiet-3877687-3479:w1:p1
+--- pane at end:
+     drwxrwxr-x 3 dardan dardan 4096 Sep 24 12:59 .
+     … +15 lines (ctrl+o to expand)
+
+● Bash(mv /tmp/fm-live-finish.lhW9ZG/s1-head/state/heldpr.inbox/001.msg
+      /tmp/fm-live-finish.lhW9ZG/s1-head/state/heldpr.inbox/handled/)
+  ⎿  Done
+
+● OK
+
+✻ Worked for 8s · done 1:00 PM
+
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Opus 5.5 (1M context) | 1M ctx | 942k left (94%)
+  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents
