@@ -184,7 +184,7 @@ test_canonical_partitions_preserve_full_lint() {
   fakebin="$tmp/bin"
   mkdir -p "$fakebin"
   all=$(CI=true "$LINT" --list-files | LC_ALL=C sort)
-  for count in 2 3; do
+  for count in 2 4; do
     : > "$tmp/union"
     for part in $(seq 1 "$count"); do
       part="${part}of$count"
@@ -217,7 +217,7 @@ test_canonical_partitions_preserve_full_lint() {
   overlap="$tmp/jobs2.overlap"
   mkdir -p "$overlap"
   fm_lint_stub_shellcheck "$fakebin" "$tmp/jobs2.roots"
-  PATH="$fakebin:$PATH" FM_TEST_OVERLAP_DIR="$overlap" \
+  PATH="$fakebin:$PATH" FM_TEST_OVERLAP_DIR="$overlap" FM_TEST_OVERLAP_POLLS=100 \
     "$LINT" --partition 1of2 --jobs 2 > "$tmp/jobs2.out" 2>&1 \
     || fail "partition with --jobs 2 failed: $(cat "$tmp/jobs2.out")"
   [ -e "$overlap/overlap" ] || fail "--jobs 2 did not run two partition workers concurrently"
@@ -303,8 +303,9 @@ fm_lint_write_diff_file() {
 # FM_TEST_MODE_LOG is set, it records the effective analysis mode, treating
 # ShellCheck's default as full analysis. When FM_TEST_FLAG_LOG is set, it
 # records whether --external-sources was passed and the --exclude value.
-# When FM_TEST_OVERLAP_DIR is set, it holds a directory lock briefly and marks
-# overlap when another stub invocation already holds it.
+# When FM_TEST_OVERLAP_DIR is set, it marks overlap when another stub invocation
+# already holds a directory lock; the holder keeps it until overlap appears or
+# FM_TEST_OVERLAP_POLLS (default 3) tenth-second polls elapse.
 fm_lint_stub_shellcheck() {
   local fakebin=$1 log=$2
   : > "$log"
@@ -337,7 +338,11 @@ if [ -n "\${FM_TEST_FLAG_LOG:-}" ]; then
 fi
 if [ -n "\${FM_TEST_OVERLAP_DIR:-}" ]; then
   if mkdir "\$FM_TEST_OVERLAP_DIR/active" 2>/dev/null; then
-    sleep 0.3
+    polls=\${FM_TEST_OVERLAP_POLLS:-3}
+    while [ "\$polls" -gt 0 ] && [ ! -e "\$FM_TEST_OVERLAP_DIR/overlap" ]; do
+      sleep 0.1
+      polls=\$((polls - 1))
+    done
     rmdir "\$FM_TEST_OVERLAP_DIR/active"
   else
     : > "\$FM_TEST_OVERLAP_DIR/overlap"

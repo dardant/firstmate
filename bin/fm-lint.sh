@@ -50,8 +50,9 @@
 # source-aware analysis, never changed-only or --fast, and does not accept
 # explicit paths. It defaults to one worker because one source-following
 # ShellCheck process can peak at several GB, and two concurrent workers once
-# exhausted a 16 GB hosted runner; --jobs 2 opts back in. Each partition also runs workflow lint and backend-purity
-# checks, keeping either invocation independently useful.
+# exhausted a 16 GB hosted runner; --jobs 2 opts back in. Each partition also
+# runs workflow lint and backend-purity checks, keeping each invocation
+# independently useful.
 # ShellCheck re-parses and re-analyzes a sourced file at every followed source
 # statement, so a file that follows the same library twice doubles that
 # library's analysis cost for every root that reaches it; later sites of an
