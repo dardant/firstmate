@@ -2234,6 +2234,52 @@ test_finish_on_record_redrawing_pane_stays_quiet() {
   pass "a finish on record stays quiet on a quiet or redrawing pane, while a running pipeline and an unrecorded PR still take their usual paths"
 }
 
+# Enqueue one firstmate steer for <task> through the steering-inbox owner, then
+# acknowledge it the way a worker does, so no re-ring ladder is in play.
+finish_stale_steer() {  # <dir> <task> <text>
+  local rec
+  rec=$(. "$ROOT/bin/fm-task-inbox-lib.sh" && fm_task_inbox_write "$1/state" "$2" "$3") \
+    || fail "could not enqueue the fixture steer"
+  mv "$rec" "${rec%/*}/handled/" || fail "could not acknowledge the fixture steer"
+}
+
+test_finish_on_record_reopened_by_later_steer() {
+  local dir state window idle
+  window="test:fm-steered-pr"
+  idle='state: done · source: status-log · PR https://example.invalid/pull/2 checks green · run still monitoring PR'
+  dir=$(finish_stale_case steered-pr "$window" \
+    'kind=ship\nmode=no-mistakes\npr=https://example.invalid/pull/2\n' \
+    'working [at=1790200000]: validation started\n')
+  state="$dir/state"
+
+  # A steer the crew acted on before it reported its finish leaves that finish on
+  # record, so the parked pane stays quiet.
+  finish_stale_steer "$dir" steered-pr 'address the review comment'
+  sleep 1
+  printf 'done [at=%s]: PR https://example.invalid/pull/2 checks green\n' "$(date +%s)" >> "$state/steered-pr.status"
+  finish_stale_reseen "$dir" steered-pr
+  finish_stale_round "$dir" "$window" 'idle composer, done' FM_FAKE_CREW_STATE="$idle" \
+    || fail "a finish declared after its steer was surfaced: $(cat "$dir/watch.out")"
+
+  # A follow-up steer after the done reopens the task: the brief forbids a bare
+  # working: acknowledgement, so the log still ends on that done while the crew
+  # works and then stalls with nothing running. Before the fix this was absorbed.
+  finish_stale_steer "$dir" steered-pr 'fix the CI lint failure'
+  finish_stale_round "$dir" "$window" 'lint fix half applied, menu open' FM_FAKE_CREW_STATE="$idle" \
+    && fail "a stalled follow-up steer was absorbed as a finish on record"
+  grep -Fx "stale: $window" "$dir/watch.out" >/dev/null \
+    || fail "the stalled follow-up did not surface the stale wake"
+  ack_stopped_cycle "$state" || fail "could not acknowledge the surfaced follow-up"
+
+  # The crew's next finish closes the follow-up, so its parked pane is quiet again.
+  sleep 1
+  printf 'done [at=%s]: CI lint fixed, checks green\n' "$(date +%s)" >> "$state/steered-pr.status"
+  finish_stale_reseen "$dir" steered-pr
+  finish_stale_round "$dir" "$window" 'idle composer, done again' FM_FAKE_CREW_STATE="$idle" \
+    || fail "a finish declared after the follow-up was surfaced: $(cat "$dir/watch.out")"
+  pass "a steer after a recorded finish reopens stale detection until the crew declares a new finish"
+}
+
 test_finished_scout_with_resolved_line_never_wedge_escalates() {
   local dir state window key text none
   window="test:fm-done-scout"
@@ -6169,6 +6215,7 @@ test_afk_busy_declared_pause_hands_off_plain_stale
 test_afk_busy_declared_pause_ticking_pane_hands_off_once
 test_nonterminal_stale_not_working_surfaced
 test_finish_on_record_redrawing_pane_stays_quiet
+test_finish_on_record_reopened_by_later_steer
 test_finished_scout_with_resolved_line_never_wedge_escalates
 test_unfinished_crew_with_resolved_line_still_surfaces
 test_nonterminal_stale_paused_absorbed_then_resurfaced

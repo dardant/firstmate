@@ -1621,9 +1621,15 @@ captain_call_stale_bound() {  # <window-key> <task>
 # branch). A ship delivering a PR also reports `done` when its implementation is
 # committed, before validation, so its finish is on record only once firstmate has
 # recorded that PR (`pr=`, which bin/fm-pr-check.sh writes from the ready signal).
-# A pure status and metadata read, so the stale path can ask it before alarming.
+# A firstmate steer enqueued at or after that `done` reopens the task until the
+# crew declares a new state-bearing line, because the brief forbids a bare
+# `working:` acknowledgement: a follow-up that then stalls must still alarm. Each
+# time comes from its own record (the line's `[at=]` stamp, the steer's `at=`),
+# and an unreadable one counts as a later steer, so a doubtful order alarms.
+# A pure status, metadata, and inbox read, so the stale path can ask it before
+# alarming.
 crew_finish_on_record() {  # <task>
-  local task=$1 statusf meta line verb last='' kind='' mode='' pr=''
+  local task=$1 statusf meta line verb last='' last_line='' kind='' mode='' pr='' done_at steer_at
   [ -n "$task" ] || return 1
   statusf="$STATE/$task.status"
   meta="$STATE/$task.meta"
@@ -1634,10 +1640,16 @@ crew_finish_on_record() {  # <task>
     status_line_verb "$line" verb
     case "$verb" in
       working|needs-decision|blocked|done|failed|"${FM_CLASSIFY_CAPTAIN_HELD_VERB:-$FM_CLASSIFY_CAPTAIN_HELD_VERB_DEFAULT}"|"${FM_CLASSIFY_PAUSED_VERB:-$FM_CLASSIFY_PAUSED_VERB_DEFAULT}")
-        last=$verb ;;
+        last=$verb
+        last_line=$line ;;
     esac
   done < "$statusf"
   [ "$last" = "done" ] || return 1
+  if steer_at=$(fm_task_inbox_newest_at "$STATE" "$task"); then
+    done_at=$(status_line_at_epoch "$last_line") || return 1
+    steer_at=$(fm_utc_iso_to_epoch "$steer_at") || return 1
+    [ "$steer_at" -lt "$done_at" ] || return 1
+  fi
   while IFS= read -r line || [ -n "$line" ]; do
     case "$line" in
       kind=*) kind=${line#kind=} ;;
