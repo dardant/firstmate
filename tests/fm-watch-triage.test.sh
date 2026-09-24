@@ -2289,7 +2289,7 @@ test_finished_scout_with_resolved_line_never_wedge_escalates() {
   none='state: unknown · source: none · no current-state source available'
   text='report written, idle'
   dir=$(finish_stale_case done-scout "$window" 'kind=scout\n' \
-    'needs-decision [at=1790200000] [key=scope]: pick A or B\ndone [at=1790200060]: report written to data/scout/report.md\nresolved [key=scope] [at=1790200120]: answered: A\nnote [at=1790200130]: report linked in the backlog\n')
+    'needs-decision [at=1790200000] [key=scope]: pick A or B\ndone [at=1790200060]: report written to data/scout/report.md\nresolved [key=scope] [at=1790200120]: cleared without an answer, the report covers both options\nnote [at=1790200130]: report linked in the backlog\n')
   state="$dir/state"
   status_is_captain_relevant "$(last_status_line "$state/done-scout.status")" \
     && fail "fixture drift: the scout's last line must take the non-terminal path"
