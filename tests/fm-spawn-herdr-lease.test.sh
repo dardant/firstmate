@@ -68,7 +68,23 @@ case "${1:-} ${2:-}" in
     printf '{"result":{"pane":{"pane_id":"%s","tab_id":"tab1","workspace_id":"ws1","cwd":"%s","foreground_cwd":"%s"}}}\n' \
       "${3:-}" "$(cat "$D/cwd" 2>/dev/null)" "$(cat "$D/cwd" 2>/dev/null)"
     exit 0 ;;
-  'agent get') printf '{"error":{"code":"agent_not_found"}}\n'; exit 0 ;;
+  'pane send-text')
+    # With agent-survives armed, the launch line starts a harness that no
+    # cleanup stops, as after the kimi or backlog-commit failures.
+    case "${4:-}" in
+      '. '*) [ ! -f "$D/agent-survives" ] || : > "$D/agent-live" ;;
+    esac
+    exit 0 ;;
+  'agent get')
+    if [ -f "$D/agent-live" ]; then
+      printf '{"result":{"agent":{"agent_status":"working"}}}\n'
+    else
+      printf '{"error":{"code":"agent_not_found"}}\n'
+    fi
+    exit 0 ;;
+  'pane process-info')
+    printf '{"result":{"type":"pane_process_info","process_info":{"pane_id":"%s","shell_pid":4242,"foreground_processes":[{"pid":4243,"name":"rovo","argv":["rovo"],"cmdline":"rovo run"}]}}}\n' "${4:-}"
+    exit 0 ;;
 esac
 exit 0
 SH
@@ -187,7 +203,27 @@ test_herdr_ship_abort_after_publish_returns_its_lease() {
   pass "fm-spawn herdr: an abort after the record was published still returns the leased worktree"
 }
 
+# Once the launch line may have reached the pane, a clean slot is still kept
+# while its agent is not proven gone: returning it would let the next spawn
+# lease a worktree an orphaned worker is still editing.
+test_herdr_ship_abort_after_launch_keeps_a_live_agents_lease() {
+  local dir out rc=0 slot
+  dir=$(new_case abort-live-agent lease5)
+  slot=$(cat "$dir/fake/slot")
+  : > "$dir/fake/agent-survives"
+  out=$(run_spawn "$dir" lease5 --harness rovo) || rc=$?
+  [ "$rc" -ne 0 ] || fail "a rovo ship that never shows ready must refuse"$'\n'"$out"
+  [ -f "$dir/fake/agent-live" ] || fail "the fixture's launch never started the surviving agent"$'\n'"$out"
+  [ ! -e "$dir/home/state/lease5.meta" ] || fail "the aborted spawn's record should be rolled back"
+  assert_not_contains "$(cat "$dir/fake/treehouse-log")" "return --force" \
+    "an abort must not return a leased worktree whose launched agent is still alive"$'\n'"$out"
+  assert_contains "$out" "not proven agent-free" "the warning should say why the lease was kept"
+  assert_contains "$out" "treehouse return --force '$slot'" "the warning should name the manual return"
+  pass "fm-spawn herdr: an abort after launch keeps the lease while its agent is still alive"
+}
+
 test_herdr_ship_tab_opens_in_its_leased_worktree
 test_herdr_ship_abort_returns_its_lease
 test_herdr_ship_abort_keeps_a_dirty_lease
 test_herdr_ship_abort_after_publish_returns_its_lease
+test_herdr_ship_abort_after_launch_keeps_a_live_agents_lease

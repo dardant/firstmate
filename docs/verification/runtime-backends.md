@@ -1691,7 +1691,7 @@ ok - real herdr: a restarted server resumes the ship's agent inside its recorded
 
 Against the spawn from before this change the same guard failed at its first assertion, naming the project as the pane's root directory.
 A Herdr release that rejects `pane report-agent-session` runs only that first assertion and prints that the restore phase was not exercised.
-`tests/fm-spawn-herdr-lease.test.sh` pins the lease-first ordering and the abort-path lease return without Herdr or Treehouse installed: an abort returns a clean leased worktree before or after the record is published, and keeps one that holds work.
+`tests/fm-spawn-herdr-lease.test.sh` pins the lease-first ordering and the abort-path lease return without Herdr or Treehouse installed: an abort returns a clean leased worktree before or after the record is published, and keeps one that holds work or whose launched agent is not proven gone.
 
 ### Stale agent registration
 
