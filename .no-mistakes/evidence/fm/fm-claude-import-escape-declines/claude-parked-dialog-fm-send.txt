@@ -1,0 +1,27 @@
+## Setup: task t1 (harness=claude, tmux backend, isolated tmux socket + FM_HOME) whose pane runs real claude 2.1.280 in the primary clone, parked on the imports dialog
+  Allow external CLAUDE.md file imports?
+  ❯ No, disable external imports
+    Yes, allow external imports
+  Enter to confirm · Esc to cancel
+store entry: {}
+
+## Scenario: firstmate sends the parked task an instruction
+$ bin/fm-send.sh t1 'please continue with the brief'
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the requested message WILL still be sent.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+fm-send: doorbell skipped (composer visibly holds pending text); the steer is durably recorded at /tmp/fm-claude-imports-lab.mdTNAy/home/state/t1.inbox/001.msg and the watcher will re-ring
+exit=0
+undelivered inbox records kept for the watcher: 
+--- pane after fm-send (the dialog must still be showing; no doorbell line or Enter reached it):
+  External imports:
+    /tmp/fm-claude-imports-lab.mdTNAy/fmhome/AGENTS.md
+  Important: Only use Claude Code with files you trust. Accessing untrusted files may pose security risks https://code.claude.com/docs/en/security
+  ❯ No, disable external imports
+    Yes, allow external imports
+  Enter to confirm · Esc to cancel
+store entry after fm-send: {}

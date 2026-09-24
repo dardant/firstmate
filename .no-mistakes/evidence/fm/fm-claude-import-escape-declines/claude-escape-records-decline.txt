@@ -1,0 +1,23 @@
+## Scenario: Escape on the real Claude Code 2.1.280 imports dialog
+$ claude --version: 2.1.280 (Claude Code)
+--- pane before Escape (primary clone under a firstmate-home-like parent whose CLAUDE.md imports @AGENTS.md)
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Allow external CLAUDE.md file imports?
+  This project's CLAUDE.md imports files outside the current working directory. Never allow this for third-party repositories.
+  External imports:
+    /tmp/fm-claude-imports-lab.mdTNAy/fmhome/AGENTS.md
+  Important: Only use Claude Code with files you trust. Accessing untrusted files may pose security risks https://code.claude.com/docs/en/security
+  ❯ No, disable external imports
+    Yes, allow external imports
+  Enter to confirm · Esc to cancel
+store entry before: {}
+--- pane after Escape
+▝▜██████▀  Opus 5.5 (1M context) · Claude Max
+  ▝▝ ▝▝    /tmp/fm-claude-imports-lab.mdTNAy/fmhome/projects/proj
+  Get to finished work sooner with Opus 5.5. Switch anytime with /model.
+                                                                                                                 Fast mode is now available · /fast to turn on
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ Try "create a util logging.py that..."
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏸ manual mode on · ? for shortcuts · ← for agents
+store entry after Escape: {"Approved":false,"WarningShown":true}

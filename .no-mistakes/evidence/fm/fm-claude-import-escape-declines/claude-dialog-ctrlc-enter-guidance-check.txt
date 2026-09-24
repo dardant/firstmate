@@ -1,0 +1,12 @@
+## Guidance check: Ctrl-C twice on the real imports dialog (claude 2.1.280 (Claude Code))
+entry before: {}
+--- pane after:
+  Important: Only use Claude Code with files you trust. Accessing untrusted files may pose security risks https://code.claude.com/docs/en/security
+  ❯ No, disable external imports
+    Yes, allow external imports
+  Enter to confirm · Esc to cancel
+entry after Ctrl-C x2: {}
+
+## Guidance check: Enter on the preselected 'No'
+entry after Enter: {"Approved":false,"WarningShown":true}
+reset: /tmp/fm-claude-imports-lab.mdTNAy/fmhome/projects/proj

@@ -1,0 +1,49 @@
+## tmux: task t1 (harness=claude) runs real claude 2.1.280 in the primary clone, parked on the imports dialog
+  Allow external CLAUDE.md file imports?
+  ❯ No, disable external imports
+  Enter to confirm · Esc to cancel
+store entry: {}
+
+## Scenario (this change): fm-control interrupt refuses
+$ bin/fm-control.sh t1 interrupt
+error: task t1's pane shows a claude launch dialog, and any key would answer it (Escape on Claude's external-imports dialog records a standing decline); 'interrupt' refuses. Use 'exit' or 'relaunch', which stop a parked agent by signal without answering it, and leave the dialog's question to the operator
+exit=1
+--- pane after:
+    Yes, allow external imports
+  Enter to confirm · Esc to cancel
+store entry: {}
+
+## Baseline (pre-change commit 5391df4): the same fm-control interrupt
+$ <base>/bin/fm-control.sh t1 interrupt
+interrupt-delivered t1 harness=claude backend=tmux verified=agent-alive cancel=unconfirmed
+exit=0
+--- pane after:
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ Try "create a util logging.py that..."
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle) · ← for agents
+store entry: {"Approved":false,"WarningShown":true}   <- the incident: interrupt's Escape recorded a standing decline
+## Recovery: operator resets the decline the baseline interrupt recorded
+reset: /tmp/fm-claude-imports-lab.mdTNAy/fmhome/projects/proj
+entry: {}
+
+## tmux: relaunch real claude in the primary clone for t1; it asks again
+  Allow external CLAUDE.md file imports?
+  ❯ No, disable external imports
+  Enter to confirm · Esc to cancel
+pane's claude pid: 4140853
+
+## Scenario (this change): fm-control exit stops it by signal with no key
+$ bin/fm-control.sh t1 exit
+stopped t1 harness=claude backend=tmux endpoint=fmses:fm-t1 worktree=/tmp/fm-claude-imports-lab.mdTNAy/wt
+exit=0
+pane's claude pid 4140853 alive: no
+--- pane after:
+    Yes, allow external imports
+  Enter to confirm · Esc to cancel
+bash-5.3$
+store entry: {}   (absent/absent: the question stays unanswered)
+
+## Scenario: exit is idempotent on the stopped task
+already-stopped t1 harness=claude backend=tmux endpoint=fmses:fm-t1 worktree=/tmp/fm-claude-imports-lab.mdTNAy/wt
+exit=0

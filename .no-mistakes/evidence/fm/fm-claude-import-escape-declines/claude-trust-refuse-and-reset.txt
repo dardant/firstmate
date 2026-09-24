@@ -1,0 +1,42 @@
+## Setup: real claude 2.1.280 in the primary clone; real Escape on its imports dialog recorded:
+entry: {"Approved":false,"WarningShown":true}
+
+## Scenario: a spawn's trust registration refuses a recorded decline and names the reset command
+$ bin/fm-claude-trust.sh <worktree> <project>
+error: refusing to pre-register Claude trust: project entry for '/tmp/fm-claude-imports-lab.mdTNAy/fmhome/projects/proj' in '/tmp/fm-claude-imports-lab.mdTNAy/cfg/.claude.json' already declined external CLAUDE.md imports, and a spawn must not override that consent; Claude Code records the same decline for Escape as for "No", so if nobody chose it, reset it with: /home/dardan/.no-mistakes/worktrees/a2097c65a770/01M394MJDEJGK3VA4HBRTG0QY6/bin/fm-claude-trust.sh --reset-imports-decline '/tmp/fm-claude-imports-lab.mdTNAy/fmhome/projects/proj'
+exit=1
+store sha before=5e545b609ef752fa after=5e545b609ef752fa -> unchanged; worktree entry written: false
+
+## Adversarial: reset refuses a subdirectory that is not the checkout root
+error: refusing to reset the external-imports decline: '/tmp/fm-claude-imports-lab.mdTNAy/fmhome/projects/proj/sub' is not a checkout root (its root is '/tmp/fm-claude-imports-lab.mdTNAy/fmhome/projects/proj')
+exit=1  entry: {"Approved":false,"WarningShown":true}
+
+## Adversarial: reset of a non-git directory refuses
+error: refusing to reset the external-imports decline: project '/tmp/fm-claude-imports-lab.mdTNAy/notgit' is not inside a git repository
+exit=1  entry: {"Approved":false,"WarningShown":true}
+
+## Scenario: the operator runs the exact reset step named in the refusal
+$ /home/dardan/.no-mistakes/worktrees/a2097c65a770/01M394MJDEJGK3VA4HBRTG0QY6/bin/fm-claude-trust.sh --reset-imports-decline '/tmp/fm-claude-imports-lab.mdTNAy/fmhome/projects/proj'
+reset: /tmp/fm-claude-imports-lab.mdTNAy/fmhome/projects/proj
+exit=0  entry: {}
+$ (second run) /home/dardan/.no-mistakes/worktrees/a2097c65a770/01M394MJDEJGK3VA4HBRTG0QY6/bin/fm-claude-trust.sh --reset-imports-decline '/tmp/fm-claude-imports-lab.mdTNAy/fmhome/projects/proj'
+unchanged: /tmp/fm-claude-imports-lab.mdTNAy/fmhome/projects/proj
+exit=0  entry: {}
+
+## Adversarial: reset never removes an APPROVED consent
+entry before: {"Approved":true,"WarningShown":true}
+$ /home/dardan/.no-mistakes/worktrees/a2097c65a770/01M394MJDEJGK3VA4HBRTG0QY6/bin/fm-claude-trust.sh --reset-imports-decline '/tmp/fm-claude-imports-lab.mdTNAy/fmhome/projects/proj'
+unchanged: /tmp/fm-claude-imports-lab.mdTNAy/fmhome/projects/proj
+exit=0  entry: {"Approved":true,"WarningShown":true}
+
+## Scenario: after reset, real claude in the primary clone asks the question again
+dialog shown again: yes
+  Allow external CLAUDE.md file imports?
+  ❯ No, disable external imports
+    Yes, allow external imports
+  Enter to confirm · Esc to cancel
+
+## Scenario: after reset, the spawn's trust registration succeeds without granting import consent
+trusted: /tmp/fm-claude-imports-lab.mdTNAy/wt
+trusted (project root): /tmp/fm-claude-imports-lab.mdTNAy/fmhome/projects/proj
+exit=0  project entry: {}  worktree entry written: true

@@ -1,0 +1,6 @@
+ok - fm-spawn herdr: a ship leases its worktree first and opens its tab inside it
+ok - fm-spawn herdr: an abort before the task record returns the leased worktree
+ok - fm-spawn herdr: an abort keeps a leased worktree that holds work and names the manual return
+ok - fm-spawn herdr: an abort after the record was published still returns the leased worktree
+ok - fm-spawn herdr: an abort after launch keeps the lease while its agent is still alive
+ok - fm-spawn herdr: an abort after launch keeps the lease while an unregistered harness still runs

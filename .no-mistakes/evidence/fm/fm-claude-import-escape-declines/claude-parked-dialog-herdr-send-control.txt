@@ -1,0 +1,42 @@
+## Herdr 0.9.0 lab session fm-lab-fm-imports-dlg-4091433-74: task t2 (harness=claude, backend=herdr) runs real claude 2.1.280 in the PRIMARY clone (the restore-incident shape), parked on the imports dialog
+  Allow external CLAUDE.md file imports?
+  ❯ No, disable external imports
+    Yes, allow external imports
+  Enter to confirm · Esc to cancel
+herdr agent get: {"agent":"claude","agent_status":"blocked","cwd":"/tmp/fm-claude-imports-lab.mdTNAy/fmhome/projects/proj"}
+store entry: {}
+
+## Scenario: fm-send to the parked task types nothing into the dialog
+$ bin/fm-send.sh t2 'please continue with the brief'
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+fm-send: doorbell skipped (composer visibly holds pending text); the steer is durably recorded at /tmp/fm-claude-imports-lab.mdTNAy/home/state/t2.inbox/001.msg and the watcher will re-ring
+exit=
+--- pane after:
+  ❯ No, disable external imports
+    Yes, allow external imports
+  Enter to confirm · Esc to cancel
+store entry after fm-send: {}
+
+## Scenario: fm-control interrupt refuses rather than pressing Escape
+$ bin/fm-control.sh t2 interrupt
+error: task t2's pane shows a claude launch dialog, and any key would answer it (Escape on Claude's external-imports dialog records a standing decline); 'interrupt' refuses. Use 'exit' or 'relaunch', which stop a parked agent by signal without answering it, and leave the dialog's question to the operator
+exit=1
+--- pane after:
+  ❯ No, disable external imports
+    Yes, allow external imports
+  Enter to confirm · Esc to cancel
+store entry after interrupt: {}
+
+## Scenario: fm-control exit stops the parked claude by signal, answering nothing
+claude pids before: 3043854 4039256 4094640 
+$ bin/fm-control.sh t2 exit
+stopped t2 harness=claude backend=herdr endpoint=fm-lab-fm-imports-dlg-4091433-74:w1:p1 worktree=/tmp/fm-claude-imports-lab.mdTNAy/wt
+exit=0
+herdr agent get after: {"code":"agent_not_found","message":"agent target w1:p1 not found"}
+--- pane after:
+    Yes, allow external imports
+  Enter to confirm · Esc to cancel
+proj on  master 31s
+❯
+store entry after exit: {}
+(fm-control exit on Herdr signalled only the lab pane's claude pid 4094640; two unrelated claude processes on the host, 3043854 and 4039256, stayed alive)
