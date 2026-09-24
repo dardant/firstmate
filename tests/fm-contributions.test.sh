@@ -552,14 +552,14 @@ wrap_forge() { # home: log gh calls and apply per-call faults from $FORGE/fault
 set -eu
 printf '%s\n' "$*" >> "$FORGE/calls"
 fault=$(cat "$FORGE/fault" 2>/dev/null || true)
+# Parallel reads share the clock: replace it atomically so no reader sees it empty.
+advance() { printf '%s\n' "$(( $(cat "$FORGE/clock") + $1 ))" > "$FORGE/clock.$$"; mv -f "$FORGE/clock.$$" "$FORGE/clock"; }
 case "$fault" in latency) sleep "${FORGE_LATENCY:-2}" ;; esac
 case "$fault:$*" in
-  reserve:'api repos/o/r/issues/9')
-    printf '%s\n' "$(( $(cat "$FORGE/clock") + 6 ))" > "$FORGE/clock" ;;
-  exhaust:'api repos/o/r/issues/8/comments?'*)
-    printf '%s\n' "$(( $(cat "$FORGE/clock") + 100 ))" > "$FORGE/clock" ;;
+  reserve:'api repos/o/r/issues/9') advance 6 ;;
+  exhaust:'api repos/o/r/issues/8/comments?'*) advance 100 ;;
   fail-late:'api repos/o/r/pulls/8/reviews?'*)
-    printf '%s\n' "$(( $(cat "$FORGE/clock") + 100 ))" > "$FORGE/clock"
+    advance 100
     printf 'HTTP 502\n' >&2; exit 1 ;;
   fail:'api repos/o/r/pulls/8/reviews?'*) printf 'HTTP 502\n' >&2; exit 1 ;;
   down:*) printf 'HTTP 502\n' >&2; exit 1 ;;
