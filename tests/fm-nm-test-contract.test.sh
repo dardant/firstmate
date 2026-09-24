@@ -8,8 +8,7 @@ set -u
 NM="$ROOT/.no-mistakes.yaml"
 
 test_nm_has_no_deterministic_test_command() {
-  command -v ruby >/dev/null 2>&1 \
-    || fail "ruby is required to parse .no-mistakes.yaml for this contract"
+  fm_require_tool ruby "to parse .no-mistakes.yaml for this contract"
   local val
   val=$(ruby -ryaml -e '
 doc = YAML.load_file(ARGV[0]) || {}

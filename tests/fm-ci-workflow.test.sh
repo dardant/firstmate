@@ -20,8 +20,7 @@ set -u
 CI_WORKFLOW="$ROOT/.github/workflows/ci.yml"
 
 assert_present "$CI_WORKFLOW" ".github/workflows/ci.yml is missing"
-command -v ruby >/dev/null 2>&1 \
-  || fail "ruby is required to parse .github/workflows/ci.yml as YAML"
+fm_require_tool ruby "to parse .github/workflows/ci.yml as YAML"
 
 # Resolve the workflow's concurrency contract under one simulated event and
 # print "<group><TAB><cancel-in-progress>". Only the two expression constructs

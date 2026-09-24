@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Behavior tests for tests/lib.sh's fm_live_gate, the single decision every
 # live-harness guard opens with, and for the wiring that makes that decision
-# reach the whole family.
+# reach the whole family. Its sibling fm_require_tool, the prerequisite gate for
+# deterministic suites, is driven the same way at the end.
 #
 # The gate is what turns "a live guard exists" into "a live guard actually ran
 # on the machine that has the harness", so the cases below drive it the way a
@@ -199,6 +200,41 @@ EOF
   pass "all $checked live guards refuse together on FM_LIVE=0"
 }
 
+test_require_tool_skips_locally_and_fails_in_ci() {
+  local path result ci
+  path="$TMP_ROOT/require-tool.test.sh"
+  {
+    printf '#!/usr/bin/env bash\nset -u\n'
+    printf '. "%s/tests/lib.sh"\n' "$ROOT"
+    printf 'fm_require_tool "$1" "to parse the fixture"\n'
+    printf 'printf "ran\\n"\n'
+  } > "$path"
+  chmod +x "$path"
+
+  set +e
+  result=$(clean_env PATH="$BIN:/usr/bin:/bin" "$path" fmfakeharness 2>&1)
+  set -e
+  assert_contains "$result" ran "a present prerequisite must let the suite run"
+
+  set +e
+  result=$(clean_env PATH="$BIN:/usr/bin:/bin" "$path" fmmissingtool 2>&1; printf 'rc=%s\n' "$?")
+  set -e
+  assert_contains "$result" "skip: fmmissingtool not found (required to parse the fixture)" \
+    "a developer host must get a skip naming the tool to install"
+  assert_contains "$result" "rc=0" "a local prerequisite skip must exit 0"
+  assert_not_contains "$result" ran "an absent prerequisite must stop the suite before it runs"
+
+  for ci in GITHUB_ACTIONS=true CI=true; do
+    set +e
+    result=$(clean_env "$ci" PATH="$BIN:/usr/bin:/bin" "$path" fmmissingtool 2>&1; printf 'rc=%s\n' "$?")
+    set -e
+    assert_contains "$result" "rc=1" "$ci must turn an absent prerequisite into a failure"
+    assert_contains "$result" "fmmissingtool is required to parse the fixture" \
+      "the CI failure must name the missing tool and its purpose"
+    assert_not_contains "$result" "skip:" "$ci must never report required coverage as a skip"
+  done
+}
+
 test_default_on_runs_when_the_tool_is_installed
 pass "a default-on guard runs wherever its tools are installed"
 test_default_on_skips_and_names_the_absent_tool
@@ -218,3 +254,5 @@ pass "any entry point of a multi-mode guard turns it on"
 test_gate_lets_a_guard_drive_the_real_fleet_scripts_under_a_gate_marker
 pass "the shared gate carries the gate-refusal bypass into every live guard"
 test_every_live_guard_is_wired_to_the_shared_gate
+test_require_tool_skips_locally_and_fails_in_ci
+pass "a missing prerequisite skips on a developer host and fails in CI"

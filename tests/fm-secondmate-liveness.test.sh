@@ -160,13 +160,16 @@ SH
 # --- unit level: fm_backend_herdr_agent_state -------------------------------
 
 test_herdr_agent_state_preserves_husk_classifier() {
-  local pane_state expected out
+  local pane_state server_state expected out
 
-  for row in 'dead missing' 'no-agent dead' 'live alive' 'unknown unreadable'; do
-    pane_state=${row%% *}
-    expected=${row#* }
-    out=$(FM_TEST_PANE_STATE="$pane_state" bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_pane_agent_state() { printf "%s" "$FM_TEST_PANE_STATE"; }; fm_backend_herdr_agent_state "sess:p1"' "$ROOT")
-    [ "$out" = "$expected" ] || fail "Herdr pane state $pane_state should map to $expected, got '$out'"
+  # An unexplained pane read also consults the session's server state, so that
+  # read is pinned too: a real herdr on PATH would otherwise decide the verdict.
+  # The stopped-server widening itself is owned by tests/fm-backend-herdr.test.sh.
+  for row in 'dead running missing' 'no-agent running dead' 'live running alive' \
+    'unknown running unreadable' 'unknown unknown unreadable'; do
+    read -r pane_state server_state expected <<<"$row"
+    out=$(FM_TEST_PANE_STATE="$pane_state" FM_TEST_SERVER_STATE="$server_state" bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_pane_agent_state() { printf "%s" "$FM_TEST_PANE_STATE"; }; fm_backend_herdr_server_running_state() { printf "%s" "$FM_TEST_SERVER_STATE"; }; fm_backend_herdr_agent_state "sess:p1"' "$ROOT")
+    [ "$out" = "$expected" ] || fail "Herdr pane state $pane_state with server $server_state should map to $expected, got '$out'"
   done
 
   out=$(bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_agent_state "no-colon-target"' "$ROOT")

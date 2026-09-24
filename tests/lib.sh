@@ -332,6 +332,31 @@ fm_live_gate() {
   return 0
 }
 
+# --- prerequisite-tool gate -------------------------------------------------
+#
+# fm_require_tool <tool> <purpose>
+#
+# For a deterministic suite that needs a general-purpose tool the host may not
+# have (ruby for YAML parsing, say), rather than a harness. It returns 0 when
+# <tool> is on PATH. Otherwise, on a developer host, it ends the script with one
+# runner-readable line naming what to install:
+#
+#   skip: <tool> not found (required <purpose>)
+#
+# In CI (GITHUB_ACTIONS=true or CI=true, the signals bin/fm-lint.sh reads) the
+# runner image is expected to provide the tool, so an absent one is a hard
+# failure there and never a silent skip of required coverage.
+
+fm_require_tool() {
+  local tool=$1 purpose=$2
+  command -v "$tool" >/dev/null 2>&1 && return 0
+  if [ "${GITHUB_ACTIONS:-}" = true ] || [ "${CI:-}" = true ]; then
+    fail "$tool is required $purpose, and the CI runner does not provide it"
+  fi
+  printf 'skip: %s not found (required %s)\n' "$tool" "$purpose"
+  exit 0
+}
+
 # --- fakebin / PATH shims ---------------------------------------------------
 #
 # fm_fakebin <dir> creates <dir>/fakebin and echoes it; prepend it to PATH to
