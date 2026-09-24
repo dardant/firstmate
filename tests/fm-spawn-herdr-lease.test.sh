@@ -72,7 +72,8 @@ case "${1:-} ${2:-}" in
 esac
 exit 0
 SH
-  chmod +x "$fb/treehouse" "$fb/herdr"
+  printf '#!/usr/bin/env bash\nexec sleep 30\n' > "$fb/rovo"
+  chmod +x "$fb/treehouse" "$fb/herdr" "$fb/rovo"
 }
 
 # new_case <name> <id> -> case dir with a project, a leasable slot, a home, and fakes.
@@ -96,12 +97,24 @@ EOF
   printf '%s\n' "$dir"
 }
 
-run_spawn() {  # <case-dir> <id>
+run_spawn() {  # <case-dir> <id> [agent-arg...]
   local dir=$1 id=$2
+  shift 2
+  [ "$#" -gt 0 ] || set -- "sh -c 'sleep 1'"
   env -u HERDR_ENV -u HERDR_PANE_ID -u HERDR_SOCKET_PATH -u HERDR_TAB_ID -u HERDR_WORKSPACE_ID \
     PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FAKE_DIR="$dir/fake" HERDR_SESSION=fmlab \
     FM_SPAWN_NO_GUARD=1 FM_GATE_REFUSE_BYPASS=1 \
-    "$SPAWN" "$id" "$dir/proj" "sh -c 'sleep 1'" --mode no-mistakes --yolo off --backend herdr 2>&1
+    FM_ROVO_READY_POLLS=1 FM_ROVO_POLL_INTERVAL=0 \
+    "$SPAWN" "$id" "$dir/proj" "$@" --mode no-mistakes --yolo off --backend herdr 2>&1
+}
+
+# arm_misplaced_pane <case-dir>: the task pane reports a directory other than
+# the leased worktree, so the spawn refuses after the lease and before any
+# task record exists.
+# shellcheck disable=SC2016 # The single-quoted $D and $@ are the fake herdr's own text.
+arm_misplaced_pane() {
+  sed -i.bak 's|arg_after --cwd "\$@" > "\$D/cwd"|printf %s "$D" > "$D/cwd"|' "$1/fakebin/herdr"
+  grep -q 'printf %s "$D" > "$D/cwd"' "$1/fakebin/herdr" || fail "the fixture did not arm the misplaced pane"
 }
 
 test_herdr_ship_tab_opens_in_its_leased_worktree() {
@@ -125,9 +138,7 @@ test_herdr_ship_abort_returns_its_lease() {
   local dir out rc=0 slot
   dir=$(new_case abort-returns lease2)
   slot=$(cat "$dir/fake/slot")
-  # A pane that opens anywhere but the leased worktree refuses after the lease.
-  sed -i.bak 's|arg_after --cwd "\$@" > "\$D/cwd"|printf %s "$D" > "$D/cwd"|' "$dir/fakebin/herdr"
-  grep -q 'printf %s "$D" > "$D/cwd"' "$dir/fakebin/herdr" || fail "the fixture did not arm the misplaced pane"
+  arm_misplaced_pane "$dir"
   out=$(run_spawn "$dir" lease2) || rc=$?
   [ "$rc" -ne 0 ] || fail "a ship whose pane is not in its leased worktree must refuse"$'\n'"$out"
   assert_contains "$out" "not its leased worktree" "the refusal should name the leased worktree"
@@ -137,5 +148,46 @@ test_herdr_ship_abort_returns_its_lease() {
   pass "fm-spawn herdr: an abort before the task record returns the leased worktree"
 }
 
+# `treehouse return --force` cleans and resets the slot, so an abort must never
+# return a leased slot holding work, the same way the freshen gate refuses a
+# dirty pooled slot without touching it.
+test_herdr_ship_abort_keeps_a_dirty_lease() {
+  local dir out rc=0 slot
+  dir=$(new_case abort-dirty lease3)
+  slot=$(cat "$dir/fake/slot")
+  printf 'unsaved\n' > "$slot/wip.txt"
+  arm_misplaced_pane "$dir"
+  out=$(run_spawn "$dir" lease3) || rc=$?
+  [ "$rc" -ne 0 ] || fail "a ship whose pane is not in its leased worktree must refuse"$'\n'"$out"
+  [ ! -e "$dir/home/state/lease3.meta" ] || fail "an aborted spawn must publish no task record"
+  assert_not_contains "$(cat "$dir/fake/treehouse-log")" "return --force" \
+    "an abort must not return a leased worktree that holds uncommitted work"
+  [ "$(cat "$slot/wip.txt" 2>/dev/null)" = unsaved ] || fail "the aborted spawn lost the slot's uncommitted work"
+  assert_contains "$out" "not provably clean" "the warning should say why the lease was kept"
+  assert_contains "$out" "treehouse return --force '$slot'" "the warning should name the manual return"
+  pass "fm-spawn herdr: an abort keeps a leased worktree that holds work and names the manual return"
+}
+
+# An abort after the record was published (here rovo's readiness gate) rolls
+# the record back after the Treehouse project lock was released, so the lease
+# block takes that lock again rather than stranding a durable lease.
+test_herdr_ship_abort_after_publish_returns_its_lease() {
+  local dir out rc=0 slot
+  dir=$(new_case abort-after-publish lease4)
+  slot=$(cat "$dir/fake/slot")
+  out=$(run_spawn "$dir" lease4 --harness rovo) || rc=$?
+  [ "$rc" -ne 0 ] || fail "a rovo ship that never shows ready must refuse"$'\n'"$out"
+  assert_contains "$out" "rovo did not show a verified ready signal" \
+    "the spawn should abort at rovo's post-publish readiness gate"$'\n'"$out"
+  [ ! -e "$dir/home/state/lease4.meta" ] || fail "the aborted spawn's record should be rolled back"
+  assert_contains "$(cat "$dir/fake/treehouse-log")" "return --force $slot" \
+    "an abort after publication should return the worktree it leased"$'\n'"$out"
+  assert_not_contains "$out" "leased worktree $slot in place" \
+    "an abort after publication must not strand the lease"
+  pass "fm-spawn herdr: an abort after the record was published still returns the leased worktree"
+}
+
 test_herdr_ship_tab_opens_in_its_leased_worktree
 test_herdr_ship_abort_returns_its_lease
+test_herdr_ship_abort_keeps_a_dirty_lease
+test_herdr_ship_abort_after_publish_returns_its_lease

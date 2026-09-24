@@ -1005,6 +1005,21 @@ fm_busy_launch_prompt_parked() {  # <harness>
   esac
 }
 
+# fm_busy_any_launch_prompt_parked: whether the tail on stdin shows ANY
+# harness's recognized launch dialog, for a caller that does not know the
+# endpoint's harness (bin/fm-task-inbox-lib.sh's doorbell, whose Enter would
+# answer the dialog).
+fm_busy_any_launch_prompt_parked() {
+  local buf harness
+  buf=$(cat)
+  for harness in claude pi gemini; do
+    if printf '%s' "$buf" | fm_busy_launch_prompt_parked "$harness"; then
+      return 0
+    fi
+  done
+  return 1
+}
+
 # fm_busy_classify: semantic classification for a task whose endpoint the
 # caller has already established as present. Prints "<verdict> <source>":
 # busy|idle|unknown plus the producing source (see header). Never probes

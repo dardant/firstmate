@@ -1127,6 +1127,38 @@ spawn_fresh_commit_rollback() {
   return 1
 }
 
+# spawn_return_leased_worktree: return an aborted spawn's leased worktree to
+# the Treehouse pool. The return runs under the Treehouse project lock, which
+# keeps any other Firstmate spawn or return off that slot; an abort after the
+# record was published has already released it, so it is taken again here,
+# bounded so an abort never waits long on another spawn. `return --force`
+# cleans and resets the slot, so it runs only on a slot git proves clean - the
+# freshen gate refuses a dirty leased slot without touching it, and its abort
+# must not then discard that work. The holder guard is added where the
+# installed Treehouse offers it. Anything else leaves the lease and names the
+# manual return.
+spawn_return_leased_worktree() {
+  local manual="(cd '$PROJ_ABS' && treehouse return --force '$WT')" dirty
+  local -a args=(return --force)
+  if [ "$SPAWN_TREEHOUSE_PROJECT_LOCK_HELD" != 1 ]; then
+    if [ -z "$SPAWN_TREEHOUSE_PROJECT_LOCK" ] ||
+      ! fm_lock_acquire_wait_bounded "$SPAWN_TREEHOUSE_PROJECT_LOCK" 10; then
+      echo "warning: leaving task $ID's leased worktree $WT in place; the Treehouse project lock could not be taken to return it. Return it with: $manual" >&2
+      return 0
+    fi
+    SPAWN_TREEHOUSE_PROJECT_LOCK_HELD=1
+  fi
+  if ! dirty=$(git -C "$WT" status --porcelain --ignore-submodules=none 2>/dev/null) || [ -n "$dirty" ]; then
+    echo "warning: leaving task $ID's leased worktree $WT in place; it is not provably clean, and returning it would discard its work. Once that work is saved or deliberately dropped, return it with: $manual" >&2
+    return 0
+  fi
+  if treehouse return --help 2>/dev/null | grep -q -- '--if-lease-holder'; then
+    args+=(--if-lease-holder "$SPAWN_WT_LEASE_HOLDER")
+  fi
+  ( cd "$PROJ_ABS" && treehouse "${args[@]}" "$WT" ) >/dev/null 2>&1 ||
+    echo "warning: could not return task $ID's leased worktree $WT; return it with: $manual" >&2
+}
+
 parse_orca_worktree_result() {
   local raw=$1 rest
   ORCA_WORKTREE_ID=${raw%%$'\t'*}
@@ -1258,24 +1290,14 @@ spawn_abort_cleanup() {
     fi
   fi
   # A worktree leased for a Herdr task (spawn_treehouse_lease_worktree) is
-  # durable until returned, so an abort before the record survives returns it
-  # rather than stranding a slot no record describes. The Treehouse project
-  # lock held since before the lease is what keeps any other Firstmate spawn
-  # or return off that slot; the holder guard is added where the installed
-  # Treehouse offers it.
+  # durable until returned, so an abort that ends without a surviving record
+  # returns it rather than stranding a slot no record describes, including
+  # one after publication whose record was rolled back
+  # (spawn_return_leased_worktree).
   if [ "$SPAWN_WT_LEASED" = 1 ] && [ -n "${WT:-}" ] &&
     [ ! -e "$STATE/$ID.meta" ] && [ ! -L "$STATE/$ID.meta" ]; then
     SPAWN_WT_LEASED=0
-    if [ "$SPAWN_TREEHOUSE_PROJECT_LOCK_HELD" = 1 ]; then
-      spawn_lease_return_args=(return --force)
-      if treehouse return --help 2>/dev/null | grep -q -- '--if-lease-holder'; then
-        spawn_lease_return_args+=(--if-lease-holder "$SPAWN_WT_LEASE_HOLDER")
-      fi
-      ( cd "$PROJ_ABS" && treehouse "${spawn_lease_return_args[@]}" "$WT" ) >/dev/null 2>&1 ||
-        echo "warning: could not return task $ID's leased worktree $WT; return it with: (cd '$PROJ_ABS' && treehouse return --force '$WT')" >&2
-    else
-      echo "warning: leaving task $ID's leased worktree $WT in place; the Treehouse project lock is no longer held" >&2
-    fi
+    spawn_return_leased_worktree
   fi
   if [ "$SPAWN_TREEHOUSE_PROJECT_LOCK_HELD" = 1 ]; then
     SPAWN_TREEHOUSE_PROJECT_LOCK_HELD=0
@@ -2951,7 +2973,7 @@ spawn_worktree_isolated() { # <path>
 # instead of its worktree (verified in an isolated Herdr lab, recorded in
 # docs/verification/runtime-backends.md "Herdr restore working directory").
 # The lease is held until bin/fm-teardown.sh's `treehouse return --force`; an
-# abort before the task record exists returns it (spawn_abort_cleanup).
+# abort that leaves no task record returns it (spawn_return_leased_worktree).
 spawn_treehouse_lease_worktree() {
   local out
   SPAWN_WT_LEASE_HOLDER="fm-task-$ID"
