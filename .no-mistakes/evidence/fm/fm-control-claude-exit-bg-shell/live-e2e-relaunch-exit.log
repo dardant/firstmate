@@ -1,0 +1,7 @@
+# live claude version: 2.1.280 (Claude Code); herdr 0.9.0
+# first worker started background shell pid 1899235
+ok - real claude: /exit with a background shell renders the dialog the control plane recognizes and answers
+ok - real claude: relaunch answers the background-work exit dialog and replaces the agent
+# replacement worker started background shell pid 2047624
+ok - real claude: exit answers the background-work exit dialog and stops the agent and its background shell
+# verified against claude 2.1.280 (Claude Code) through herdr 0.9.0

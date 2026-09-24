@@ -1,0 +1,72 @@
+# worker background shell pid 2876827
+# A: running PRE-FIX (5391df47c3e4e2f0aa29b504f5a122d58f929d31) fm-control.sh cexit exit with FM_CONTROL_EXIT_WAIT=15
+pre-fix exit rc=1 output:
+error: exit-delivered cexit interrupt=not-needed exit-command=delivered agent-state=alive exit=unconfirmed; the agent did not stop within 15s
+--- viewport (after pre-fix exit) ---
+  report, decision, or PR the intent below refers to into its substance rather than passing the pointer.
+  Captain intent authorized for --intent
+  Live guard fixture for exit handling.
+● Bash(sleep 1079)
+  ⎿  Running in the background (↓ to manage)
+● READY
+✻ Brewed for 5s · done 1:26 AM · 1 shell still running
+❯ /exit
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Background work is running
+  The following will stop when you exit:
+  shell · sleep 1079
+  ❯ 1. Exit and stop tasks
+    2. Move to background and exit
+    3. Stay
+  Enter to confirm · Esc to cancel
+--- end viewport ---
+ok - baseline reproduced: pre-fix exit wedges on 'Background work is running' with exit=unconfirmed and the agent alive
+# B: running FIXED fm-control.sh cexit exit (FM_CONTROL_POLL=3 FM_CONTROL_EXIT_WAIT=12) and moving the pointer to choice 2 as soon as the dialog renders
+--- viewport (B: pointer moved, fm-control still waiting) ---
+  Captain intent authorized for --intent
+  Live guard fixture for exit handling.
+● Bash(sleep 1079)
+  ⎿  Running in the background (↓ to manage)
+● READY
+✻ Brewed for 5s · done 1:26 AM · 1 shell still running
+❯ /exit
+❯ /exit
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Background work is running
+  The following will stop when you exit:
+  shell · sleep 1079
+    1. Exit and stop tasks
+  ❯ 2. Move to background and exit
+    3. Stay
+  Enter to confirm · Esc to cancel
+--- end viewport ---
+fixed exit output:
+error: exit-delivered cexit interrupt=not-needed exit-command=delivered agent-state=alive exit=unconfirmed exit-dialog=none; the agent did not stop within 12s
+rc=1
+--- viewport (B: after fixed exit gave up) ---
+  Captain intent authorized for --intent
+  Live guard fixture for exit handling.
+● Bash(sleep 1079)
+  ⎿  Running in the background (↓ to manage)
+● READY
+✻ Brewed for 5s · done 1:26 AM · 1 shell still running
+❯ /exit
+❯ /exit
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Background work is running
+  The following will stop when you exit:
+  shell · sleep 1079
+    1. Exit and stop tasks
+  ❯ 2. Move to background and exit
+    3. Stay
+  Enter to confirm · Esc to cancel
+--- end viewport ---
+ok - adversarial: a dialog with the pointer moved off '1. Exit and stop tasks' is not answered; exit ends exit=unconfirmed exit-dialog=none with agent and background shell still running
+# C: relaunch onto a brief with no background work, then fixed exit
+fixed relaunch rc=0 output:
+note: task cexit's claude asked to confirm exiting while background work was running; answered with the choice that exits and stops those background tasks (the worktree is untouched)
+warning: /tmp/fm-cexit-adv.dExuP9/home/data/cexit/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+relaunched cexit harness=claude from=claude model=default effort=low backend=herdr endpoint=fm-lab-cexit-adv-2784658:w1:p2 worktree=/tmp/fm-cexit-adv.dExuP9/wt
+fixed plain exit rc=0 output:
+stopped cexit harness=claude backend=herdr endpoint=fm-lab-cexit-adv-2784658:w1:p2 worktree=/tmp/fm-cexit-adv.dExuP9/wt
+ok - regression: exit on a Claude worker without background work stops it with no dialog handling
