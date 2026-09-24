@@ -70,9 +70,11 @@ fm_control_harnesses() {
 
 fm_control_harness_supported() {  # <harness>
   local harness
-  while read -r harness; do
+  # Read the whole list first: returning early from a loop fed by a process
+  # substitution can hit its writer with EPIPE and leak "Broken pipe" to stderr.
+  for harness in $(fm_control_harnesses); do
     [ "$harness" = "${1-}" ] && return 0
-  done < <(fm_control_harnesses)
+  done
   return 1
 }
 
