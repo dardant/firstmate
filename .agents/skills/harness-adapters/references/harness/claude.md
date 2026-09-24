@@ -7,7 +7,7 @@ Busy hooks verified 2026-07-28 on Claude Code 2.1.220.
 | Fact | Value |
 |---|---|
 | Busy | Owned hooks: `UserPromptSubmit` opens while `Stop`, `StopFailure`, and `SessionEnd` close; manual interrupt emits no hook, so control reports delivered keys and live endpoint only, publishes no idle event or cancellation claim, and usually leaves `claude-hook` busy. |
-| Exit | `/exit`. |
+| Exit | `/exit`; with background work running it first asks to confirm, which `fm-control` answers (see "Exit confirmation" below). |
 | Interrupt | Single Escape. |
 | Skill | `/<skill>`, for example `/no-mistakes`. |
 | Model | `--model <model>`; discover through the interactive `/model` picker, with alias or full-name shape documented by `claude --help`. |
@@ -40,6 +40,16 @@ Firstmate cannot move a selection with Enter, Escape, and C-c alone, so it canno
 Inspect the pane to identify which dialog is on screen, and report it rather than answering it.
 A launch under `config/claude-permission-mode=auto` never meets the bypass confirmation, because it does not request bypass mode: on 2.1.269 `claude --permission-mode auto` reached the composer directly with the footer `⏵⏵ auto mode on (shift+tab to cycle)`, so a captain who refuses the bypass dialog selects `auto` there instead of accepting it.
 The workspace-trust dialog is unaffected by the permission mode and still needs the pre-registration above.
+
+## Exit confirmation
+
+When `/exit` is submitted while a background shell or background task is running, Claude does not exit.
+It renders "Background work is running", lists what will stop, and offers `1. Exit and stop tasks`, `2. Move to background and exit`, and `3. Stay`, with the pointer on the first choice and the footer `Enter to confirm · Esc to cancel` (verified live on 2.1.280 through Herdr 0.9.0).
+Left alone it waits indefinitely, which is how an `exit` or `relaunch` that only waited for the agent to stop used to give up with the old agent still running.
+`fm-control.sh <id> exit` and `relaunch` now recognize that dialog and answer it once with Enter, which picks `Exit and stop tasks`; `fm_control_exit_confirmation_key` in `../../../bin/fm-control-lib.sh` owns the recognized shape and why only that choice satisfies exit.
+It stops the harness-owned background processes, such as a `no-mistakes axi respond` waiter, while the worktree and every uncommitted change stay untouched; a validation round the waiter was reading keeps running in the no-mistakes daemon.
+A dialog whose pointer is not on that choice is refused rather than steered, and Escape (`fm-control.sh <id> interrupt`) backs out to `Stay` with the background work still running.
+`../../../tests/fm-control-claude-exit-dialog-live-e2e.test.sh` re-proves the shape against the real binary; run it after every Claude Code upgrade.
 
 ## Composer ghost
 

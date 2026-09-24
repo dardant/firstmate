@@ -28,7 +28,13 @@
 #              state is never rewritten as proof of the action.
 #   exit       Stop the agent, preserving its terminal endpoint, worktree, and
 #              every uncommitted change. Interrupts first when the task reads
-#              busy, then submits the harness's exit command. Postcondition:
+#              busy, then submits the harness's exit command. When the harness
+#              answers that command with its own exit confirmation dialog
+#              (Claude's "Background work is running"), the dialog is answered
+#              once with the adapter-verified choice that really exits
+#              (bin/fm-control-lib.sh's fm_control_exit_confirmation_key), and
+#              a dialog in any other shape refuses rather than being guessed
+#              at. Postcondition:
 #              the backend's recovery-grade classifier reports the agent gone.
 #              Already-stopped is success (idempotent). An endpoint that reads
 #              `missing` is put through the control plane's per-backend absence
@@ -470,6 +476,48 @@ retire_busy_incarnation() {
   fi
 }
 
+# wait_exit_stopped: after the exit command, poll until the agent reads dead.
+# While it still reads alive, read the visible viewport and, when the harness
+# is showing its own exit confirmation dialog, answer it ONCE with the key the
+# adapter table verifies picks a real exit (fm_control_exit_confirmation_key),
+# then give the stop a fresh EXIT_WAIT. A dialog the table recognizes but cannot
+# answer safely refuses at once instead of waiting out the timeout. Prints the
+# final agent state (dead); dies with the delivered-input summary otherwise.
+wait_exit_stopped() {  # <interrupt-result>
+  local interrupt_result=$1 state screen key rc elapsed=0 dialog=none
+  while :; do
+    state=$(agent_state)
+    if [ "$state" = dead ]; then
+      printf '%s' "$state"
+      return 0
+    fi
+    if [ "$state" = alive ] && [ "$dialog" = none ] \
+       && fm_backend_visible_capture_supported "$BACKEND" \
+       && screen=$(fm_backend_visible_capture "$BACKEND" "$T" "$LABEL" 2>/dev/null); then
+      rc=0
+      key=$(printf '%s\n' "$screen" | fm_control_exit_confirmation_key "$HARNESS") || rc=$?
+      case "$rc" in
+        0)
+          fm_control_backend_supports_key "$BACKEND" "$key" \
+            || die "task $ID's $HARNESS is showing its exit confirmation dialog, which is answered with $key, a key the $BACKEND backend cannot deliver; the agent is still running"
+          fm_backend_send_key "$BACKEND" "$T" "$key" "$LABEL" \
+            || die "task $ID's $HARNESS is showing its exit confirmation dialog, but its answer $key could not be delivered; the agent is still running"
+          dialog=answered
+          elapsed=0
+          echo "note: task $ID's $HARNESS asked to confirm exiting while background work was running; answered with the choice that exits and stops those background tasks (the worktree is untouched)" >&2
+          ;;
+        2)
+          die "exit-delivered $ID interrupt=$interrupt_result exit-command=delivered agent-state=alive exit=unconfirmed exit-dialog=unanswerable; task $ID's $HARNESS is showing its exit confirmation dialog, but not in the verified shape that can be answered with a real exit, so it was left untouched and the agent is still running"
+          ;;
+      esac
+    fi
+    awk -v e="$elapsed" -v t="$EXIT_WAIT" 'BEGIN{exit !(e < t)}' || break
+    sleep "$POLL"
+    elapsed=$(awk -v e="$elapsed" -v p="$POLL" 'BEGIN{printf "%.3f", e + p}')
+  done
+  die "exit-delivered $ID interrupt=$interrupt_result exit-command=delivered agent-state=$state exit=unconfirmed exit-dialog=$dialog; the agent did not stop within ${EXIT_WAIT}s"
+}
+
 # do_exit: stop the running agent, preserving endpoint and worktree. Prints
 # `already-stopped`, `endpoint-gone`, or `stopped`.
 do_exit() {
@@ -557,9 +605,7 @@ do_exit() {
     || die "the exit command could not be sent to task $ID on $BACKEND"
   [ "$verdict" != send-failed ] \
     || die "the exit command could not be sent to task $ID on $BACKEND"
-  state=$(wait_agent_state "$EXIT_WAIT" dead) || {
-    die "exit-delivered $ID interrupt=$interrupt_result exit-command=delivered agent-state=$state exit=unconfirmed; the agent did not stop within ${EXIT_WAIT}s"
-  }
+  state=$(wait_exit_stopped "$interrupt_result") || return $?
   # The incarnation is over: retire its busy wiring so no stale record or
   # orphaned generation survives the agent that produced it.
   retire_busy_incarnation

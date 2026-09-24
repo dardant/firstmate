@@ -1551,6 +1551,43 @@ ok - agent get distinguishes leftover-shell (dead/no-agent) from live idle Pi
 ok - pane get agent_status lag cannot keep an exited occupant classified alive
 ```
 
+### Claude exit confirmation dialog
+
+Verified 2026-09-24 on Claude Code 2.1.280 through Herdr 0.9.0 in an isolated `fm-lab-` session.
+A real Claude worker launched through `bin/fm-spawn.sh` that has started a background shell answers a submitted `/exit` with this viewport instead of exiting, and before the fix `fm-control.sh <id> exit` reported `exit=unconfirmed` with the agent still alive after 30 seconds:
+
+```text
+❯ /exit
+
+────────────────────────────────────────────────────────────────────────────────
+  Background work is running
+  The following will stop when you exit:
+
+  shell · sleep 917
+
+  ❯ 1. Exit and stop tasks
+    2. Move to background and exit
+    3. Stay
+
+  Enter to confirm · Esc to cancel
+```
+
+`fm_control_exit_confirmation_key` in `bin/fm-control-lib.sh` recognizes that shape, and the control plane answers it with Enter; the live guard proves the recognizer on the real viewport, then drives `relaunch` and `exit` through the dialog and requires the exact background process to be gone and an uncommitted worktree file to survive:
+
+```sh
+FM_CONTROL_CLAUDE_EXIT_DIALOG_LIVE=1 tests/fm-control-claude-exit-dialog-live-e2e.test.sh
+```
+
+```text
+# live claude version: 2.1.280 (Claude Code); herdr 0.9.0
+ok - real claude: /exit with a background shell renders the dialog the control plane recognizes and answers
+ok - real claude: relaunch answers the background-work exit dialog and replaces the agent
+ok - real claude: exit answers the background-work exit dialog and stops the agent and its background shell
+# verified against claude 2.1.280 (Claude Code) through herdr 0.9.0
+```
+
+It submits prompts, so it is opt-in; run it after every Claude Code upgrade rather than trusting the version above.
+
 ### Endpoint recovery classification
 
 Measured 2026-09-10 on macOS aarch64 against Herdr 0.9.0 (protocol 22) in an isolated `fm-lab-` session.

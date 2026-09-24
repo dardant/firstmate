@@ -72,7 +72,10 @@ verified_adapter_contract() {  # <harness> -> exit command, interrupt key, repea
 # that is the harness's exit command flips `command` to a shell (the agent
 # stopped), and a literal carrying a launch brief flips it to the value in
 # `becomes` (a new agent came up). FM_FAKE_NEVER_DIES suppresses the first, so
-# a stubborn agent can be tested too.
+# a stubborn agent can be tested too. FM_FAKE_EXIT_DIALOG names a screen file
+# that models an exit confirmation dialog instead: the exit command's submit
+# Enter renders that screen, and only the NEXT Enter - the dialog's answer -
+# stops the agent.
 make_tmux_stub() {  # <dir> -> echoes fakebin dir
   local dir=$1 fb="$1/fakebin"
   mkdir -p "$fb"
@@ -94,7 +97,10 @@ case "${1:-}" in
     payload=${1:-}
     if [ "$literal" = 1 ]; then
       printf '%s\n' "$payload" >> "$D/literal"
-      if [ -z "${FM_FAKE_NEVER_DIES:-}" ] \
+      if [ -n "${FM_FAKE_EXIT_DIALOG:-}" ] \
+         && { [ "$payload" = /exit ] || [ "$payload" = /quit ]; }; then
+        : > "$D/exit-typed"
+      elif [ -z "${FM_FAKE_NEVER_DIES:-}" ] \
          && { [ "$payload" = /exit ] || [ "$payload" = /quit ]; }; then
         printf 'zsh' > "$D/command"
       fi
@@ -103,6 +109,14 @@ case "${1:-}" in
       esac
     else
       printf '%s\n' "$payload" >> "$D/keys"
+      if [ "$payload" = Enter ] && [ -e "$D/dialog-open" ]; then
+        rm -f "$D/dialog-open"
+        printf 'zsh' > "$D/command"
+      elif [ "$payload" = Enter ] && [ -e "$D/exit-typed" ]; then
+        rm -f "$D/exit-typed"
+        cat "$FM_FAKE_EXIT_DIALOG" > "$D/pane"
+        : > "$D/dialog-open"
+      fi
       if [ -n "${FM_FAKE_INTERRUPT_STOPS_AGENT:-}" ] \
          && { [ "$payload" = Escape ] || [ "$payload" = C-c ]; }; then
         printf 'zsh' > "$D/command"
@@ -814,6 +828,101 @@ test_agent_that_does_not_stop_fails_closed() {
   pass "fm-control exit: a stubborn agent reports delivered input and an unconfirmed exit"
 }
 
+# claude_exit_dialog_screen <pointer-choice>: the bottom of a real Claude Code
+# 2.1.280 viewport after `/exit` was submitted with a background shell running,
+# captured through Herdr (tests/fm-control-claude-exit-dialog-live-e2e.test.sh
+# re-proves it live), with the pointer placed on the numbered choice given.
+claude_exit_dialog_screen() {  # <1|2|3>
+  local p1='  ' p2='  ' p3='  '
+  case "$1" in
+    1) p1='❯ ' ;;
+    2) p2='❯ ' ;;
+    3) p3='❯ ' ;;
+  esac
+  cat <<EOF
+● Bash(sleep 900)
+  ⎿  Running in the background (↓ to manage)
+
+● READY
+
+✻ Churned for 3s · done 12:44 AM · 1 shell still running
+
+❯ /exit
+
+────────────────────────────────────────────────────────────────────────────────
+  Background work is running
+  The following will stop when you exit:
+
+  shell · sleep 900
+
+  ${p1}1. Exit and stop tasks
+  ${p2}2. Move to background and exit
+  ${p3}3. Stay
+
+  Enter to confirm · Esc to cancel
+EOF
+}
+
+test_exit_answers_claude_background_work_dialog() {
+  local dir out rc
+  dir=$(new_case claude-bg-dialog)
+  add_task "$dir" t1 claude
+  alive_as "$dir" claude
+  claude_exit_dialog_screen 1 > "$dir/fake/dialog"
+  out=$(FM_FAKE_EXIT_DIALOG="$dir/fake/dialog" run_control "$dir" t1 exit); rc=$?
+  expect_code 0 "$rc" "exit should answer Claude's background-work dialog and stop the agent"$'\n'"$out"
+  assert_contains "$out" "stopped t1 harness=claude" \
+    "exit should report the stop once the dialog was answered"
+  assert_contains "$out" "exits and stops those background tasks" \
+    "exit should say it stopped the worker's background tasks"
+  [ "$(literals "$dir")" = /exit ] \
+    || fail "exit should type only the exit command, got: $(literals "$dir")"
+  [ "$(grep -c '^Enter$' "$dir/fake/keys")" = 2 ] \
+    || fail "exit should submit /exit and then answer the dialog with exactly one more Enter, got: $(tr '\n' ' ' < "$dir/fake/keys")"
+  [ -z "$(keys_sent "$dir")" ] \
+    || fail "an idle agent's exit should send no key but Enter, got: $(keys_sent "$dir")"
+  pass "fm-control exit: Claude's background-work dialog is answered with its exit-and-stop choice"
+}
+
+test_exit_refuses_claude_dialog_pointing_elsewhere() {
+  local dir out rc
+  dir=$(new_case claude-bg-dialog-stay)
+  add_task "$dir" t1 claude
+  alive_as "$dir" claude
+  claude_exit_dialog_screen 3 > "$dir/fake/dialog"
+  out=$(FM_FAKE_EXIT_DIALOG="$dir/fake/dialog" run_control "$dir" t1 exit); rc=$?
+  expect_code 1 "$rc" "a dialog whose pointer is not on the exit choice should refuse"
+  assert_contains "$out" "exit-dialog=unanswerable" \
+    "the refusal should name the unanswerable dialog"
+  [ "$(grep -c '^Enter$' "$dir/fake/keys")" = 1 ] \
+    || fail "an unanswerable dialog must receive no answering key, got: $(tr '\n' ' ' < "$dir/fake/keys")"
+  [ "$(cat "$dir/fake/command")" = claude ] \
+    || fail "the agent must still be running after the refusal"
+  pass "fm-control exit: a Claude exit dialog not pointing at its exit choice is refused, not guessed at"
+}
+
+# The dialog recognizer is harness-scoped and needs the dialog to be what is
+# actually on screen: the same text quoted in a transcript above an ordinary
+# composer, or shown to another adapter, answers nothing.
+test_exit_confirmation_recognizer_is_scoped() {
+  local key rc
+  key=$(claude_exit_dialog_screen 1 | fm_control_exit_confirmation_key claude) \
+    || fail "the real Claude dialog should be recognized"
+  [ "$key" = Enter ] || fail "the real Claude dialog should be answered with Enter, got '$key'"
+  rc=0
+  claude_exit_dialog_screen 2 | fm_control_exit_confirmation_key claude >/dev/null || rc=$?
+  [ "$rc" = 2 ] || fail "a pointer on 'Move to background' must be unanswerable (2), got $rc"
+  rc=0
+  { claude_exit_dialog_screen 1
+    printf '%s\n' '────────────────' '❯ ' '────────────────' '  ⏵⏵ bypass permissions on'
+  } | fm_control_exit_confirmation_key claude >/dev/null || rc=$?
+  [ "$rc" = 1 ] || fail "a quoted dialog above a live composer must not be answered, got $rc"
+  rc=0
+  claude_exit_dialog_screen 1 | fm_control_exit_confirmation_key codex >/dev/null || rc=$?
+  [ "$rc" = 1 ] || fail "another adapter must never answer Claude's dialog, got $rc"
+  pass "fm-control-lib: the exit confirmation recognizer is scoped to the real on-screen Claude dialog"
+}
+
 test_grok_interrupt_without_acknowledgement_reports_unconfirmed() {
   local dir out rc
   dir=$(new_case nosettle)
@@ -918,6 +1027,9 @@ test_muse_interrupt_confirms_adapter_acknowledgement
 test_interrupt_revalidates_agent_after_acknowledgement_wait
 test_exit_accepts_agent_stopped_by_busy_interrupt
 test_agent_that_does_not_stop_fails_closed
+test_exit_answers_claude_background_work_dialog
+test_exit_refuses_claude_dialog_pointing_elsewhere
+test_exit_confirmation_recognizer_is_scoped
 test_grok_interrupt_without_acknowledgement_reports_unconfirmed
 test_grok_idle_footer_does_not_confirm_cancellation
 test_secondmate_control_command_carries_no_marker
