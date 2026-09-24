@@ -59,20 +59,34 @@ case "${1:-} ${2:-}" in
     printf '{"result":{"workspace":{"workspace_id":"ws1"},"tab":{"tab_id":"seedtab"},"root_pane":{"pane_id":"ws1:p0"}}}\n'
     exit 0 ;;
   'tab list') printf '{"result":{"tabs":[]}}\n'; exit 0 ;;
+  'session list')
+    printf '{"sessions":[{"name":"fmlab","running":true,"socket_path":"%s/herdr.sock"}]}\n' "$D"
+    exit 0 ;;
   'tab create')
     arg_after --cwd "$@" > "$D/cwd"
     printf '{"result":{"tab":{"tab_id":"tab1","workspace_id":"ws1"},"root_pane":{"pane_id":"ws1:p1"}}}\n'
     exit 0 ;;
   'tab get') printf '{"result":{"tab":{"tab_id":"tab1","workspace_id":"ws1"}}}\n'; exit 0 ;;
   'pane get')
-    printf '{"result":{"pane":{"pane_id":"%s","tab_id":"tab1","workspace_id":"ws1","cwd":"%s","foreground_cwd":"%s"}}}\n' \
-      "${3:-}" "$(cat "$D/cwd" 2>/dev/null)" "$(cat "$D/cwd" 2>/dev/null)"
+    if [ -f "$D/pane-closed" ]; then
+      printf '{"error":{"code":"pane_not_found"}}\n'
+    else
+      printf '{"result":{"pane":{"pane_id":"%s","tab_id":"tab1","workspace_id":"ws1","cwd":"%s","foreground_cwd":"%s"}}}\n' \
+        "${3:-}" "$(cat "$D/cwd" 2>/dev/null)" "$(cat "$D/cwd" 2>/dev/null)"
+    fi
+    exit 0 ;;
+  'pane close' | 'tab close' | 'workspace close')
+    # With agent-survives armed, the launched harness outlives every cleanup,
+    # as after the kimi or backlog-commit failures, which close nothing.
+    [ -f "$D/agent-survives" ] || : > "$D/pane-closed"
     exit 0 ;;
   'pane send-text')
-    # With agent-survives armed, the launch line starts a harness that no
-    # cleanup stops, as after the kimi or backlog-commit failures.
+    # The launch line starts the harness; with agent-registers armed, Herdr's
+    # integration has also registered it by the time anything asks.
     case "${4:-}" in
-      '. '*) [ ! -f "$D/agent-survives" ] || : > "$D/agent-live" ;;
+      '. '*)
+        : > "$D/launched"
+        [ ! -f "$D/agent-registers" ] || : > "$D/agent-live" ;;
     esac
     exit 0 ;;
   'agent get')
@@ -83,7 +97,11 @@ case "${1:-} ${2:-}" in
     fi
     exit 0 ;;
   'pane process-info')
-    printf '{"result":{"type":"pane_process_info","process_info":{"pane_id":"%s","shell_pid":4242,"foreground_processes":[{"pid":4243,"name":"rovo","argv":["rovo"],"cmdline":"rovo run"}]}}}\n' "${4:-}"
+    if [ -f "$D/launched" ]; then
+      printf '{"result":{"type":"pane_process_info","process_info":{"pane_id":"%s","shell_pid":4242,"foreground_process_group_id":4243,"foreground_processes":[{"pid":4243,"name":"rovo","argv":["rovo"],"cmdline":"rovo run"}]}}}\n' "${4:-}"
+    else
+      printf '{"result":{"type":"pane_process_info","process_info":{"pane_id":"%s","shell_pid":4242,"foreground_process_group_id":4242,"foreground_processes":[{"pid":4242,"name":"bash","argv":["bash"],"cmdline":"bash"}]}}}\n' "${4:-}"
+    fi
     exit 0 ;;
 esac
 exit 0
@@ -211,6 +229,7 @@ test_herdr_ship_abort_after_launch_keeps_a_live_agents_lease() {
   dir=$(new_case abort-live-agent lease5)
   slot=$(cat "$dir/fake/slot")
   : > "$dir/fake/agent-survives"
+  : > "$dir/fake/agent-registers"
   out=$(run_spawn "$dir" lease5 --harness rovo) || rc=$?
   [ "$rc" -ne 0 ] || fail "a rovo ship that never shows ready must refuse"$'\n'"$out"
   [ -f "$dir/fake/agent-live" ] || fail "the fixture's launch never started the surviving agent"$'\n'"$out"
@@ -222,8 +241,29 @@ test_herdr_ship_abort_after_launch_keeps_a_live_agents_lease() {
   pass "fm-spawn herdr: an abort after launch keeps the lease while its agent is still alive"
 }
 
+# Herdr registers an agent only once its integration reports it, so a harness
+# still booting reads `agent_not_found` while it already runs in the pane's
+# foreground. That is no proof the worktree is free.
+test_herdr_ship_abort_after_launch_keeps_a_booting_agents_lease() {
+  local dir out rc=0 slot
+  dir=$(new_case abort-booting-agent lease6)
+  slot=$(cat "$dir/fake/slot")
+  : > "$dir/fake/agent-survives"
+  out=$(run_spawn "$dir" lease6 --harness rovo) || rc=$?
+  [ "$rc" -ne 0 ] || fail "a rovo ship that never shows ready must refuse"$'\n'"$out"
+  [ -f "$dir/fake/launched" ] || fail "the fixture's launch never started the booting agent"$'\n'"$out"
+  [ ! -e "$dir/fake/agent-live" ] || fail "the booting agent must stay unregistered for this case"
+  [ ! -e "$dir/home/state/lease6.meta" ] || fail "the aborted spawn's record should be rolled back"
+  assert_not_contains "$(cat "$dir/fake/treehouse-log")" "return --force" \
+    "an abort must not return a leased worktree whose unregistered harness is still running"$'\n'"$out"
+  assert_contains "$out" "not proven agent-free" "the warning should say why the lease was kept"
+  assert_contains "$out" "treehouse return --force '$slot'" "the warning should name the manual return"
+  pass "fm-spawn herdr: an abort after launch keeps the lease while an unregistered harness still runs"
+}
+
 test_herdr_ship_tab_opens_in_its_leased_worktree
 test_herdr_ship_abort_returns_its_lease
 test_herdr_ship_abort_keeps_a_dirty_lease
 test_herdr_ship_abort_after_publish_returns_its_lease
 test_herdr_ship_abort_after_launch_keeps_a_live_agents_lease
+test_herdr_ship_abort_after_launch_keeps_a_booting_agents_lease

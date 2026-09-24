@@ -1128,6 +1128,24 @@ spawn_fresh_commit_rollback() {
   return 1
 }
 
+# spawn_launched_endpoint_agent_free: whether the launched endpoint provably
+# runs no worker, by the same proof the destructive Herdr cleanup paths
+# require (bin/fm-herdr-session-cleanup.sh): the exact pane is structurally
+# gone, or it holds a provably idle, childless shell. A bare no-agent reading
+# is not enough, because Herdr registers an agent only once its integration
+# reports it, so a harness still booting reads agent-free. Only Herdr leases a
+# worktree before launch; any other backend is never proven here.
+spawn_launched_endpoint_agent_free() {
+  [ "$BACKEND" = herdr ] || return 1
+  fm_backend_source herdr || return 1
+  fm_backend_herdr_parse_target "$T" || return 1
+  case "$(fm_backend_herdr_pane_presence_state "$FM_BACKEND_HERDR_SESSION" "$FM_BACKEND_HERDR_PANE")" in
+    dead) return 0 ;;
+    present) fm_backend_herdr_pane_idle_shell_pid "$FM_BACKEND_HERDR_SESSION" "$FM_BACKEND_HERDR_PANE" >/dev/null ;;
+    *) return 1 ;;
+  esac
+}
+
 # spawn_return_leased_worktree: return an aborted spawn's leased worktree to
 # the Treehouse pool. The return runs under the Treehouse project lock, which
 # keeps any other Firstmate spawn or return off that slot; an abort after the
@@ -1136,25 +1154,18 @@ spawn_fresh_commit_rollback() {
 # cleans and resets the slot, so it runs only on a slot git proves clean - the
 # freshen gate refuses a dirty leased slot without touching it, and its abort
 # must not then discard that work. Once the launch command may have reached
-# the pane, the slot is returned only when the backend's recovery-grade agent
-# state proves the endpoint agent-free (dead or missing): an abort after
-# launch can leave a live worker in it (the kimi and backlog-commit failures
-# do not close their endpoint), and a slot back in the pool would be leased to
-# another task under that worker. The holder guard is added where the
-# installed Treehouse offers it. Anything else leaves the lease and names the
-# manual return.
+# the pane, the slot is returned only when spawn_launched_endpoint_agent_free
+# proves no worker can still be running in it: an abort after launch can leave
+# a live worker there (the kimi and backlog-commit failures do not close their
+# endpoint), and a slot back in the pool would be leased to another task under
+# that worker. The holder guard is added where the installed Treehouse offers
+# it. Anything else leaves the lease and names the manual return.
 spawn_return_leased_worktree() {
-  local manual="(cd '$PROJ_ABS' && treehouse return --force '$WT')" dirty agent_state
+  local manual="(cd '$PROJ_ABS' && treehouse return --force '$WT')" dirty
   local -a args=(return --force)
-  if [ "$SPAWN_LAUNCH_DELIVERY_STARTED" = 1 ]; then
-    agent_state=$(fm_backend_agent_state "$BACKEND" "$T" 2>/dev/null) || agent_state=unreadable
-    case "$agent_state" in
-      dead | missing) ;;
-      *)
-        echo "warning: leaving task $ID's leased worktree $WT in place; its endpoint $T was launched and is not proven agent-free (agent state: ${agent_state:-unreadable}). Once that endpoint is closed, return it with: $manual" >&2
-        return 0
-        ;;
-    esac
+  if [ "$SPAWN_LAUNCH_DELIVERY_STARTED" = 1 ] && ! spawn_launched_endpoint_agent_free; then
+    echo "warning: leaving task $ID's leased worktree $WT in place; its endpoint $T was launched and is not proven agent-free. Once that endpoint is closed, return it with: $manual" >&2
+    return 0
   fi
   if [ "$SPAWN_TREEHOUSE_PROJECT_LOCK_HELD" != 1 ]; then
     if [ -z "$SPAWN_TREEHOUSE_PROJECT_LOCK" ] ||
