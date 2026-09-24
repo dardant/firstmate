@@ -250,6 +250,35 @@ fm_task_inbox_body() {  # <record-path>
   return 1
 }
 
+# The `at=` enqueue time of <task>'s newest steer, unhandled or already in
+# handled/, or empty when that record carries none. Sequences are allocated in
+# enqueue order, so the highest sequence is the latest steer; the root is scanned
+# before handled/ so a concurrent acknowledgement move is still seen. Fails when
+# the task has never been steered.
+fm_task_inbox_newest_at() {  # <state-dir> <task-id>
+  local dir newest='' newest_n=0 d f n line at=''
+  dir=$(fm_task_inbox_dir "$1" "$2")
+  for d in "$dir" "$dir/handled"; do
+    for f in "$d"/*.msg; do
+      [ -e "$f" ] || continue
+      n=$(fm_task_inbox_seq_of "${f##*/}") || continue
+      if [ -z "$newest" ] || [ "$n" -gt "$newest_n" ]; then
+        newest=$f
+        newest_n=$n
+      fi
+    done
+  done
+  [ -n "$newest" ] || return 1
+  [ -f "$newest" ] || newest="$dir/handled/${newest##*/}"
+  if [ -f "$newest" ]; then
+    while IFS= read -r line; do
+      [ "$line" != -- ] || break
+      case "$line" in at=*) at=${line#at=} ;; esac
+    done < "$newest"
+  fi
+  printf '%s' "$at"
+}
+
 # The constant self-describing doorbell line for the inbox containing a record.
 # Self-describing on purpose: a worker whose brief predates the inbox contract
 # still receives the complete instruction in the line itself. The leading `: `
