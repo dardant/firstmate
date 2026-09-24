@@ -1628,6 +1628,34 @@ ok - real herdr: a drifted agent-free shell returns to its worktree and reuses t
 `tests/fm-control-relaunch.test.sh` drives a tmux stub and proves that tmux retains its prior refusal without sending `cd` or any other input to the pane.
 The Herdr refusal when a shell accepts the command but does not move is not exercised in this change.
 
+### Herdr restore working directory
+
+Verified 2026-09-24 on Herdr 0.9.0, Treehouse 2.3.0, and Claude Code 2.1.280 on Linux, in an isolated lab session provisioned, stopped, restarted, and torn down only through `bin/fm-herdr-lab.sh`, with the lab server started under an isolated `CLAUDE_CONFIG_DIR` whose `settings.json` registered Herdr's own Claude `SessionStart` integration hook.
+Herdr 0.9.0 ships `[session] resume_agents_on_restore`, default on (the 0.7.4 CI pin's binary and `pane report-agent-session` help carry it too), and saves each pane's root shell directory beside the agent session reference that integration reports.
+Three panes each started a real `claude` in a linked worktree of a project nested under a directory whose `CLAUDE.md` imports `@AGENTS.md`, the shape of a primary clone under a firstmate home's `projects/`.
+
+| Arm | Pane shape | Saved pane directory | After `stop` then `provision` |
+| --- | --- | --- | --- |
+| A | tab opened in the project, then `(cd <worktree> && exec bash)` as `treehouse get` does | the project | `claude --resume <id>` ran in the project and rendered "Allow external CLAUDE.md file imports?" |
+| B | tab opened directly in the worktree | the worktree | `claude --resume <id>` ran in the worktree and reached the composer |
+| C | as A, with `env -u HERDR_ENV` on the `claude` launch | the project | nothing resumed, because no session reference was saved, while Herdr still registered the running agent before the restart |
+
+Arm A is the reported incident, and arm B is the shape `bin/fm-spawn.sh` now gives every Herdr ship and scout by leasing the worktree before opening the tab.
+The guard below refreshes the result through the real spawn, with a stand-in agent that reports Herdr's Claude session reference and records where Herdr resumes it, so it spends no model tokens:
+
+```sh
+bash tests/fm-backend-herdr-restore-cwd-e2e.test.sh
+```
+
+```
+ok - real herdr: a ship's pane opens with its root shell in the leased worktree
+ok - real herdr: a restarted server resumes the ship's agent inside its recorded worktree
+```
+
+Against the spawn from before this change the same guard failed at its first assertion, naming the project as the pane's root directory.
+A Herdr release that rejects `pane report-agent-session` runs only that first assertion and prints that the restore phase was not exercised.
+`tests/fm-spawn-herdr-lease.test.sh` pins the lease-first ordering and the abort-path lease return without Herdr or Treehouse installed.
+
 ### Stale agent registration
 
 Measured 2026-09-10 on macOS aarch64 against Herdr 0.9.0 (protocol 22) and Pi 0.85.1 in an isolated `fm-lab-` session (upstream issue #4115, duplicates #3639, #3487, #2908, #3545).
