@@ -23,6 +23,7 @@ Every claude spawn therefore pre-registers the directory its pane starts in befo
 A second, separate dialog - "Allow external CLAUDE.md file imports?" - renders when a project-scope CLAUDE.md, the launch directory's own or an ancestor directory's, imports a file outside the launch directory.
 Verified on 2.1.280: an import in the user-scope CLAUDE.md does not raise it, a task worktree outside the fleet home normally has nothing that does, and a primary clone under a firstmate home's `projects/` always does, because the home's own CLAUDE.md imports its AGENTS.md from a parent directory.
 A worker that shows this dialog is therefore usually running in its primary clone rather than its recorded worktree, which is itself the finding to report.
+The known route there, a Herdr restart resuming the agent in its pane's root directory, is closed by opening Herdr task tabs inside their worktree (`../../../../../docs/herdr-backend.md` "Restart and liveness behavior").
 It gates the pane exactly like the trust dialog: cursor on "No, disable external imports", no way to move the selection from firstmate's steering plane.
 
 `../../../bin/fm-claude-trust.sh` records `hasTrustDialogAccepted` for both the worktree and its primary checkout in `${CLAUDE_CONFIG_DIR:-$HOME}/.claude.json` for a ship or scout spawn; a secondmate spawn registers only its own home entry, since a secondmate home has no separate primary-checkout entry to carry import consent forward from.
