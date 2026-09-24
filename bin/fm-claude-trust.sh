@@ -15,10 +15,9 @@
 #   <project>   the primary checkout that worktree belongs to
 #   <home>      the seeded secondmate home this spawn launches into
 #   <id>        the secondmate id that home must already be marked for
-# Prints one line naming what it registered; refuses loudly on anything else.
-# When the project entry records a decline of external CLAUDE.md imports, the
-# worktree registration still succeeds, leaves that decline exactly as it is,
-# and prints a note naming it and the reset command on stderr.
+# Prints one line naming what it registered; refuses loudly on anything else,
+# including a project entry that records a decline of external CLAUDE.md
+# imports, whose refusal names the one reset command.
 #
 # --reset-imports-decline is the operator's undo for a decline recorded by
 # mistake, never a spawn step: it removes the two external-imports flags from
@@ -81,14 +80,15 @@
 # hasClaudeMdExternalIncludesApproved===false WITH
 # hasClaudeMdExternalIncludesWarningShown===true - the pair Claude Code writes
 # on a "No, disable" answer, and equally on Escape, which on 2.1.280 records
-# the same decline rather than dismissing the dialog - that decline is left
-# exactly as it is and only the trust flag is registered. Claude Code does not
-# show the imports dialog again for a declined entry, so the worker launches
-# with external imports disabled, which is the decision on record; nothing
-# here ever flips it. Because the stored pair cannot say whether a person
-# chose it or a stray Escape did, the registration prints a note naming the
-# decline and the --reset-imports-decline command, which returns the entry to
-# "never asked" for the operator to answer again. Approved===false with
+# the same decline rather than dismissing the dialog - the whole registration
+# refuses rather than flipping it, because doing so would grant every future
+# interactive session in that checkout silent external-file inclusion the
+# human declined, permanently and without being asked. The worktree entry is
+# left unwritten too, so the spawn stops loudly instead of launching a worker
+# that silently lacks the imports its CLAUDE.md asks for. Because the stored
+# pair cannot say whether a person chose it or a stray Escape did, the
+# refusal names the --reset-imports-decline command, which returns the entry
+# to "never asked" for the operator to answer again. Approved===false with
 # WarningShown false or absent is NOT that decision: Claude Code's default
 # project entry carries both flags as false before the dialog was ever shown,
 # so that pair means "never asked" and is treated like an absent flag - trust
@@ -457,8 +457,8 @@ fi
 #
 # The node program prints one word on success: `carried` when standing import
 # consent was refreshed, `unasked` when trust registered with no import
-# decision on record, `declined` when trust registered beside a standing
-# decline it left untouched, and in reset mode `reset` or `unchanged`.
+# decision on record, `declined` when it wrote nothing because the project
+# entry records a decline, and in reset mode `reset` or `unchanged`.
 TRUST_FLAG='hasTrustDialogAccepted'
 IMPORT_FLAGS='["hasClaudeMdExternalIncludesApproved","hasClaudeMdExternalIncludesWarningShown"]'
 case "$MODE" in
@@ -499,8 +499,8 @@ const flagsLanded = (projects, key, flags) =>
 // decision (the dialog's "No, disable" answer and Escape both write that pair;
 // Claude Code's default project entry carries Approved===false with
 // WarningShown===false, which means never asked, not declined). A worktree
-// registration leaves it untouched and writes only the trust flag; only the
-// operator's explicit reset mode removes it.
+// registration refuses without writing anything, so the store comes back
+// unchanged; only the operator's explicit reset mode removes it.
 const declinedExternalImports = (projects, key) =>
   projects?.[key]?.hasClaudeMdExternalIncludesApproved === false &&
   projects?.[key]?.hasClaudeMdExternalIncludesWarningShown === true;
@@ -536,19 +536,15 @@ const attempt = () => {
     landed = (back) => importFlags.every((flag) => back.projects?.[project]?.[flag] === undefined);
     outcome = "reset";
   } else if (mode === "worktree") {
-    const declined = declinedExternalImports(projects, project);
+    if (declinedExternalImports(projects, project)) return "declined";
     const carryImportConsent = approvedExternalImports(projects, project);
     const targetFlags = carryImportConsent ? [trustFlag, ...importFlags] : [trustFlag];
     const projectFlags = carryImportConsent ? [trustFlag, ...importFlags] : [trustFlag];
     setFlags(projects, target, targetFlags);
     setFlags(projects, project, projectFlags);
     keys = [[target, targetFlags], [project, projectFlags]];
-    // A standing decline must survive this write unchanged, so its readback is
-    // part of what counts as landed.
-    landed = (back) =>
-      keys.every(([key, flags]) => flagsLanded(back.projects, key, flags)) &&
-      (!declined || declinedExternalImports(back.projects, project));
-    outcome = carryImportConsent ? "carried" : declined ? "declined" : "unasked";
+    landed = (back) => keys.every(([key, flags]) => flagsLanded(back.projects, key, flags));
+    outcome = carryImportConsent ? "carried" : "unasked";
   } else {
     setFlags(projects, target, [trustFlag]);
     keys = [[target, [trustFlag]]];
@@ -611,10 +607,10 @@ case "$MODE" in
     exit 0
     ;;
 esac
+if [ "$WRITE_RESULT" = declined ]; then
+  refuse "project entry for '$PROJ_CANON' in '$STORE' already declined external CLAUDE.md imports, and a spawn must not override that consent; Claude Code records the same decline for Escape as for \"No\", so if nobody chose it, reset it with: $0 --reset-imports-decline '$PROJ_CANON'"
+fi
 echo "trusted: $TARGET_REAL"
 if [ "$MODE" = worktree ]; then
   echo "trusted (project root): $PROJ_CANON"
-  if [ "$WRITE_RESULT" = declined ]; then
-    echo "note: '$STORE' records a decline of external CLAUDE.md imports for '$PROJ_CANON', left as it is; Claude Code records the same decline for Escape as for \"No\", so if nobody chose it, reset it with: $0 --reset-imports-decline '$PROJ_CANON'" >&2
-  fi
 fi
