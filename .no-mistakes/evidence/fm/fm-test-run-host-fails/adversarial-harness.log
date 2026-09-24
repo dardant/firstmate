@@ -1,0 +1,28 @@
+--- jobs admission: real runner (want pass, rc=0)
+ok - --jobs admits and schedules a family with a recorded concurrent proof
+RESULT: as expected
+--- jobs admission: runner mutated to drop watcher-wake-lock concurrency proof (want fail, rc=1)
+not ok - --jobs on a proven family must be admitted, got 2: fm-test-run: --jobs 2 refused: tests/fm-supervision-events.test.sh is not in the proven-isolated set (see bin/fm-test-isolation-proof.sh --list) and its family has no recorded concurrent proof. Unproven stateful scripts stay serial. 
+RESULT: as expected
+--- jobs admission: runner mutated to raise the family cap 4 -> 9 (over-cap --jobs 5 must be refused) (want fail, rc=1)
+not ok - a family run above its proven four-worker cap must be refused, got 0
+RESULT: as expected
+ruby on PATH: none
+--- herdr step timeout: real ci.yml via python3 yaml (want pass, rc=0)
+ok - Herdr CI family-run step times out at 20 min under a 75 min job backstop
+RESULT: as expected
+--- herdr step timeout: family-run step timeout-minutes removed (want fail, rc=1)
+family-run step has no timeout-minutes
+not ok - could not parse tests-herdr timeouts from ci.yml
+RESULT: as expected
+--- herdr step timeout: family-run step timeout raised to 75 (want fail, rc=1)
+not ok - family-run step timeout must be 20 minutes, got 75
+RESULT: as expected
+--- herdr step timeout: decoy nested with.name carries the step name (want fail, rc=1)
+missing family-run step
+not ok - could not parse tests-herdr timeouts from ci.yml
+RESULT: as expected
+--- herdr step timeout: neither ruby nor python3 yaml available (want fail, rc=1)
+not ok - parsing .github/workflows/ci.yml as YAML needs ruby or python3 with the yaml module
+RESULT: as expected
+SUMMARY as_expected=8 unexpected=0
