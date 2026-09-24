@@ -1109,6 +1109,7 @@ SPAWN_TREEHOUSE_PROJECT_LOCK_HELD=0
 SPAWN_SLOT_CLAIMED=0
 SPAWN_WT_LEASED=0
 SPAWN_WT_LEASE_HOLDER=
+SPAWN_LAUNCH_DELIVERY_STARTED=0
 RELAUNCH_REPLACEMENT_PENDING=0
 RELAUNCH_REPLACEMENT_BUSY_GEN=
 RELAUNCH_REPLACEMENT_HARNESS=
@@ -1134,12 +1135,27 @@ spawn_fresh_commit_rollback() {
 # bounded so an abort never waits long on another spawn. `return --force`
 # cleans and resets the slot, so it runs only on a slot git proves clean - the
 # freshen gate refuses a dirty leased slot without touching it, and its abort
-# must not then discard that work. The holder guard is added where the
+# must not then discard that work. Once the launch command may have reached
+# the pane, the slot is returned only when the backend's recovery-grade agent
+# state proves the endpoint agent-free (dead or missing): an abort after
+# launch can leave a live worker in it (the kimi and backlog-commit failures
+# do not close their endpoint), and a slot back in the pool would be leased to
+# another task under that worker. The holder guard is added where the
 # installed Treehouse offers it. Anything else leaves the lease and names the
 # manual return.
 spawn_return_leased_worktree() {
-  local manual="(cd '$PROJ_ABS' && treehouse return --force '$WT')" dirty
+  local manual="(cd '$PROJ_ABS' && treehouse return --force '$WT')" dirty agent_state
   local -a args=(return --force)
+  if [ "$SPAWN_LAUNCH_DELIVERY_STARTED" = 1 ]; then
+    agent_state=$(fm_backend_agent_state "$BACKEND" "$T" 2>/dev/null) || agent_state=unreadable
+    case "$agent_state" in
+      dead | missing) ;;
+      *)
+        echo "warning: leaving task $ID's leased worktree $WT in place; its endpoint $T was launched and is not proven agent-free (agent state: ${agent_state:-unreadable}). Once that endpoint is closed, return it with: $manual" >&2
+        return 0
+        ;;
+    esac
+  fi
   if [ "$SPAWN_TREEHOUSE_PROJECT_LOCK_HELD" != 1 ]; then
     if [ -z "$SPAWN_TREEHOUSE_PROJECT_LOCK" ] ||
       ! fm_lock_acquire_wait_bounded "$SPAWN_TREEHOUSE_PROJECT_LOCK" 10; then
@@ -4953,6 +4969,7 @@ if ! (umask 077 && printf '%s\n' "$LAUNCH" >"$LAUNCH_STAGE" &&
   exit 1
 fi
 sleep 0.3
+SPAWN_LAUNCH_DELIVERY_STARTED=1
 spawn_send_literal "$T" ". $(shell_quote "$LAUNCH_FILE")"
 sleep 0.3
 if [ "${HERDR_PROJECTED:-0}" -eq 1 ]; then
