@@ -301,6 +301,35 @@ fm_backend_tmux_foreground_argv0s() {  # <target>
       done
 }
 
+# fm_backend_tmux_agent_pids: the pids of the verified harness processes in the
+# recorded window's foreground process group, one per line, classified by the
+# shared vocabulary in bin/fm-agent-process-lib.sh. Prints nothing when the
+# window is absent from its session's inventory (tmux would otherwise answer
+# for the active window) or when no foreground process is a harness.
+fm_backend_tmux_agent_pids() {  # <target>
+  local target=$1 windows tty pid pgid tpgid comm args argv0
+  case "$target" in
+    *:*:*|'':*|*:'') return 0 ;;
+    *:*) ;;
+    *) return 0 ;;
+  esac
+  windows=$(fm_backend_tmux_window_inventory "${target%%:*}") || return 0
+  printf '%s\n' "$windows" | grep -Fqx "${target#*:}" || return 0
+  tty=$(tmux display-message -p -t "$target" '#{pane_tty}' 2>/dev/null) || return 0
+  [ -n "$tty" ] || return 0
+  LC_ALL=C ps -t "${tty#/dev/}" -o pid=,pgid=,tpgid=,comm= 2>/dev/null \
+    | while read -r pid pgid tpgid comm; do
+        [ -n "$comm" ] || continue
+        [ "$pgid" = "$tpgid" ] || continue
+        args=$(LC_ALL=C ps -p "$pid" -o args= 2>/dev/null) || args=
+        args=${args#"${args%%[![:space:]]*}"}
+        argv0=${args%%[[:space:]]*}
+        if [ "$(fm_agent_process_classify "$comm" "$argv0" "$args" "$pid")" = agent ]; then
+          printf '%s\n' "$pid"
+        fi
+      done
+}
+
 # fm_backend_tmux_agent_state: recovery-grade harness-agent state for one
 # recorded target. See bin/fm-backend.sh's fm_backend_agent_state for the
 # shared state vocabulary and docs/tmux-backend.md "Agent liveness probe" for

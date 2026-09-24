@@ -25,7 +25,8 @@
 #              still exists, and the agent is still alive where the backend can
 #              classify that. Cancellation is confirmed only from an adapter-
 #              owned acknowledgement and otherwise reported unconfirmed. Busy
-#              state is never rewritten as proof of the action.
+#              state is never rewritten as proof of the action. Refused when
+#              the pane shows one of the harness's launch dialogs (below).
 #   exit       Stop the agent, preserving its terminal endpoint, worktree, and
 #              every uncommitted change. Interrupts first when the task reads
 #              busy, then submits the harness's exit command. When the harness
@@ -34,7 +35,9 @@
 #              once with the adapter-verified choice that really exits
 #              (bin/fm-control-lib.sh's fm_control_exit_confirmation_key); a
 #              dialog in any other shape is left untouched rather than
-#              guessed at. Postcondition:
+#              guessed at. When the pane shows a launch dialog it sends no key
+#              at all and stops the attributed harness process with SIGTERM
+#              instead (below). Postcondition:
 #              the backend's recovery-grade classifier reports the agent gone.
 #              Already-stopped is success (idempotent). An endpoint that reads
 #              `missing` is put through the control plane's per-backend absence
@@ -116,6 +119,16 @@
 #     classified state acts.
 #   - A composer that visibly holds pending text refuses before an exit command
 #     is typed, so existing text is preserved instead of being concatenated.
+#   - No key is ever sent into a pane that shows one of the harness's launch
+#     dialogs (fm_busy_launch_prompt_parked in bin/fm-busy-lib.sh owns the
+#     signatures), whatever the busy record says, because a key there answers
+#     a question that belongs to the operator: on Claude Code 2.1.280 Escape on
+#     the "Allow external CLAUDE.md file imports?" dialog records the same
+#     standing decline as choosing "No", and Enter selects "No". `interrupt`
+#     refuses; `exit` and `relaunch` stop the process by signal instead, which
+#     records no answer (verified on that release: SIGTERM left the project
+#     entry untouched). A pane that cannot be captured refuses too, since the
+#     dialog cannot then be ruled out.
 #
 # Environment knobs (all bounded waits, seconds):
 #   FM_CONTROL_POLL              poll interval for postcondition waits (0.5)
@@ -395,6 +408,7 @@ send_interrupt_keys() {
     || die "harness $HARNESS interrupts with $key, which the $BACKEND backend cannot deliver; refusing to send a different key"
   [ -z "$clear" ] || fm_control_backend_supports_key "$BACKEND" "$clear" \
     || die "harness $HARNESS needs $clear to clear its composer after an interrupt, which the $BACKEND backend cannot deliver; refusing to leave the cancelled prompt where the next submitted line would concatenate onto it"
+  refuse_keys_into_launch_dialog "$VERB"
   while [ "$i" -lt "$repeat" ]; do
     fm_backend_send_key "$BACKEND" "$T" "$key" "$LABEL" \
       || die "interrupt key $key was not delivered to task $ID on $BACKEND"
@@ -463,6 +477,48 @@ verify_interrupt_running() {
   printf '%s' "$proof"
 }
 
+# launch_dialog_parked: 0 when the endpoint visibly shows one of the harness's
+# launch dialogs, 1 when it provably does not, and 2 when the pane could not be
+# captured. Every path that would send a key treats 2 like 0, because a
+# dialog that cannot be ruled out must not receive one.
+launch_dialog_parked() {
+  local tail
+  tail=$(fm_backend_capture "$BACKEND" "$T" 40 "$LABEL" 2>/dev/null) || return 2
+  if printf '%s' "$tail" | fm_busy_launch_prompt_parked "$HARNESS"; then
+    return 0
+  fi
+  return 1
+}
+
+refuse_keys_into_launch_dialog() {  # <verb>
+  local rc=0
+  launch_dialog_parked || rc=$?
+  case "$rc" in
+    1) return 0 ;;
+    2) die "task $ID's pane could not be captured, so a $HARNESS launch dialog cannot be ruled out; '$1' refuses to send a key that could answer it" ;;
+  esac
+  die "task $ID's pane shows a $HARNESS launch dialog, and any key would answer it (Escape on Claude's external-imports dialog records a standing decline); '$1' refuses. Use 'exit' or 'relaunch', which stop a parked agent by signal without answering it, and leave the dialog's question to the operator"
+}
+
+# stop_parked_agent: exit's keyless path for a pane parked on a launch dialog.
+# Signals only the harness processes the backend's process-level view
+# attributes to this endpoint, then requires the same dead postcondition as
+# the ordinary exit. Prints `stopped`.
+stop_parked_agent() {
+  local pids pid state
+  pids=$(fm_backend_agent_pids "$BACKEND" "$T")
+  [ -n "$pids" ] \
+    || die "task $ID's pane shows a $HARNESS launch dialog, but no harness process could be attributed to its endpoint; refusing to send a key that would answer the dialog. Stop that agent process by hand, never with a key, then retry '$VERB'"
+  for pid in $pids; do
+    kill -TERM "$pid" 2>/dev/null || true
+  done
+  state=$(wait_agent_state "$EXIT_WAIT" dead) || {
+    die "task $ID's agent was parked on a $HARNESS launch dialog and signalled to stop (pids: $(printf '%s' "$pids" | tr '\n' ' ')), but it still reads '$state' after ${EXIT_WAIT}s; no key was sent"
+  }
+  retire_busy_incarnation
+  printf 'stopped'
+}
+
 do_interrupt() {
   local proof cancel
   cancel=$(deliver_interrupt) || return $?
@@ -512,7 +568,7 @@ wait_exit_stopped() {  # <interrupt-result>
 # do_exit: stop the running agent, preserving endpoint and worktree. Prints
 # `already-stopped`, `endpoint-gone`, or `stopped`.
 do_exit() {
-  local state cmd verdict composer_state cancel absence interrupt_result=not-needed
+  local state cmd verdict composer_state cancel absence interrupt_result=not-needed parked_rc=0
   require_state_verified_backend exit
   state=$(agent_state)
   case "$state" in
@@ -557,6 +613,16 @@ do_exit() {
       ;;
     *) die "task $ID's endpoint reads '$state' rather than a positively classified state; refusing to send a lifecycle command into an unattributed endpoint" ;;
   esac
+  # A pane parked on a launch dialog never receives a key, busy or not: a
+  # Herdr-resumed agent can carry a stale busy record into the dialog. An
+  # uncapturable pane falls through, because every key path below refuses it
+  # on its own: the interrupt keys through refuse_keys_into_launch_dialog, and
+  # the exit command through the composer-empty proof.
+  launch_dialog_parked || parked_rc=$?
+  if [ "$parked_rc" = 0 ]; then
+    stop_parked_agent
+    return 0
+  fi
   # A busy agent is interrupted first before the exit command is submitted.
   case "$(busy_verdict)" in
     busy*)

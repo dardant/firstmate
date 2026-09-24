@@ -950,6 +950,95 @@ test_grok_idle_footer_does_not_confirm_cancellation() {
   pass "fm-control interrupt: grok's idle footer does not confirm cancellation"
 }
 
+# --- 5b. launch dialogs never receive a key ----------------------------------
+#
+# Claude Code 2.1.280 records a standing decline for Escape on its external-
+# imports dialog, exactly as for "No" (Enter). A pane parked on a recognized
+# launch dialog must therefore never receive the interrupt key or the exit
+# command, whatever its busy record says.
+
+claude_imports_dialog() {
+  printf '%s\n' ' Allow external CLAUDE.md file imports?' '' \
+    ' This project'"'"'s CLAUDE.md imports files outside the current working directory.' '' \
+    ' ❯ No, disable external imports' '   Yes, allow external imports' '' \
+    ' Enter to confirm · Esc to cancel'
+}
+
+test_launch_dialog_refuses_interrupt() {
+  local dir out rc
+  dir=$(new_case dialog-interrupt)
+  add_task "$dir" t1 claude
+  alive_as "$dir" claude
+  claude_imports_dialog > "$dir/fake/pane"
+  out=$(run_control "$dir" t1 interrupt); rc=$?
+  expect_code 1 "$rc" "interrupt into a launch dialog should refuse"$'\n'"$out"
+  assert_contains "$out" "shows a claude launch dialog" "the refusal should name the dialog"
+  assert_contains "$out" "Use 'exit' or 'relaunch'" "the refusal should name the keyless recovery"
+  [ -z "$(keys_sent "$dir")" ] || fail "interrupt must send no key into a launch dialog, got: $(keys_sent "$dir")"
+  [ -z "$(literals "$dir")" ] || fail "interrupt must type nothing into a launch dialog"
+  pass "fm-control interrupt: a pane parked on a launch dialog receives no key"
+}
+
+test_launch_dialog_exit_sends_no_key_even_when_record_reads_busy() {
+  local dir out rc gen
+  dir=$(new_case dialog-exit-busy)
+  add_task "$dir" t1 claude
+  alive_as "$dir" claude
+  # A busy record that has advanced past the spawn seed, as a Herdr-resumed
+  # agent carries it, so only the rendered dialog can stop the busy interrupt.
+  gen=$("$ROOT/bin/fm-busy-event.sh" arm "$dir/home/state" t1)
+  printf 'busy_gen=%s\n' "$gen" >> "$dir/home/state/t1.meta"
+  "$ROOT/bin/fm-busy-event.sh" apply "$dir/home/state" t1 busy --gen "$gen" \
+    --source claude-hook --event user-prompt-submit >/dev/null \
+    || fail "the busy record should advance past the spawn seed"
+  claude_imports_dialog > "$dir/fake/pane"
+  out=$(run_control "$dir" t1 exit); rc=$?
+  # The stub pane has no terminal, so no harness process is attributable and
+  # the keyless stop has nothing it may signal.
+  expect_code 1 "$rc" "exit with no attributable process should refuse"$'\n'"$out"
+  assert_contains "$out" "no harness process could be attributed" \
+    "the refusal should say why it could not stop the parked agent"
+  [ -z "$(keys_sent "$dir")" ] || fail "exit must send no key into a launch dialog, got: $(keys_sent "$dir")"
+  [ -z "$(literals "$dir")" ] || fail "exit must type no exit command into a launch dialog, got: $(literals "$dir")"
+  pass "fm-control exit: a busy record never sends the interrupt key into a launch dialog"
+}
+
+# The keyless stop against real processes: a real tmux server on a private
+# socket, and a stand-in agent whose argv[0] is `claude` that renders the
+# imports dialog and records any key it receives.
+test_launch_dialog_exit_stops_parked_agent_by_signal() {
+  command -v tmux >/dev/null 2>&1 || { echo "skip: tmux not found (launch-dialog keyless stop)"; return 0; }
+  local dir sock out rc answered agent_script i
+  dir=$(new_case dialog-exit-real)
+  add_task "$dir" t1 claude
+  sock=$(mktemp -d "/tmp/fmctl.XXXXXX")
+  answered="$dir/answered"
+  agent_script="$dir/agent.sh"
+  {
+    printf '%s\n' "printf '%s\n' ' Allow external CLAUDE.md file imports?' '' ' ❯ No, disable external imports' '   Yes, allow external imports' '' ' Enter to confirm · Esc to cancel'"
+    printf '%s\n' "IFS= read -rsn1 _key && printf 'answered\n' > '$answered'"
+    printf '%s\n' 'sleep 600'
+  } > "$agent_script"
+  env -u TMUX TMUX_TMPDIR="$sock" tmux new-session -d -s fmses -n fm-t1 -x 120 -y 30 \
+    "bash -c \"(exec -a claude bash '$agent_script'); exec bash --norc --noprofile\""
+  for i in $(seq 1 50); do
+    env -u TMUX TMUX_TMPDIR="$sock" tmux capture-pane -p -t fmses:fm-t1 2>/dev/null \
+      | grep -q 'Enter to confirm' && break
+    sleep 0.1
+  done
+  out=$(env -u TMUX TMUX_TMPDIR="$sock" FM_HOME="$dir/home" FM_CONTROL_POLL=0.1 \
+    FM_CONTROL_EXIT_WAIT=10 "$CONTROL" t1 interrupt 2>&1); rc=$?
+  expect_code 1 "$rc" "a real parked pane should refuse interrupt"$'\n'"$out"
+  out=$(env -u TMUX TMUX_TMPDIR="$sock" FM_HOME="$dir/home" FM_CONTROL_POLL=0.1 \
+    FM_CONTROL_EXIT_WAIT=10 "$CONTROL" t1 exit 2>&1); rc=$?
+  env -u TMUX TMUX_TMPDIR="$sock" tmux kill-server >/dev/null 2>&1 || true
+  rm -rf "$sock"
+  expect_code 0 "$rc" "exit should stop a real parked agent by signal"$'\n'"$out"
+  assert_contains "$out" "stopped t1 harness=claude" "exit should report the stop"
+  [ ! -e "$answered" ] || fail "the parked agent received a key, which would have answered its dialog"
+  pass "fm-control exit: a real agent parked on a launch dialog stops by signal with no key"
+}
+
 # --- 6. marker non-regression -----------------------------------------------
 
 test_secondmate_control_command_carries_no_marker() {
@@ -1030,6 +1119,9 @@ test_agent_that_does_not_stop_fails_closed
 test_exit_answers_claude_background_work_dialog
 test_exit_leaves_claude_dialog_pointing_elsewhere
 test_exit_confirmation_recognizer_is_scoped
+test_launch_dialog_refuses_interrupt
+test_launch_dialog_exit_sends_no_key_even_when_record_reads_busy
+test_launch_dialog_exit_stops_parked_agent_by_signal
 test_grok_interrupt_without_acknowledgement_reports_unconfirmed
 test_grok_idle_footer_does_not_confirm_cancellation
 test_secondmate_control_command_carries_no_marker

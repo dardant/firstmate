@@ -239,29 +239,77 @@ JSON
 }
 
 # hasClaudeMdExternalIncludesApproved===false with WarningShown===true on the
-# project-root entry is a human's explicit "No, disable" answer, recorded in the SAME store their own
-# interactive sessions read. A spawn must never flip that to true on their
-# behalf: doing so would grant every later interactive session in that
-# checkout silent external-file inclusion the human declined. The whole
-# registration refuses instead, and the store - including the worktree entry,
-# which is never reached - must come back byte-for-byte unchanged.
+# project-root entry is the decline Claude Code records for "No, disable" and,
+# on 2.1.280, for Escape too - in the SAME store the human's own interactive
+# sessions read. A spawn must never flip it: the worktree still registers
+# trust, the decline survives unchanged, and a note names the reset command,
+# because the stored pair cannot say whether a person or a stray key chose it.
 test_project_root_entry_declined_external_imports_is_not_overridden() {
-  local rec store out before after
+  local rec store out
   rec=$(make_case project-decline)
   read_case "$rec"
   store="$CONFIG/.claude.json"
   cat > "$store" <<JSON
 {"hasCompletedOnboarding":true,"projects":{"$PROJ":{"hasTrustDialogAccepted":true,"hasClaudeMdExternalIncludesApproved":false,"hasClaudeMdExternalIncludesWarningShown":true,"allowedTools":["Read"]}}}
 JSON
-  before=$(cat "$store")
   out=$(run_trust "$CONFIG" "$WT" "$PROJ")
-  expect_code 1 $? "a project that already declined external imports must be refused: $out"
-  assert_contains "$out" "declined external CLAUDE.md imports" \
-    "the refusal did not name the declined-consent reason"
-  after=$(cat "$store")
-  [ "$before" = "$after" ] || fail "the store was modified despite the refusal"
-  assert_not_trusted "$store" "$WT" "the worktree entry was registered despite the refusal"
-  pass "fm-claude-trust.sh: refuses to override a project's declined external-imports consent"
+  expect_code 0 $? "a standing decline must not block trust registration: $out"
+  assert_store_value "$store" false "the project's decline was flipped" \
+    projects "$PROJ" hasClaudeMdExternalIncludesApproved
+  assert_store_value "$store" true "the project's decline lost its warning-shown half" \
+    projects "$PROJ" hasClaudeMdExternalIncludesWarningShown
+  assert_store_value "$store" '["Read"]' "the project entry's unrelated settings were lost" \
+    projects "$PROJ" allowedTools
+  assert_trust_only_no_import_consent "$store" "$WT" \
+    "the worktree entry either lost trust or gained import flags beside a decline"
+  assert_contains "$out" "records a decline of external CLAUDE.md imports" \
+    "the registration did not report the standing decline"
+  assert_contains "$out" "--reset-imports-decline '$PROJ'" \
+    "the note did not name the one reset command"
+  pass "fm-claude-trust.sh: registers trust beside a declined project and reports the reset step"
+}
+
+# The reset is the operator's undo for a decline recorded by mistake: it
+# returns the entry to "never asked" and grants nothing.
+test_reset_removes_only_a_recorded_decline() {
+  local rec store out
+  rec=$(make_case reset-decline)
+  read_case "$rec"
+  store="$CONFIG/.claude.json"
+  cat > "$store" <<JSON
+{"hasCompletedOnboarding":true,"projects":{"$PROJ":{"hasTrustDialogAccepted":true,"hasClaudeMdExternalIncludesApproved":false,"hasClaudeMdExternalIncludesWarningShown":true,"allowedTools":["Read"]}}}
+JSON
+  # Given the task worktree, the reset still lands on the primary checkout,
+  # the only entry Claude Code's imports check reads.
+  out=$(CLAUDE_CONFIG_DIR="$CONFIG" HOME="$CONFIG" "$TRUST" --reset-imports-decline "$WT" 2>&1)
+  expect_code 0 $? "resetting a recorded decline should succeed: $out"
+  assert_contains "$out" "reset: $PROJ" "the reset did not name the primary checkout"
+  assert_store_value "$store" undefined "the reset left the approved flag behind" \
+    projects "$PROJ" hasClaudeMdExternalIncludesApproved
+  assert_store_value "$store" undefined "the reset left the warning-shown flag behind" \
+    projects "$PROJ" hasClaudeMdExternalIncludesWarningShown
+  assert_store_value "$store" true "the reset dropped the project's trust" \
+    projects "$PROJ" hasTrustDialogAccepted
+  assert_store_value "$store" '["Read"]' "the reset lost unrelated settings" \
+    projects "$PROJ" allowedTools
+
+  out=$(CLAUDE_CONFIG_DIR="$CONFIG" HOME="$CONFIG" "$TRUST" --reset-imports-decline "$PROJ" 2>&1)
+  expect_code 0 $? "a second reset should be a no-op: $out"
+  assert_contains "$out" "unchanged: $PROJ" "a reset with no decline on record must change nothing"
+
+  cat > "$store" <<JSON
+{"projects":{"$PROJ":{"hasClaudeMdExternalIncludesApproved":true,"hasClaudeMdExternalIncludesWarningShown":true}}}
+JSON
+  out=$(CLAUDE_CONFIG_DIR="$CONFIG" HOME="$CONFIG" "$TRUST" --reset-imports-decline "$PROJ" 2>&1)
+  expect_code 0 $? "a reset against an approval should be a no-op: $out"
+  assert_store_value "$store" true "the reset touched a standing approval" \
+    projects "$PROJ" hasClaudeMdExternalIncludesApproved
+
+  mkdir -p "$PROJ/sub"
+  out=$(CLAUDE_CONFIG_DIR="$CONFIG" HOME="$CONFIG" "$TRUST" --reset-imports-decline "$PROJ/sub" 2>&1)
+  expect_code 1 $? "a subdirectory must not name a project entry: $out"
+  assert_contains "$out" "is not a checkout root" "the refusal did not name the subdirectory reason"
+  pass "fm-claude-trust.sh: --reset-imports-decline removes only a recorded decline, on the primary checkout"
 }
 
 # Claude Code's own default project entry carries BOTH external-imports flags as
@@ -818,6 +866,7 @@ test_fresh_worktree_also_trusts_the_project_root_without_import_consent
 test_registration_carries_forward_existing_import_consent
 test_project_root_entry_preserves_other_keys
 test_project_root_entry_declined_external_imports_is_not_overridden
+test_reset_removes_only_a_recorded_decline
 test_project_root_entry_default_import_flags_are_not_a_decline
 test_registration_is_idempotent
 test_primary_checkout_is_refused
