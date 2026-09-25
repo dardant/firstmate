@@ -1,0 +1,60 @@
+
+     Memory files · /memory
+     ├ ~/.claude/CLAUDE.md: 621 tokens
+     └ AGENTS.md: 36 tokens
+
+     Skills · /skills
+
+     User
+     ├ no-mistakes: ~120 tokens
+     ├ pptx: ~90 tokens
+     ├ frontend-design: ~80 tokens
+     ├ vision: ~70 tokens
+     ├ creating-financial-models: ~70 tokens
+     ├ applying-brand-guidelines: ~60 tokens
+     └ analyzing-financial-statements: ~50 tokens
+
+     claude.ai sync
+     ├ anthropic-skills:docs: ~330 tokens
+     ├ anthropic-skills:pptx: ~330 tokens
+     ├ anthropic-skills:xlsx: ~320 tokens
+     ├ anthropic-skills:computer-use: ~320 tokens
+     ├ anthropic-skills:docx: ~320 tokens
+     ├ anthropic-skills:built-in-browser: ~290 tokens
+     ├ anthropic-skills:lrt-edge: ~260 tokens
+     ├ anthropic-skills:chrome-browser: ~260 tokens
+     ├ anthropic-skills:deep-research: ~200 tokens
+     ├ anthropic-skills:pdf: ~150 tokens
+     ├ anthropic-skills:morning: ~120 tokens
+     ├ anthropic-skills:skill-creator: ~120 tokens
+     └ anthropic-skills:import-memory: ~60 tokens
+
+     Built-in
+     ├ dataviz: ~480 tokens
+     ├ claude-api: ~360 tokens
+     ├ code-review: ~280 tokens
+     ├ update-config: ~240 tokens
+     ├ plugin-authoring: ~130 tokens
+     ├ schedule: ~130 tokens
+     ├ run: ~120 tokens
+     ├ loop: ~120 tokens
+     ├ workflow-authoring: ~80 tokens
+     ├ keybindings-help: ~80 tokens
+     ├ fewer-permission-prompts: ~60 tokens
+     ├ simplify: ~60 tokens
+     ├ security-review: ~30 tokens
+     └ init: ~20 tokens
+
+❯ Read the file big.txt in this directory with the Read tool (the whole file), then reply with only the word DONE.
+
+  Read 1 file (ctrl+o to expand)
+
+● DONE
+
+✻ Churned for 5s · done 4:53 PM
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Opus 5.5 (1M context) | 1M ctx | 921k left (92%)
+  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents

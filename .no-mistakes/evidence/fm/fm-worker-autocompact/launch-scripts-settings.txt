@@ -1,0 +1,4 @@
+=== fixed: /tmp/fm-ac-fixed-sm+ea9a6ece8f28e95ffd313447c9b03a138fb74b7a0f56a22e214ad26c5a7b3dac/launch.s1790369186.3996203.10987.sh
+claude --dangerously-skip-permissions --settings '{"feedbackDrafts":"off","attribution":{"commit":"","pr":"","sessionUrl":false},"autoCompactEnabled":true}'
+=== base: /tmp/fm-ac-base-sm+456f37780f88a7603b0f3df1dd52dbe20786ba849d5f98c928cc9b722c0bf2ce/launch.s1790369188.3998393.17664.sh
+claude --dangerously-skip-permissions --settings '{"feedbackDrafts":"off","attribution":{"commit":"","pr":"","sessionUrl":false}}'

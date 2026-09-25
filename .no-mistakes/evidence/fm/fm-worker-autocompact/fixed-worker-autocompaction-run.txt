@@ -1,0 +1,60 @@
+     ├ mcp__claude_ai_Gmail__unmark_message_spam
+     ├ mcp__claude_ai_Gmail__unmark_thread_spam
+     ├ mcp__claude_ai_Gmail__untrash_message
+     ├ mcp__claude_ai_Gmail__untrash_thread
+     ├ mcp__claude_ai_Gmail__update_draft
+     ├ mcp__claude_ai_Gmail__update_label
+     ├ mcp__claude_ai_Gmail__update_message_labels
+     ├ mcp__claude_ai_Google_Calendar__create_event
+     ├ mcp__claude_ai_Google_Calendar__delete_event
+     ├ mcp__claude_ai_Google_Calendar__get_event
+     ├ mcp__claude_ai_Google_Calendar__list_calendars
+     ├ mcp__claude_ai_Google_Calendar__list_events
+     ├ mcp__claude_ai_Google_Calendar__respond_to_event
+     ├ mcp__claude_ai_Google_Calendar__search_events
+     ├ mcp__claude_ai_Google_Calendar__suggest_time
+     ├ mcp__claude_ai_Google_Calendar__update_event
+     ├ mcp__claude_ai_Google_Drive__authenticate
+     └ mcp__claude_ai_Google_Drive__complete_authentication
+
+     Memory files · /memory
+     ├ ~/.claude/CLAUDE.md: 621 tokens
+     └ AGENTS.md: 36 tokens
+
+     Skills · /skills
+
+     User
+     ├ no-mistakes: ~120 tokens
+     ├ pptx: ~90 tokens
+     ├ frontend-design: ~80 tokens
+     ├ vision: ~70 tokens
+     ├ creating-financial-models: ~70 tokens
+     ├ applying-brand-guidelines: ~60 tokens
+     └ analyzing-financial-statements: ~50 tokens
+
+     claude.ai sync
+     ├ anthropic-skills:docs: ~330 tokens
+     ├ anthropic-skills:pptx: ~330 tokens
+     ├ anthropic-skills:xlsx: ~320 tokens
+     ├ anthropic-skills:computer-use: ~320 tokens
+     ├ anthropic-skills:docx: ~320 tokens
+     ├ anthropic-skills:built-in-browser: ~290 tokens
+ ▐▛███▛█   Claude Code v2.1.280
+▝▜██████▀  Opus 5.5 (1M context) with high effort · Claude Max
+  ▝▝ ▝▝    /tmp/fm-ac-e2e/fixed-secondmate
+
+
+✻ Conversation compacted (ctrl+o for history)
+
+
+  Read 1 file (ctrl+o to expand)
+
+● DONE
+
+✻ Cooked for 33s · done 4:53 PM
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Opus 5.5 (1M context) | 1M ctx | 956k left (95%)
+  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents

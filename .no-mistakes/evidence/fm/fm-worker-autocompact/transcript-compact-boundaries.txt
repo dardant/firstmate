@@ -1,0 +1,8 @@
+== fixed-secondmate
+26e1c3e6-193f-4bc2-89b7-369cebfeac63.jsonl: compact_boundary=2 trigger="trigger":"auto" 
+bbf1e02d-75e2-4309-b863-e7a88502dbb1.jsonl: compact_boundary=0 trigger=
+f950fb71-6f1f-4a0c-96c6-04ca31b7991e.jsonl: compact_boundary=0 trigger=
+== base-secondmate
+407a9988-c461-46c4-a255-a09fd973303b.jsonl: compact_boundary=0 trigger=
+87c60f4d-6325-41e9-813f-091cbde4e42c.jsonl: compact_boundary=0 trigger=
+ad8a3d58-2040-4a9c-99df-b055303145b1.jsonl: compact_boundary=0 trigger=
