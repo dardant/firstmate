@@ -643,6 +643,11 @@ That safely defers injection and eventually raises the wedge alarm.
 A bare shell prompt is never an empty agent composer.
 Away-mode injection proceeds only on an affirmative `empty` result, never on unknown.
 This prevents a dead agent pane from receiving and possibly executing an escalation as shell input.
+A shell prompt themed with an agent glyph, such as a bare `❯`, is caught twice.
+Before the composer is read, `fm_backend_herdr_pane_harness_state` requires both of these to name the primary harness: `agent get` (where that harness's Herdr name is verified) and a process in the pane's foreground group.
+A registration Herdr keeps after its agent exits cannot pass, and neither can a harness suspended under a shell that now owns the terminal.
+The daemon also names its primary harness to the classifier, and for Claude, whose composer is always framed by solid rules, an unframed `❯` row reads `unknown`.
+[Verification](verification/runtime-backends.md#pane-harness-ownership) records the live measurements.
 
 ### Operational input markers
 
@@ -765,7 +770,7 @@ The pane-independent max-defer alert is configured in [`wedge-alarm.md`](wedge-a
 In that last case, `bin/fm-afk-launch.sh`:
 
 1. Creates a dedicated unfocused Herdr workspace.
-2. Runs the daemon there with an explicit supervisor target and backend.
+2. Runs the daemon there with an explicit supervisor target and backend, and the primary harness detected from the captain's context.
 3. Records the exact daemon pane.
 4. Closes only that pane on stop.
 

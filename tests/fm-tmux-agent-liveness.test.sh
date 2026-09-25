@@ -319,6 +319,40 @@ fm_backend_tmux_foreground_comms "$SESSION:no-such-window" >/dev/null \
   || fail "an absent window in a readable session must classify missing, not whatever the fallback pane runs"
 pass "tmux liveness: an absent window classifies missing rather than inheriting tmux's active-window fallback"
 
+# --- pane harness ownership: the away-mode injector's typing proof ---------
+# The away-mode daemon types digests carrying worker-quoted text, so it must
+# prove its primary harness - that exact harness, in the foreground - holds the
+# terminal. These reuse the panes above: each verdict is the process fact, not
+# anything rendered.
+
+owner_of() {  # <target> <harness>
+  fm_backend_pane_harness_state tmux "$1" "$2"
+}
+
+[ "$(owner_of "$SESSION:agent" claude)" = owned ] \
+  || fail "a claude-named foreground process must own its pane for claude"
+[ "$(owner_of "$SESSION:agent" codex)" = foreign ] \
+  || fail "a claude foreground process must be foreign to a codex primary"
+[ "$(owner_of "$SESSION:omp" omp)" = owned ] \
+  || fail "omp's bare binary name must own its pane for omp"
+[ "$(owner_of "$SESSION:decoy-ompd" omp)" = foreign ] \
+  || fail "ompd merely contains omp and must not own the pane"
+[ "$(owner_of "$SESSION:launcher" pi-signed)" = owned ] \
+  || fail "the signed Pi launcher's pi child must own the pane for the pi family"
+[ "$(owner_of "$SESSION:idle" claude)" = foreign ] \
+  || fail "an idle shell pane must be foreign: a digest typed there is executed"
+[ "$(owner_of "$SESSION:background" claude)" = foreign ] \
+  || fail "a claude process backgrounded under the shell that owns the terminal must be foreign"
+kill -0 "$bg_pid" 2>/dev/null \
+  || fail "the background harness-named process died, so the background ownership case proves nothing"
+[ "$(owner_of "$SESSION:no-such-window" claude)" = unreadable ] \
+  || fail "an absent window must be unreadable, never the active window's owner"
+if "$REAL_TMUX" -L "$SOCKET" list-windows -t "$SESSION" -F '#{window_name}' | grep -qx titled; then
+  [ "$(owner_of "$SESSION:titled" claude)" = owned ] \
+    || fail "Claude's version-named executable must own its pane through its install path"
+fi
+pass "tmux ownership: only the named harness in the foreground owns a pane; shells, backgrounded harnesses, other harnesses, and absent windows never do"
+
 # --- Cursor's composer: the terminal cursor is NOT a composer locator --------
 # Cursor Agent CLI parks its terminal cursor below its footer with cursor_flag 0,
 # so tmux's #{cursor_y} answers `unknown` for every Cursor pane state and the

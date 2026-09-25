@@ -76,6 +76,14 @@ fm_herdr_lab_prepare "$SESSION" || fail "could not prepare isolated Herdr lab se
 # shellcheck source=/dev/null
 . "$DAEMON"
 fm_backend_source herdr || fail "fm_backend_source herdr failed"
+# The daemon types only into a pane whose foreground process is its detected
+# primary harness. The fixture below runs as a process named `omp`: omp draws a
+# genuinely bare `❯` composer and Herdr ships no detector for it, so ownership
+# rests on the process proof alone and Herdr's own screen detection never
+# competes with the fixture's reported agent state. Pinned so the result never
+# depends on what launched the suite.
+FM_DAEMON_PRIMARY_HARNESS=omp
+export FM_DAEMON_PRIMARY_HARNESS
 
 # --- build the isolated session's supervisor pane ----------------------------
 
@@ -229,7 +237,9 @@ done
 LOOP
 chmod +x "$LOOP_SCRIPT"
 
-fm_backend_herdr_send_text_line "$SUPERVISOR_TARGET" "bash '$LOOP_SCRIPT' '$LOG_FILE'" \
+mkdir -p "$STATE_DIR/bin"
+ln -s "$(command -v bash)" "$STATE_DIR/bin/omp"
+fm_backend_herdr_send_text_line "$SUPERVISOR_TARGET" "exec '$STATE_DIR/bin/omp' '$LOOP_SCRIPT' '$LOG_FILE'" \
   || fail "could not start the supervisor-loop script in the scratch herdr pane"
 sleep 1  # let the loop start and settle
 

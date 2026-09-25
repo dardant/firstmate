@@ -160,6 +160,14 @@ ack_drain_err() {  # <state> <stderr-file>
     --ack-through "$sequence" --recovery-generation "$generation"
 }
 
+# claude_idle_composer: an idle Claude 2.x composer as the fake tmux panes
+# render it - the `❯` row framed by two solid rules, with the prompt on row 1
+# (pair it with FM_FAKE_TMUX_CURSOR_Y=1). A bare `❯` row is not Claude's
+# composer: bin/fm-composer-lib.sh reads it as a themed shell prompt.
+claude_idle_composer() {
+  printf '────────────────────────\n\342\235\257 \n────────────────────────\n'
+}
+
 make_supercase() {
   local name=$1 dir fakebin
   dir="$TMP_ROOT/$name"
@@ -176,12 +184,20 @@ case "${1:-}" in
     # Return cursor_y when the format asks for it (pane_input_pending).
     for _a in "$@"; do
       case "$_a" in *cursor_y*) printf '%s\n' "${FM_FAKE_TMUX_CURSOR_Y:-0}"; exit 0 ;; esac
+      # The pane's foreground command: the away-mode injector's ownership
+      # proof. Defaults to the claude primary these suites run as.
+      case "$_a" in *pane_current_command*) printf '%s\n' "${FM_FAKE_TMUX_CURRENT_COMMAND-claude}"; exit 0 ;; esac
+      case "$_a" in '#{pane_id}') printf '%%1\n'; exit 0 ;; esac
       [ "$_a" = "-p" ] && _print=1
     done
     [ "$_print" = 1 ] && printf 'fakepane\n'
     exit 0 ;;
   list-windows)
     [ -n "${FM_FAKE_TMUX_WINDOW:-}" ] && printf '%s\n' "$FM_FAKE_TMUX_WINDOW"
+    exit 0 ;;
+  list-panes)
+    [ "${FM_FAKE_TMUX_PANE_ALIVE:-1}" = "1" ] || exit 1
+    printf '%%1\n'
     exit 0 ;;
   capture-pane)
     # Honor a single-line band capture (-S N -E M, both non-negative) for the
@@ -266,11 +282,14 @@ case "${1:-}" in
   display-message)
     print=0
     for a in "$@"; do case "$a" in *cursor_y*) printf '1\n'; exit 0 ;; esac; done
+    for a in "$@"; do case "$a" in *pane_current_command*) printf '%s\n' "${FM_FAKE_TMUX_CURRENT_COMMAND-claude}"; exit 0 ;; esac; done
+    for a in "$@"; do case "$a" in '#{pane_id}') printf '%%1\n'; exit 0 ;; esac; done
     for a in "$@"; do [ "$a" = "-p" ] && print=1; done
     [ "$print" = 1 ] && printf 'fakepane\n'
     exit 0 ;;
   capture-pane) cat "$COMPOSER" 2>/dev/null; exit 0 ;;
   list-windows) exit 0 ;;
+  list-panes) printf '%%1\n'; exit 0 ;;
   send-keys)
     shift
     text=""; is_enter=0; lit=0

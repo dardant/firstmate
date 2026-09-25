@@ -16,7 +16,9 @@
 #   byte-identical via the fm-herdr-lab.sh fleet-state tripwire; the tmux path
 #   uses uniquely-named throwaway sessions killed by exact name. A harmless
 #   sleeper replaces the real daemon (FM_AFK_LAUNCH_ENTRY) so the test observes
-#   only the terminal lifecycle.
+#   only the terminal lifecycle. The E2E launches run under a process named
+#   codex, a primary that publishes no environment marker, so they also prove
+#   the daemon terminal receives the harness detected in the captain's context.
 set -u
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -29,7 +31,7 @@ CONTRACT="$ROOT/bin/fm-afk-contract.sh"
 # fm_afk_launch_primary_harness): the suite calls the entrypoints directly, so a
 # real harness ancestor - a no-mistakes gate agent run under Pi - would outrank
 # the CLAUDECODE=1 marker below and refuse the daemon paths under test.
-unset PI_CODING_AGENT FM_PI_HARNESS CURSOR_AGENT CURSOR_INVOKED_AS GEMINI_CLI ATLASSIAN_AGENT_TYPE ROVODEV_CLI
+unset PI_CODING_AGENT FM_PI_HARNESS CURSOR_AGENT CURSOR_INVOKED_AS GEMINI_CLI ATLASSIAN_AGENT_TYPE ROVODEV_CLI FM_DAEMON_PRIMARY_HARNESS
 export CLAUDECODE=1 FM_TEST_HARNESS=claude FM_TEST_SEAM=1
 
 FAILED=0
@@ -39,9 +41,19 @@ pass() { printf 'ok - %s\n' "$1"; }
 SLEEPER=$(mktemp "${TMPDIR:-/tmp}/fm-afk-sleeper.XXXXXX")
 printf '#!/usr/bin/env bash\nexec sleep 600\n' > "$SLEEPER"
 chmod +x "$SLEEPER"
+RECORDER=$(mktemp "${TMPDIR:-/tmp}/fm-afk-recorder.XXXXXX")
+cat > "$RECORDER" <<'EOF'
+#!/usr/bin/env bash
+printf '%s' "${FM_DAEMON_PRIMARY_HARNESS-<unset>}" > "$FM_HOME/daemon-primary-harness"
+exec sleep 600
+EOF
+chmod +x "$RECORDER"
+CODEX_BIN=$(mktemp -d "${TMPDIR:-/tmp}/fm-afk-codex-bin.XXXXXX")
+ln -s "$(command -v bash)" "$CODEX_BIN/codex"
 TRACK_TMUX_SESSIONS=""
 GLOBAL_CLEANUP() {
-  rm -f "$SLEEPER" 2>/dev/null || true
+  rm -f "$SLEEPER" "$RECORDER" 2>/dev/null || true
+  rm -rf "$CODEX_BIN" 2>/dev/null || true
   local s
   for s in $TRACK_TMUX_SESSIONS; do
     tmux kill-session -t "$s" 2>/dev/null || true
@@ -51,6 +63,20 @@ trap GLOBAL_CLEANUP EXIT
 
 enter_posture() {  # <home>
   FM_HOME="$1" FM_STATE_OVERRIDE="$1/state" "$CONTRACT" enter >/dev/null 2>&1
+}
+
+assert_daemon_received_codex() {  # <label> <home>
+  local got="" _
+  for _ in $(seq 1 100); do
+    got=$(cat "$2/daemon-primary-harness" 2>/dev/null || true)
+    [ -z "$got" ] || break
+    sleep 0.05
+  done
+  if [ "$got" = codex ]; then
+    pass "$1: daemon terminal receives the captain's detected codex primary as FM_DAEMON_PRIMARY_HARNESS"
+  else
+    fail "$1: daemon terminal received primary harness '$got', expected codex"
+  fi
 }
 
 # ---------------------------------------------------------------------------
@@ -1278,8 +1304,8 @@ e2e_herdr() {
   ws_before=$(fm_backend_herdr_cli "$SESSION" workspace list 2>/dev/null | jq '[.result.workspaces[]?]|length')
 
   FM_HOME="$home_tmp" FM_STATE_OVERRIDE="$home_tmp/state" \
-    FM_SUPERVISOR_TARGET="$target" FM_SUPERVISOR_BACKEND=herdr FM_AFK_LAUNCH_ENTRY="$SLEEPER" \
-    "$LAUNCH" start >/dev/null 2>&1
+    FM_SUPERVISOR_TARGET="$target" FM_SUPERVISOR_BACKEND=herdr FM_AFK_LAUNCH_ENTRY="$RECORDER" \
+    "$CODEX_BIN/codex" "$LAUNCH" start >/dev/null 2>&1
 
   during=$(fm_backend_herdr_cli "$SESSION" pane list --workspace "$cap_ws" 2>/dev/null | jq --arg t "$cap_tab" '[.result.panes[]?|select(.tab_id==$t)]|length')
   ws_during=$(fm_backend_herdr_cli "$SESSION" workspace list 2>/dev/null | jq '[.result.workspaces[]?]|length')
@@ -1290,6 +1316,7 @@ e2e_herdr() {
   if [ "$ws_during" -gt "$ws_before" ]; then pass "herdr e2e: daemon launched in a separate non-visible workspace"; else fail "herdr e2e: no separate daemon workspace created"; fi
   if [ -n "$dtab" ] && [ "$dtab" != "$cap_tab" ]; then pass "herdr e2e: daemon pane is NOT in the captain's tab"; else fail "herdr e2e: daemon pane shares the captain tab ($dtab)"; fi
   case "$dtgt" in "$SESSION":*) pass "herdr e2e: daemon terminal scoped to the lab session" ;; *) fail "herdr e2e: daemon terminal not in the lab session ($dtgt)" ;; esac
+  assert_daemon_received_codex "herdr e2e" "$home_tmp"
 
   FM_HOME="$home_tmp" FM_STATE_OVERRIDE="$home_tmp/state" \
     FM_SUPERVISOR_TARGET="$target" FM_SUPERVISOR_BACKEND=herdr "$LAUNCH" stop >/dev/null 2>&1
@@ -1319,14 +1346,15 @@ e2e_tmux() {
   before=$(tmux list-panes -t "$cap_session" | wc -l | tr -d ' ')
 
   FM_HOME="$home_tmp" FM_STATE_OVERRIDE="$home_tmp/state" \
-    FM_SUPERVISOR_TARGET="$cap_pane" FM_SUPERVISOR_BACKEND=tmux FM_AFK_LAUNCH_ENTRY="$SLEEPER" \
-    "$LAUNCH" start >/dev/null 2>&1
+    FM_SUPERVISOR_TARGET="$cap_pane" FM_SUPERVISOR_BACKEND=tmux FM_AFK_LAUNCH_ENTRY="$RECORDER" \
+    "$CODEX_BIN/codex" "$LAUNCH" start >/dev/null 2>&1
 
   during=$(tmux list-panes -t "$cap_session" | wc -l | tr -d ' ')
   rec=$(cut -f2 "$home_tmp/state/.afk-daemon-terminal" 2>/dev/null || true)
   TRACK_TMUX_SESSIONS="$TRACK_TMUX_SESSIONS $rec"
   if [ "$before" = "$during" ]; then pass "tmux e2e: captain window pane count unchanged after start (no split-window)"; else fail "tmux e2e: captain window pane count changed ($before -> $during)"; fi
   if [ -n "$rec" ] && tmux has-session -t "$rec" 2>/dev/null && [ "$rec" != "$cap_session" ]; then pass "tmux e2e: daemon launched in a separate detached session"; else fail "tmux e2e: no separate daemon session ($rec)"; fi
+  assert_daemon_received_codex "tmux e2e" "$home_tmp"
 
   FM_HOME="$home_tmp" FM_STATE_OVERRIDE="$home_tmp/state" \
     FM_SUPERVISOR_TARGET="$cap_pane" FM_SUPERVISOR_BACKEND=tmux "$LAUNCH" stop >/dev/null 2>&1

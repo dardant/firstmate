@@ -111,3 +111,56 @@ fm_agent_process_classify() {  # <name> <argv0> <args> [pid] -> agent|shell|othe
     printf 'other'
   fi
 }
+
+# fm_agent_harness_family: the process family a harness name runs as. Both Pi
+# identities run the same `pi` engine (the signed launcher is only a wrapper),
+# so they share one family; every other primary harness is its own family. An
+# unrecognized name prints nothing and returns 1, so no caller can prove that
+# an unverified harness owns a process.
+fm_agent_harness_family() {  # <harness>
+  case "${1:-}" in
+    claude|codex|opencode|grok|kimi|omp|cursor) printf '%s' "$1" ;;
+    pi|pi-signed) printf 'pi' ;;
+    *) return 1 ;;
+  esac
+}
+
+# fm_agent_process_harness_family: WHICH verified harness one process is, from
+# the same identity surfaces fm_agent_process_classify reads, printed as a
+# fm_agent_harness_family value; nothing and return 1 when the process names no
+# primary harness. fm_agent_process_classify answers "is this some agent";
+# this answers "is it THIS agent", which a caller about to type into a pane
+# needs, because a different harness in the foreground is not the recipient it
+# vetted.
+#
+# The name patterns mirror fm_agent_process_classify_name, and an exact harness
+# component of the name or argv[0] path (fm_harness_path_name) carries Claude
+# Code's version-named executable, whose install path is the only surface that
+# still says claude. The node-bundle interpreter inference is deliberately not
+# used: any node process holding a harness-shaped path would match it.
+fm_agent_process_harness_family() {  # <name> <argv0> <args>
+  local name=${1:-} argv0=${2:-} args=${3:-} surface base found
+  if fm_cursor_process_matches "$name" "$args" "$argv0"; then
+    printf 'cursor'
+    return 0
+  fi
+  for surface in "$name" "$argv0"; do
+    [ -n "$surface" ] || continue
+    base=${surface##*/}
+    base=${base#-}
+    case "$base" in
+      *claude*) printf 'claude'; return 0 ;;
+      *codex*) printf 'codex'; return 0 ;;
+      *opencode*) printf 'opencode'; return 0 ;;
+      *grok*) printf 'grok'; return 0 ;;
+      *kimi*) printf 'kimi'; return 0 ;;
+      pi|pi-signed|pi-launcher|Pi) printf 'pi'; return 0 ;;
+      omp) printf 'omp'; return 0 ;;
+    esac
+    if found=$(fm_harness_path_name "$surface"); then
+      fm_agent_harness_family "$found"
+      return 0
+    fi
+  done
+  return 1
+}

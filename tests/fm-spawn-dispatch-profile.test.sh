@@ -141,7 +141,7 @@ test_no_profile_keeps_claude_profile_defaults() {
   assert_meta_profile "$HOME_DIR/state/$id.meta" claude default default
 
   launch=$(cat "$LAUNCH_LOG")
-  expected="export COMPACT_ADVISER_DISABLE=1; $(ai_trailer_hooks_prefix "$HOME_DIR" "$id")env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI env -u CLAUDE_CODE_CHILD_SESSION CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_ENABLE_AWAY_SUMMARY=false CLAUDE_CODE_SEND_FEEDBACK=0 claude --dangerously-skip-permissions --settings '{\"feedbackDrafts\":\"off\",\"attribution\":{\"commit\":\"\",\"pr\":\"\",\"sessionUrl\":false}}' $CLAUDE_CONTROL_CHANNEL_FLAG \"\$('${ROOT}/bin/fm-operational-input.sh' encode launch-brief < '$HOME_DIR/data/$id/launch-brief.md')\""
+  expected="export COMPACT_ADVISER_DISABLE=1; $(ai_trailer_hooks_prefix "$HOME_DIR" "$id")env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI env -u CLAUDE_CODE_CHILD_SESSION CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_ENABLE_AWAY_SUMMARY=false CLAUDE_CODE_SEND_FEEDBACK=0 claude --dangerously-skip-permissions --settings '{\"feedbackDrafts\":\"off\",\"attribution\":{\"commit\":\"\",\"pr\":\"\",\"sessionUrl\":false},\"autoCompactEnabled\":true}' $CLAUDE_CONTROL_CHANNEL_FLAG \"\$('${ROOT}/bin/fm-operational-input.sh' encode launch-brief < '$HOME_DIR/data/$id/launch-brief.md')\""
   [ "$launch" = "$expected" ] || fail "no-profile claude launch did not use the canonical launch kind"$'\n'"expected: $expected"$'\n'"actual:   $launch"
   pass "no --model/--effort records defaults and types the claude launch instructions"
 }
@@ -915,7 +915,7 @@ test_claude_forwards_firstmate_config_dir_when_set() {
   status=$?
   expect_code 0 "$status" "claude spawn with CLAUDE_CONFIG_DIR set should succeed"
   launch=$(cat "$LAUNCH_LOG")
-  assert_contains "$launch" "CLAUDE_CONFIG_DIR='$CASE_DIR/claude-work' env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI env -u CLAUDE_CODE_CHILD_SESSION CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_ENABLE_AWAY_SUMMARY=false CLAUDE_CODE_SEND_FEEDBACK=0 claude --dangerously-skip-permissions --settings '{\"feedbackDrafts\":\"off\",\"attribution\":{\"commit\":\"\",\"pr\":\"\",\"sessionUrl\":false}}'" \
+  assert_contains "$launch" "CLAUDE_CONFIG_DIR='$CASE_DIR/claude-work' env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI env -u CLAUDE_CODE_CHILD_SESSION CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_ENABLE_AWAY_SUMMARY=false CLAUDE_CODE_SEND_FEEDBACK=0 claude --dangerously-skip-permissions --settings '{\"feedbackDrafts\":\"off\",\"attribution\":{\"commit\":\"\",\"pr\":\"\",\"sessionUrl\":false},\"autoCompactEnabled\":true}'" \
     "claude launch did not forward firstmate's CLAUDE_CONFIG_DIR to the crewmate pane"
   pass "claude forwards firstmate's CLAUDE_CONFIG_DIR so the crewmate uses the same credential store"
 }
@@ -1008,6 +1008,14 @@ assert_attribution_policy() {  # <launch-command> <what>
   assert_contains "$launch" '"sessionUrl":false' "$what launch does not silence the session URL"
 }
 
+# A captain may turn auto-compaction off in the `user` settings scope for their
+# own sessions. A spawned worker inherits that scope, so without its own
+# per-launch override it parks at the context limit instead of compacting.
+assert_auto_compaction_enabled() {  # <launch-command> <what>
+  local launch=$1 what=$2
+  assert_contains "$launch" '"autoCompactEnabled":true' "$what launch does not enable auto-compaction"
+}
+
 test_claude_task_launch_carries_control_channel_authority() {
   local rec id out status launch
   id=profile-claude-control-channel-z21
@@ -1080,7 +1088,8 @@ test_claude_crewmate_launch_carries_the_attribution_policy() {
   expect_code 0 "$status" "claude crewmate spawn should succeed"$'\n'"$out"
   launch=$(cat "$LAUNCH_LOG")
   assert_attribution_policy "$launch" "claude crewmate"
-  pass "a claude crewmate launch carries the attribution-off policy in its own settings"
+  assert_auto_compaction_enabled "$launch" "claude crewmate"
+  pass "a claude crewmate launch carries the attribution-off policy and auto-compaction in its own settings"
 }
 
 test_claude_secondmate_launch_carries_the_attribution_policy() {
@@ -1097,7 +1106,8 @@ test_claude_secondmate_launch_carries_the_attribution_policy() {
   expect_code 0 "$status" "secondmate claude spawn should succeed"$'\n'"$out"
   launch=$(cat "$LAUNCH_LOG")
   assert_attribution_policy "$launch" "claude secondmate"
-  pass "a claude secondmate launch carries the attribution-off policy too"
+  assert_auto_compaction_enabled "$launch" "claude secondmate"
+  pass "a claude secondmate launch carries the attribution-off policy and auto-compaction too"
 }
 
 test_active_dispatch_profile_does_not_block_secondmate_launch() {
@@ -1424,7 +1434,7 @@ SH
 # permission flag, and any other token refuses before endpoint or metadata.
 claude_expected_launch() {  # <home> <id> <permission-flag>
   local home=$1 id=$2 flag=$3
-  printf '%s' "export COMPACT_ADVISER_DISABLE=1; $(ai_trailer_hooks_prefix "$home" "$id")env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI env -u CLAUDE_CODE_CHILD_SESSION CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_ENABLE_AWAY_SUMMARY=false CLAUDE_CODE_SEND_FEEDBACK=0 claude $flag --settings '{\"feedbackDrafts\":\"off\",\"attribution\":{\"commit\":\"\",\"pr\":\"\",\"sessionUrl\":false}}' $CLAUDE_CONTROL_CHANNEL_FLAG \"\$('${ROOT}/bin/fm-operational-input.sh' encode launch-brief < '$home/data/$id/launch-brief.md')\""
+  printf '%s' "export COMPACT_ADVISER_DISABLE=1; $(ai_trailer_hooks_prefix "$home" "$id")env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI env -u CLAUDE_CODE_CHILD_SESSION CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_ENABLE_AWAY_SUMMARY=false CLAUDE_CODE_SEND_FEEDBACK=0 claude $flag --settings '{\"feedbackDrafts\":\"off\",\"attribution\":{\"commit\":\"\",\"pr\":\"\",\"sessionUrl\":false},\"autoCompactEnabled\":true}' $CLAUDE_CONTROL_CHANNEL_FLAG \"\$('${ROOT}/bin/fm-operational-input.sh' encode launch-brief < '$home/data/$id/launch-brief.md')\""
 }
 
 test_claude_permission_mode_bypass_matches_absent_launch() {

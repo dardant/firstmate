@@ -2139,11 +2139,32 @@ fm_backend_herdr_pane_process_state() {  # <session> <pane_id>
   printf '%s' "$verdict"
 }
 
+# fm_backend_herdr_foreground_process_rows: the foreground processes of one
+# already-validated `pane process-info` response, one per line as
+# <pid>US<name>US<argv0>US<args> with US the ASCII unit separator (0x1f, not
+# whitespace, so `read` keeps an empty field in place), where name is the kernel process name,
+# argv0 the first argv element (or .argv0), and args the full command line
+# (.cmdline, or argv joined by spaces). Fails when the response carries no
+# foreground_processes array; an empty array prints nothing and succeeds,
+# because that is the real exec-to-shell handoff shape, not an unreadable pane.
+fm_backend_herdr_foreground_process_rows() {  # <process-info-json>
+  printf '%s' "$1" | jq -e '.result.process_info.foreground_processes | type == "array"' \
+    >/dev/null 2>&1 || return 1
+  printf '%s' "$1" | jq -r '
+    .result.process_info.foreground_processes[]
+    | [ (.pid | if type == "number" then (floor | tostring) else "" end),
+        (.name // ""),
+        (((.argv // [])[0]) // .argv0 // ""),
+        (.cmdline // ((.argv // []) | join(" ")) // "") ]
+    | map(gsub("[\u001f\n]"; " "))
+    | join("\u001f")' 2>/dev/null
+}
+
 # fm_backend_herdr_pane_process_state_sample: one instantaneous observation
 # for fm_backend_herdr_pane_process_state, which owns the verdict contract and
 # the settle retry.
 fm_backend_herdr_pane_process_state_sample() {  # <session> <pane_id>
-  local session=$1 pane_id=$2 info shell_pid count i pid name argv0 args verdict
+  local session=$1 pane_id=$2 info shell_pid fg pid name argv0 args verdict
   local others=0 ps_bin rows
   info=$(fm_backend_herdr_cli "$session" pane process-info --pane "$pane_id" 2>/dev/null) \
     || { printf 'unreadable'; return 0; }
@@ -2154,29 +2175,18 @@ fm_backend_herdr_pane_process_state_sample() {  # <session> <pane_id>
   shell_pid=$(printf '%s' "$info" | jq -er \
     '.result.process_info.shell_pid | select(type == "number" and . > 1) | floor' 2>/dev/null) \
     || { printf 'unreadable'; return 0; }
-  count=$(printf '%s' "$info" | jq -er \
-    '.result.process_info.foreground_processes | select(type == "array") | length' 2>/dev/null) \
-    || { printf 'unreadable'; return 0; }
-  i=0
-  while [ "$i" -lt "$count" ]; do
-    pid=$(printf '%s' "$info" | jq -r --argjson i "$i" \
-      '.result.process_info.foreground_processes[$i].pid | select(type == "number") | floor' 2>/dev/null)
-    name=$(printf '%s' "$info" | jq -r --argjson i "$i" \
-      '.result.process_info.foreground_processes[$i].name // empty' 2>/dev/null)
-    argv0=$(printf '%s' "$info" | jq -r --argjson i "$i" '
-      .result.process_info.foreground_processes[$i] as $p
-      | (($p.argv // [])[0]) // $p.argv0 // empty' 2>/dev/null)
-    args=$(printf '%s' "$info" | jq -r --argjson i "$i" '
-      .result.process_info.foreground_processes[$i] as $p
-      | $p.cmdline // (($p.argv // []) | join(" ")) // empty' 2>/dev/null)
+  fg=$(fm_backend_herdr_foreground_process_rows "$info") || { printf 'unreadable'; return 0; }
+  while IFS=$'\037' read -r pid name argv0 args; do
+    [ -n "$pid$name$argv0$args" ] || continue
     verdict=$(fm_agent_process_classify "$name" "$argv0" "$args" "$pid")
     case "$verdict" in
       agent) printf 'agent'; return 0 ;;
       shell) ;;
       *) others=$((others + 1)) ;;
     esac
-    i=$((i + 1))
-  done
+  done <<EOF
+$fg
+EOF
 
   # Nothing in the foreground is a harness. A foreground that is not purely
   # shells is already `other`, whatever else the pane holds. Before calling a
@@ -3105,6 +3115,70 @@ fm_backend_herdr_agent_identity_raw() {  # <session> <pane> -> <agent>\t<status>
   local out
   out=$(fm_backend_herdr_cli "$1" agent get "$2" 2>/dev/null) || return 1
   printf '%s' "$out" | jq -r '[.result.agent.agent // "", .result.agent.agent_status // ""] | @tsv' 2>/dev/null
+}
+
+# fm_backend_herdr_native_agent_name: the `agent get` agent name Herdr reports
+# for a harness family, for the families where that name is verified live
+# (docs/verification/runtime-backends.md "Pane harness ownership"). A family
+# with no verified name prints nothing, and fm_backend_herdr_pane_harness_state
+# then rests on the process proof alone rather than guessing a name that would
+# refuse every delivery if Herdr spells it differently.
+fm_backend_herdr_native_agent_name() {  # <family>
+  case "${1:-}" in
+    claude|pi|codex) printf '%s' "$1" ;;
+  esac
+}
+
+# fm_backend_herdr_pane_harness_state: owned|foreign|unreadable for <target>
+# and <harness>, the herdr half of bin/fm-backend.sh's
+# fm_backend_pane_harness_state. Two independent facts must both hold for
+# `owned`:
+#   - Herdr's native `agent get` names the harness, where that name is verified
+#     (fm_backend_herdr_native_agent_name). A different or absent agent is
+#     `foreign`.
+#   - A process in the pane's FOREGROUND group is that harness
+#     (fm_agent_process_harness_family over `pane process-info`). This is the
+#     fact that settles ownership: Herdr keeps a registration after its agent
+#     exits to a shell (upstream issue #4115), and
+#     fm_backend_herdr_pane_process_state still says `agent` for a harness
+#     suspended under a shell that now owns the terminal, so neither of those
+#     can prove who will read the next keystroke. A foreground group holding
+#     only shells or other programs is `foreign`.
+fm_backend_herdr_pane_harness_state() {  # <target> <harness>
+  local target=$1 want native identity agent info fg pid name argv0 args family
+  want=$(fm_agent_harness_family "${2:-}") || { printf 'foreign'; return 0; }
+  fm_backend_herdr_parse_target "$target" || { printf 'unreadable'; return 0; }
+  native=$(fm_backend_herdr_native_agent_name "$want")
+  if [ -n "$native" ]; then
+    # A pane with no registered agent answers `agent get` with error code
+    # agent_not_found (a plain shell): that is proof of absence, not an
+    # unreadable pane.
+    if ! identity=$(fm_backend_herdr_cli "$FM_BACKEND_HERDR_SESSION" agent get "$FM_BACKEND_HERDR_PANE" 2>&1); then
+      [ "$(printf '%s' "$identity" | jq -r '.error.code // empty' 2>/dev/null)" = agent_not_found ] \
+        && { printf 'foreign'; return 0; }
+      printf 'unreadable'
+      return 0
+    fi
+    agent=$(printf '%s' "$identity" | jq -r '.result.agent.agent // empty' 2>/dev/null)
+    [ "$agent" = "$native" ] || { printf 'foreign'; return 0; }
+  fi
+  info=$(fm_backend_herdr_cli "$FM_BACKEND_HERDR_SESSION" pane process-info --pane "$FM_BACKEND_HERDR_PANE" 2>/dev/null) \
+    || { printf 'unreadable'; return 0; }
+  printf '%s' "$info" | jq -e --arg pane "$FM_BACKEND_HERDR_PANE" '
+    .result.type == "pane_process_info"
+    and .result.process_info.pane_id == $pane
+  ' >/dev/null 2>&1 || { printf 'unreadable'; return 0; }
+  fg=$(fm_backend_herdr_foreground_process_rows "$info") || { printf 'unreadable'; return 0; }
+  while IFS=$'\037' read -r pid name argv0 args; do
+    [ -n "$pid$name$argv0$args" ] || continue
+    if family=$(fm_agent_process_harness_family "$name" "$argv0" "$args") && [ "$family" = "$want" ]; then
+      printf 'owned'
+      return 0
+    fi
+  done <<EOF
+$fg
+EOF
+  printf 'foreign'
 }
 
 # fm_backend_herdr_composer_identity: the native agent identity/state probe

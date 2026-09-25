@@ -915,6 +915,27 @@ fm_backend_composer_state() {  # <backend> <target> [expected-label] -> empty|pe
   esac
 }
 
+# fm_backend_pane_harness_state: positive process-level proof that <harness>
+# owns <target>'s terminal right now, as one of owned|foreign|unreadable.
+# `owned` is the only verdict that authorizes typing into a pane whose text a
+# shell would execute: a rendered prompt glyph cannot tell an idle agent
+# composer from a shell prompt themed with the same glyph, so a caller that
+# types unattended (the away-mode daemon) must prove the recipient first.
+# `foreign` means the terminal is held by a shell or any other program,
+# including a DIFFERENT harness; `unreadable` means the proof could not be
+# read. Both refuse. Only tmux and herdr can read a pane's foreground
+# processes; every other backend is `unreadable`.
+fm_backend_pane_harness_state() {  # <backend> <target> <harness> -> owned|foreign|unreadable
+  local backend=$1
+  shift
+  fm_backend_source "$backend" || { printf 'unreadable'; return 0; }
+  case "$backend" in
+    tmux) fm_backend_tmux_pane_harness_state "$@" ;;
+    herdr) fm_backend_herdr_pane_harness_state "$@" ;;
+    *) printf 'unreadable' ;;
+  esac
+}
+
 # fm_backend_target_exists: cheap, READ-ONLY existence check - does the
 # recorded TARGET endpoint still exist on BACKEND? Never starts a server or
 # session: for herdr this deliberately queries the pane directly instead of

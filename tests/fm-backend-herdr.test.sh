@@ -467,6 +467,71 @@ test_recovery_grade_read_widens_only_at_its_own_boundary() {
   pass "herdr recovery-grade read: a stopped server means missing there, and nowhere else"
 }
 
+# --- pane harness ownership (away-mode injection proof) ---------------------
+#
+# fm_backend_herdr_pane_harness_state is the proof the away-mode daemon needs
+# before it types a digest: the native registration AND the pane's foreground
+# process group must both name the primary harness. The registration alone is
+# not enough - Herdr keeps it after the agent exits to a shell - and neither is
+# "some agent exists under the pane", because a harness suspended under a shell
+# leaves the shell reading the keystrokes.
+
+harness_state_probe() {  # <harness> <agent-json-agent-name|-> <foreground-json-array|-> [target]
+  FAKE_AGENT=$2 FAKE_FG=$3 bash -c '
+    . "$0/bin/backends/herdr.sh"
+    fm_backend_herdr_cli() {
+      shift
+      case "$1 $2" in
+        "agent get")
+          [ "$FAKE_AGENT" != - ] || return 1
+          if [ "$FAKE_AGENT" = none ]; then
+            printf "{\"error\":{\"code\":\"agent_not_found\"}}" >&2
+            return 1
+          fi
+          printf "{\"result\":{\"agent\":{\"agent\":\"%s\",\"agent_status\":\"idle\"}}}" "$FAKE_AGENT"
+          ;;
+        "pane process-info")
+          [ "$FAKE_FG" != - ] || return 1
+          printf "{\"result\":{\"type\":\"pane_process_info\",\"process_info\":{\"pane_id\":\"w1:p2\",\"shell_pid\":4242,\"foreground_processes\":%s}}}" "$FAKE_FG"
+          ;;
+        *) return 1 ;;
+      esac
+    }
+    fm_backend_herdr_pane_harness_state "${2:-fmtest:w1:p2}" "$1"' "$ROOT" "$1" "${4:-}"
+}
+
+test_pane_harness_state_requires_registration_and_foreground_harness() {
+  local claude_fg zsh_fg version_fg out
+  claude_fg='[{"pid":10,"name":"claude","argv0":"claude","argv":["claude"],"cmdline":"claude"}]'
+  zsh_fg='[{"pid":11,"name":"zsh","argv0":"zsh","argv":["-zsh"],"cmdline":"-zsh"}]'
+  version_fg='[{"pid":12,"name":"2.1.280","argv":["/home/u/.local/share/claude/versions/2.1.280"],"cmdline":"/home/u/.local/share/claude/versions/2.1.280"}]'
+  out=$(harness_state_probe claude claude "$claude_fg")
+  [ "$out" = owned ] || fail "a Claude registration over a Claude foreground must be owned, got '$out'"
+  out=$(harness_state_probe claude claude "$version_fg")
+  [ "$out" = owned ] || fail "Claude's version-named executable must be owned through its install path, got '$out'"
+  out=$(harness_state_probe claude claude "$zsh_fg")
+  [ "$out" = foreign ] || fail "a stale Claude registration over a shell foreground must be foreign, got '$out'"
+  out=$(harness_state_probe claude claude '[]')
+  [ "$out" = foreign ] || fail "an empty foreground group proves no harness owns the pane, got '$out'"
+  out=$(harness_state_probe claude '' "$claude_fg")
+  [ "$out" = foreign ] || fail "a Claude process without a Claude registration must be foreign, got '$out'"
+  out=$(harness_state_probe claude codex '[{"pid":13,"name":"codex","argv0":"codex","argv":["codex"],"cmdline":"codex"}]')
+  [ "$out" = foreign ] || fail "a different harness owning the pane must be foreign, got '$out'"
+  out=$(harness_state_probe pi-signed pi '[{"pid":14,"name":"node","argv0":"pi","argv":["pi"],"cmdline":"pi"}]')
+  [ "$out" = owned ] || fail "the signed Pi launcher shares the pi family, got '$out'"
+  out=$(harness_state_probe claude none "$zsh_fg")
+  [ "$out" = foreign ] || fail "a plain shell pane Herdr has no agent for must be foreign, got '$out'"
+  out=$(harness_state_probe claude - "$claude_fg")
+  [ "$out" = unreadable ] || fail "a failed agent read must be unreadable, got '$out'"
+  out=$(harness_state_probe claude claude -)
+  [ "$out" = unreadable ] || fail "a failed process-info read must be unreadable, got '$out'"
+  out=$(harness_state_probe omp - '[{"pid":15,"name":"omp","argv0":"omp","argv":["omp"],"cmdline":"omp"}]')
+  [ "$out" = owned ] || fail "a harness with no verified Herdr name rests on the process proof alone, got '$out'"
+  out=$(harness_state_probe gemini gemini '[{"pid":16,"name":"gemini","argv0":"gemini","argv":["gemini"],"cmdline":"gemini"}]')
+  [ "$out" = foreign ] || fail "a harness with no verified process family can never be proven owned, got '$out'"
+  pass "herdr pane harness ownership needs the registration and a foreground process of that exact harness"
+}
+
 # --- stale agent registration over a shell-only pane (issue #4115) -----------
 #
 # Herdr keeps a Pi registration (`agent get` -> agent=pi, agent_status=idle)
@@ -5897,3 +5962,4 @@ test_wait_transition_stream_absorb_clears_then_timeout
 test_wait_transition_reader_failure_returns_2
 test_wait_transition_bad_ack_returns_2_and_cleans_up
 test_wait_transition_clean_timeout_returns_1
+test_pane_harness_state_requires_registration_and_foreground_harness
