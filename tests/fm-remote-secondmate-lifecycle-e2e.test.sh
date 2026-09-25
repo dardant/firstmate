@@ -1137,14 +1137,18 @@ jq --arg p "$ios_pane" \
   || fail "the agent-free remote pane did not classify dead"
 
 tabs_before=$(grep -c '^tab create' "$HERDR_LOG" || true)
+# Hang bounds, not speed assertions: the relaunch runs a whole remote spawn,
+# which a loaded host can stretch past the watcher's 120-second production
+# bound, so the relaunch gets the suite's hang bound and the watcher's exit a
+# minute more.
+liveness_bound=${FM_TEST_MARKER_WAIT_SECS:-180}
 FM_STATE_OVERRIDE="$WATCH_STATE" FM_SECONDMATE_LIVENESS_SECS=1 FM_POLL=1 \
+  FM_SECONDMATE_LIVENESS_TIMEOUT="$liveness_bound" \
   FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
   remote_env "$ROOT/bin/fm-watch.sh" \
   > "$TMP_ROOT/watch-liveness.out" 2> "$TMP_ROOT/watch-liveness.err" &
 watch_pid=$!
-# A hang bound, not a speed assertion: the relaunch runs a whole remote spawn,
-# which a loaded host can stretch well past a fixed iteration count.
-watch_deadline=$((SECONDS + ${FM_TEST_MARKER_WAIT_SECS:-180}))
+watch_deadline=$((SECONDS + liveness_bound + 60))
 while kill -0 "$watch_pid" 2>/dev/null && [ "$SECONDS" -lt "$watch_deadline" ]; do
   sleep 0.02
 done
@@ -1194,13 +1198,21 @@ FM_FAKE_SSH_MODE=unreachable FM_STATE_OVERRIDE="$WATCH_STATE_UNREACHABLE" \
   remote_env "$ROOT/bin/fm-watch.sh" \
   > "$TMP_ROOT/watch-unreachable.out" 2> "$TMP_ROOT/watch-unreachable.err" &
 watch_pid=$!
-sleep 4
+# Wait for the probe itself under a hang bound rather than a fixed sleep a
+# loaded host can outlast, then give the tick time to act on what it saw.
+watch_deadline=$((SECONDS + ${FM_TEST_MARKER_WAIT_SECS:-180}))
+ssh_after=$ssh_before
+while [ "$ssh_after" -le "$ssh_before" ] && kill -0 "$watch_pid" 2>/dev/null \
+  && [ "$SECONDS" -lt "$watch_deadline" ]; do
+  sleep 0.1
+  ssh_after=$(cat "$SSH_COUNT" 2>/dev/null || printf '0')
+done
+[ "$ssh_after" -gt "$ssh_before" ] || fail "the unreachable remote endpoint was never probed"
+sleep 2
 kill -0 "$watch_pid" 2>/dev/null \
   || fail "the watcher exited against an unreachable remote secondmate: $(cat "$TMP_ROOT/watch-unreachable.out" "$TMP_ROOT/watch-unreachable.err")"
 kill "$watch_pid" 2>/dev/null || true
 wait "$watch_pid" 2>/dev/null || true
-ssh_after=$(cat "$SSH_COUNT" 2>/dev/null || printf '0')
-[ "$ssh_after" -gt "$ssh_before" ] || fail "the unreachable remote endpoint was never probed"
 [ ! -s "$WATCH_STATE_UNREACHABLE/.wake-queue" ] \
   || fail "an unreachable remote probe queued a wake: $(cat "$WATCH_STATE_UNREACHABLE/.wake-queue")"
 assert_absent "$WATCH_STATE_UNREACHABLE/.secondmate-relaunch-ios" \
