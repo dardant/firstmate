@@ -1,0 +1,133 @@
+===== host: 6.18.33.2-microsoft-standard-WSL2  herdr: herdr 0.9.0
+===== sessions before:
+{"name":"default","default":true,"running":true}
+{"name":"fm-lab-autocompact-3192236-6327","default":false,"running":true}
+{"name":"fm-lab-claude-exit-3678035","default":false,"running":true}
+
+######## Scenario A: HEAD happy path - real viewer start, stop, teardown on WSL2
+
+$ /home/dardan/.no-mistakes/worktrees/a2097c65a770/01M3CVW0WT6WFCYP6EZVWHXRNR/bin/fm-herdr-lab.sh provision fm-lab-lstartA-3742065-29273
+[exit 0]
+
+$ /home/dardan/.no-mistakes/worktrees/a2097c65a770/01M3CVW0WT6WFCYP6EZVWHXRNR/bin/fm-herdr-lab.sh viewer start fm-lab-lstartA-3742065-29273
+viewer attached to fm-lab-lstartA-3742065-29273 (pid 3742814)
+[exit 0]
+--- viewer record fm-lab-lstartA-3742065-29273 ---
+launcher_pid=3742761
+launcher_identity=boot=7d67b0a2-af55-4f4b-a4ea-efe5887dbf4c starttime=33979755
+viewer_pid=3742814
+viewer_identity=boot=7d67b0a2-af55-4f4b-a4ea-efe5887dbf4c starttime=33979757
+pid 3742814: /proc starttime=33979757 boot_id=7d67b0a2-af55-4f4b-a4ea-efe5887dbf4c real lstart=[Fri Sep 25 14:20:57 2026] drifted lstart=[Fri Sep 25 14:20:58 2026] cmdline=herdr --session fm-lab-lstartA-3742065-29273 
+pid 3742761: /proc starttime=33979755 boot_id=7d67b0a2-af55-4f4b-a4ea-efe5887dbf4c real lstart=[Fri Sep 25 14:20:57 2026] drifted lstart=[Fri Sep 25 14:20:58 2026] cmdline=python3 /home/dardan/.no-mistakes/worktrees/a2097c65a770/01M3CVW0WT6WFCYP6EZVWHXRNR/bin/fm-herdr-lab-viewer.py fm-lab-lstartA-3742065-29273 /tmp/fm-lstart-live.VGJ4/state/fm-lab-lstartA-3742065-29273.viewer 
+foreground reason while attached: cleared
+
+$ /home/dardan/.no-mistakes/worktrees/a2097c65a770/01M3CVW0WT6WFCYP6EZVWHXRNR/bin/fm-herdr-lab.sh viewer stop fm-lab-lstartA-3742065-29273
+[exit 0]
+pid 3742814 GONE
+pid 3742761 GONE
+--- viewer record fm-lab-lstartA-3742065-29273 ---
+<no record>
+
+$ /home/dardan/.no-mistakes/worktrees/a2097c65a770/01M3CVW0WT6WFCYP6EZVWHXRNR/bin/fm-herdr-lab.sh teardown fm-lab-lstartA-3742065-29273
+[exit 0]
+
+######## Scenario B: HEAD under injected 1s lstart drift (ps shim on PATH for stop/teardown)
+
+$ /home/dardan/.no-mistakes/worktrees/a2097c65a770/01M3CVW0WT6WFCYP6EZVWHXRNR/bin/fm-herdr-lab.sh provision fm-lab-lstartB-3747466-28552
+[exit 0]
+
+$ /home/dardan/.no-mistakes/worktrees/a2097c65a770/01M3CVW0WT6WFCYP6EZVWHXRNR/bin/fm-herdr-lab.sh viewer start fm-lab-lstartB-3747466-28552
+viewer attached to fm-lab-lstartB-3747466-28552 (pid 3747990)
+[exit 0]
+--- viewer record fm-lab-lstartB-3747466-28552 ---
+launcher_pid=3747926
+launcher_identity=boot=7d67b0a2-af55-4f4b-a4ea-efe5887dbf4c starttime=33979939
+viewer_pid=3747990
+viewer_identity=boot=7d67b0a2-af55-4f4b-a4ea-efe5887dbf4c starttime=33979941
+pid 3747990: /proc starttime=33979941 boot_id=7d67b0a2-af55-4f4b-a4ea-efe5887dbf4c real lstart=[Fri Sep 25 14:20:59 2026] drifted lstart=[Fri Sep 25 14:21:00 2026] cmdline=herdr --session fm-lab-lstartB-3747466-28552 
+
+$ env PATH=/tmp/fm-lstart-live.VGJ4/shim:/home/dardan/.local/bin:/home/dardan/.nix-profile/bin:/home/dardan/go/bin:/home/dardan/.cargo/bin:/home/dardan/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:/usr/bin:/bin:/usr/sbin:/sbin:/home/dardan/.claude/plugins/cache/compact-adviser/compact-adviser/0.1.4/bin /home/dardan/.no-mistakes/worktrees/a2097c65a770/01M3CVW0WT6WFCYP6EZVWHXRNR/bin/fm-herdr-lab.sh viewer stop fm-lab-lstartB-3747466-28552
+[exit 0]
+pid 3747990 GONE
+pid 3747926 GONE
+--- viewer record fm-lab-lstartB-3747466-28552 ---
+<no record>
+
+$ env PATH=/tmp/fm-lstart-live.VGJ4/shim:/home/dardan/.local/bin:/home/dardan/.nix-profile/bin:/home/dardan/go/bin:/home/dardan/.cargo/bin:/home/dardan/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:/usr/bin:/bin:/usr/sbin:/sbin:/home/dardan/.claude/plugins/cache/compact-adviser/compact-adviser/0.1.4/bin /home/dardan/.no-mistakes/worktrees/a2097c65a770/01M3CVW0WT6WFCYP6EZVWHXRNR/bin/fm-herdr-lab.sh teardown fm-lab-lstartB-3747466-28552
+[exit 0]
+
+######## Scenario C: BASE (pre-fix) under the same injected drift - reproduces the reported refusal
+
+$ /tmp/fm-lstart-live.VGJ4/base/bin/fm-herdr-lab.sh provision fm-lab-lstartC-3750752-29387
+[exit 0]
+
+$ /tmp/fm-lstart-live.VGJ4/base/bin/fm-herdr-lab.sh viewer start fm-lab-lstartC-3750752-29387
+viewer attached to fm-lab-lstartC-3750752-29387 (pid 3751386)
+[exit 0]
+--- viewer record fm-lab-lstartC-3750752-29387 ---
+launcher_pid=3751334
+launcher_start=Fri Sep 25 14:21:00 2026
+viewer_pid=3751386
+viewer_start=Fri Sep 25 14:21:01 2026
+pid 3751386: /proc starttime=33980100 boot_id=7d67b0a2-af55-4f4b-a4ea-efe5887dbf4c real lstart=[Fri Sep 25 14:21:01 2026] drifted lstart=[Fri Sep 25 14:21:02 2026] cmdline=herdr --session fm-lab-lstartC-3750752-29387 
+
+$ env PATH=/tmp/fm-lstart-live.VGJ4/shim:/home/dardan/.local/bin:/home/dardan/.nix-profile/bin:/home/dardan/go/bin:/home/dardan/.cargo/bin:/home/dardan/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:/usr/bin:/bin:/usr/sbin:/sbin:/home/dardan/.claude/plugins/cache/compact-adviser/compact-adviser/0.1.4/bin /tmp/fm-lstart-live.VGJ4/base/bin/fm-herdr-lab.sh viewer stop fm-lab-lstartC-3750752-29387
+fm-herdr-lab: lab viewer for 'fm-lab-lstartC-3750752-29387' did not detach within 5 seconds (last reason: cleared)
+[exit 1]
+pid 3751386 ALIVE
+pid 3751334 ALIVE
+foreground reason after base stop: cleared
+
+$ env PATH=/tmp/fm-lstart-live.VGJ4/shim:/home/dardan/.local/bin:/home/dardan/.nix-profile/bin:/home/dardan/go/bin:/home/dardan/.cargo/bin:/home/dardan/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:/usr/bin:/bin:/usr/sbin:/sbin:/home/dardan/.claude/plugins/cache/compact-adviser/compact-adviser/0.1.4/bin /tmp/fm-lstart-live.VGJ4/base/bin/fm-herdr-lab.sh teardown fm-lab-lstartC-3750752-29387
+fm-herdr-lab: lab viewer for 'fm-lab-lstartC-3750752-29387' did not detach within 5 seconds (last reason: cleared)
+fm-herdr-lab: refusing teardown of 'fm-lab-lstartC-3750752-29387' while this lab's viewer is still attached
+[exit 1]
+-- cleanup: base stop without drift, then teardown
+
+$ /tmp/fm-lstart-live.VGJ4/base/bin/fm-herdr-lab.sh viewer stop fm-lab-lstartC-3750752-29387
+[exit 0]
+pid 3751386 GONE
+
+$ /tmp/fm-lstart-live.VGJ4/base/bin/fm-herdr-lab.sh teardown fm-lab-lstartC-3750752-29387
+[exit 0]
+
+######## Scenario D: HEAD adversarial - record identity forged to a different starttime (PID-reuse stand-in) must not be signalled
+
+$ /home/dardan/.no-mistakes/worktrees/a2097c65a770/01M3CVW0WT6WFCYP6EZVWHXRNR/bin/fm-herdr-lab.sh provision fm-lab-lstartD-3775407-19262
+[exit 0]
+
+$ /home/dardan/.no-mistakes/worktrees/a2097c65a770/01M3CVW0WT6WFCYP6EZVWHXRNR/bin/fm-herdr-lab.sh viewer start fm-lab-lstartD-3775407-19262
+viewer attached to fm-lab-lstartD-3775407-19262 (pid 3775937)
+[exit 0]
+--- viewer record fm-lab-lstartD-3775407-19262 ---
+launcher_pid=3775901
+launcher_identity=boot=7d67b0a2-af55-4f4b-a4ea-efe5887dbf4c starttime=33981325
+viewer_pid=3775937
+viewer_identity=boot=7d67b0a2-af55-4f4b-a4ea-efe5887dbf4c starttime=33981326
+pid 3775937: /proc starttime=33981325 boot_id=7d67b0a2-af55-4f4b-a4ea-efe5887dbf4c real lstart=[Fri Sep 25 14:21:13 2026] drifted lstart=[Fri Sep 25 14:21:14 2026] cmdline=herdr --session fm-lab-lstartD-3775407-19262 
+
+$ /home/dardan/.no-mistakes/worktrees/a2097c65a770/01M3CVW0WT6WFCYP6EZVWHXRNR/bin/fm-herdr-lab.sh viewer stop fm-lab-lstartD-3775407-19262
+fm-herdr-lab: lab viewer for 'fm-lab-lstartD-3775407-19262' did not detach within 5 seconds (last reason: cleared)
+[exit 1]
+pid 3775937 ALIVE
+pid 3775901 ALIVE
+foreground reason after refused stop: cleared
+
+$ /home/dardan/.no-mistakes/worktrees/a2097c65a770/01M3CVW0WT6WFCYP6EZVWHXRNR/bin/fm-herdr-lab.sh teardown fm-lab-lstartD-3775407-19262
+fm-herdr-lab: lab viewer for 'fm-lab-lstartD-3775407-19262' did not detach within 5 seconds (last reason: cleared)
+fm-herdr-lab: refusing teardown of 'fm-lab-lstartD-3775407-19262' while this lab's viewer is still attached
+[exit 1]
+-- restore genuine record, stop and teardown
+
+$ /home/dardan/.no-mistakes/worktrees/a2097c65a770/01M3CVW0WT6WFCYP6EZVWHXRNR/bin/fm-herdr-lab.sh viewer stop fm-lab-lstartD-3775407-19262
+[exit 0]
+pid 3775937 GONE
+pid 3775901 GONE
+
+$ /home/dardan/.no-mistakes/worktrees/a2097c65a770/01M3CVW0WT6WFCYP6EZVWHXRNR/bin/fm-herdr-lab.sh teardown fm-lab-lstartD-3775407-19262
+[exit 0]
+
+===== sessions after:
+{"name":"default","default":true,"running":true}
+{"name":"fm-lab-autocompact-3192236-6327","default":false,"running":true}
+{"name":"fm-lab-claude-exit-3678035","default":false,"running":true}
