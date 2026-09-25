@@ -315,11 +315,11 @@ start_viewer_fixture() {
 }
 
 write_viewer_record() {
-  local record=$1 launcher_pid=$2 viewer_pid=$3 launcher_start viewer_start
-  launcher_start=$(fm_herdr_lab_process_start "$launcher_pid") || fail "could not identify launcher fixture process"
-  viewer_start=$(fm_herdr_lab_process_start "$viewer_pid") || fail "could not identify viewer fixture process"
-  printf 'launcher_pid=%s\nlauncher_start=%s\nviewer_pid=%s\nviewer_start=%s\n' \
-    "$launcher_pid" "$launcher_start" "$viewer_pid" "$viewer_start" > "$record"
+  local record=$1 launcher_pid=$2 viewer_pid=$3 launcher_identity viewer_identity
+  launcher_identity=$(fm_herdr_lab_process_identity "$launcher_pid") || fail "could not identify launcher fixture process"
+  viewer_identity=$(fm_herdr_lab_process_identity "$viewer_pid") || fail "could not identify viewer fixture process"
+  printf 'launcher_pid=%s\nlauncher_identity=%s\nviewer_pid=%s\nviewer_identity=%s\n' \
+    "$launcher_pid" "$launcher_identity" "$viewer_pid" "$viewer_identity" > "$record"
 }
 
 test_viewer_start_cancels_an_unrecorded_launcher() {
@@ -417,7 +417,7 @@ test_viewer_stop_only_signals_owned_processes() {
 
   sleep 20 &
   holder_pid=$!
-  printf 'launcher_pid=%s\nlauncher_start=not-this-process\nviewer_pid=%s\nviewer_start=not-this-process\n' \
+  printf 'launcher_pid=%s\nlauncher_identity=not-this-process\nviewer_pid=%s\nviewer_identity=not-this-process\n' \
     "$holder_pid" "$holder_pid" > "$record"
   printf '%s\n' no_foreground_client > "$FAKE_STATE/$name.foreground"
   run_with_fake fm_herdr_lab_viewer_stop "$name" || fail "stop rejected a stale process record"
@@ -449,6 +449,153 @@ test_viewer_stop_requires_the_recorded_parent() {
   wait "$viewer_pid" 2>/dev/null || true
   run_with_fake fm_herdr_lab_teardown "$name" || fail "viewer-parent fixture teardown failed"
   pass "fm-herdr-lab: viewer ownership requires the recorded parent"
+}
+
+# Hosts without a Linux-compatible /proc get a synthesized one for the fixture
+# pids, so the kernel-identity logic under test is the same on every platform.
+viewer_fixture_proc_root() { # <dir> <pid>...
+  local dir=$1 pid
+  shift
+  if [ -r "/proc/$$/stat" ]; then
+    printf '%s' /proc
+    return
+  fi
+  for pid in "$@"; do
+    mkdir -p "$dir/$pid"
+    printf '%s (sleep) S 1 1 1 0 -1 0 0 0 0 0 0 0 0 0 20 0 1 0 %s 0 0\n' "$pid" "$((1000 + pid))" > "$dir/$pid/stat"
+  done
+  printf '%s' "$dir"
+}
+
+# Prints the date one second after an LC_ALL=C lstart value.
+lstart_plus_one_second() { # <lstart>
+  local epoch
+  if epoch=$(LC_ALL=C date -d "$1" +%s 2>/dev/null); then
+    LC_ALL=C date -d "@$((epoch + 1))" '+%a %b %e %H:%M:%S %Y'
+  else
+    epoch=$(LC_ALL=C date -j -f '%a %b %e %T %Y' "$1" +%s) || return 1
+    LC_ALL=C date -j -r "$((epoch + 1))" '+%a %b %e %H:%M:%S %Y'
+  fi
+}
+
+# WSL2 re-renders `ps -o lstart` one to two seconds apart for the same live
+# process because ps derives it from a wall-clock boot time. A drifted lstart
+# must not disown the lab's own viewer, or teardown refuses while it is attached.
+test_viewer_stop_survives_lstart_drift() {
+  local name="fm-lab-viewer-drift-$$" record pair="$TMP_ROOT/viewer-drift-pair"
+  local driftbin="$TMP_ROOT/driftbin" real_ps real_lstart drifted_lstart proc_root waited
+  run_with_fake fm_herdr_lab_provision "$name" || fail "viewer-drift fixture provision failed"
+  record=$(run_with_fake fm_herdr_lab_viewer_record_path "$name")
+  start_viewer_fixture "$pair"
+  proc_root=$(viewer_fixture_proc_root "$TMP_ROOT/drift-proc" "$FIXTURE_LAUNCHER_PID" "$FIXTURE_VIEWER_PID")
+  FM_PROC_ROOT_OVERRIDE="$proc_root" write_viewer_record "$record" "$FIXTURE_LAUNCHER_PID" "$FIXTURE_VIEWER_PID"
+
+  real_ps=$(command -v ps)
+  mkdir -p "$driftbin"
+  cat > "$driftbin/ps" <<SH
+#!/usr/bin/env bash
+case " \$* " in
+  *" lstart= "*)
+    value=\$(LC_ALL=C "$real_ps" "\$@") || exit \$?
+    value=\$(printf '%s' "\$value" | sed 's/^[[:space:]]*//;s/[[:space:]]*\$//')
+    if epoch=\$(LC_ALL=C date -d "\$value" +%s 2>/dev/null); then
+      LC_ALL=C date -d "@\$((epoch + 1))" '+%a %b %e %H:%M:%S %Y'
+    else
+      epoch=\$(LC_ALL=C date -j -f '%a %b %e %T %Y' "\$value" +%s) || exit 1
+      LC_ALL=C date -j -r "\$((epoch + 1))" '+%a %b %e %H:%M:%S %Y'
+    fi
+    ;;
+  *) exec "$real_ps" "\$@" ;;
+esac
+SH
+  chmod +x "$driftbin/ps"
+  real_lstart=$(LC_ALL=C ps -p "$FIXTURE_VIEWER_PID" -o lstart= | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+  drifted_lstart=$(PATH="$driftbin:$PATH" ps -p "$FIXTURE_VIEWER_PID" -o lstart=)
+  [ -n "$real_lstart" ] && [ -n "$drifted_lstart" ] && [ "$real_lstart" != "$drifted_lstart" ] \
+    || fail "the drift fixture did not shift lstart (real '$real_lstart', drifted '$drifted_lstart')"
+
+  printf '%s\n' no_foreground_client > "$FAKE_STATE/$name.foreground"
+  PATH="$driftbin:$PATH" FM_PROC_ROOT_OVERRIDE="$proc_root" run_with_fake fm_herdr_lab_viewer_stop "$name" \
+    || fail "viewer stop failed under a one-second lstart drift"
+  # The fixture would exit on its own after 20 seconds, so only a prompt exit
+  # proves that stop signalled it.
+  waited=0
+  while kill -0 "$FIXTURE_VIEWER_PID" 2>/dev/null && [ "$waited" -lt 20 ]; do
+    "$REAL_SLEEP" 0.1
+    waited=$((waited + 1))
+  done
+  kill -0 "$FIXTURE_VIEWER_PID" 2>/dev/null && fail "a one-second lstart drift disowned the lab's own viewer"
+  wait "$FIXTURE_LAUNCHER_PID" 2>/dev/null || true
+  assert_absent "$record" "a confirmed detach left the viewer record behind"
+  run_with_fake fm_herdr_lab_teardown "$name" || fail "viewer-drift fixture teardown failed"
+  pass "fm-herdr-lab: a drifting ps lstart still identifies the lab's own viewer"
+}
+
+# A recorded pid now held by a different process must stay unsignalled: a
+# different kernel start time or boot on the kernel identity, and a different
+# lstart on the portable fallback, each mean a different process.
+test_viewer_stop_refuses_a_reused_pid() {
+  local name="fm-lab-viewer-reuse-$$" record pair="$TMP_ROOT/viewer-reuse-pair" proc_root
+  local launcher_identity viewer_identity starttime case_label forged_launcher forged_viewer
+  run_with_fake fm_herdr_lab_provision "$name" || fail "viewer-reuse fixture provision failed"
+  record=$(run_with_fake fm_herdr_lab_viewer_record_path "$name")
+  start_viewer_fixture "$pair"
+  proc_root=$(viewer_fixture_proc_root "$TMP_ROOT/reuse-proc" "$FIXTURE_LAUNCHER_PID" "$FIXTURE_VIEWER_PID")
+  launcher_identity=$(FM_PROC_ROOT_OVERRIDE="$proc_root" fm_herdr_lab_process_identity "$FIXTURE_LAUNCHER_PID") \
+    || fail "could not identify the reuse launcher fixture"
+  viewer_identity=$(FM_PROC_ROOT_OVERRIDE="$proc_root" fm_herdr_lab_process_identity "$FIXTURE_VIEWER_PID") \
+    || fail "could not identify the reuse viewer fixture"
+  case "$viewer_identity" in
+    *starttime=*) ;;
+    *) fail "a Linux-compatible proc root did not yield a kernel identity: $viewer_identity" ;;
+  esac
+  printf '%s\n' no_foreground_client > "$FAKE_STATE/$name.foreground"
+
+  for case_label in starttime boot; do
+    case "$case_label" in
+      starttime)
+        starttime=${launcher_identity##*starttime=}
+        forged_launcher="${launcher_identity%starttime=*}starttime=$((starttime + 1))"
+        starttime=${viewer_identity##*starttime=}
+        forged_viewer="${viewer_identity%starttime=*}starttime=$((starttime + 1))"
+        ;;
+      boot)
+        forged_launcher="boot=00000000-0000-0000-0000-000000000000 starttime=${launcher_identity##*starttime=}"
+        forged_viewer="boot=00000000-0000-0000-0000-000000000000 starttime=${viewer_identity##*starttime=}"
+        ;;
+    esac
+    [ "$forged_viewer" != "$viewer_identity" ] || fail "the $case_label reuse case did not change the identity"
+    printf 'launcher_pid=%s\nlauncher_identity=%s\nviewer_pid=%s\nviewer_identity=%s\n' \
+      "$FIXTURE_LAUNCHER_PID" "$forged_launcher" "$FIXTURE_VIEWER_PID" "$forged_viewer" > "$record"
+    FM_PROC_ROOT_OVERRIDE="$proc_root" run_with_fake fm_herdr_lab_viewer_stop "$name" \
+      || fail "stop rejected a $case_label-mismatched record"
+    kill -0 "$FIXTURE_VIEWER_PID" 2>/dev/null \
+      || fail "stop signalled a reused viewer pid with a different $case_label"
+    kill -0 "$FIXTURE_LAUNCHER_PID" 2>/dev/null \
+      || fail "stop signalled a reused launcher pid with a different $case_label"
+  done
+
+  # Without a compatible /proc the lstart fallback stays an exact match.
+  launcher_identity=$(FM_PROC_ROOT_OVERRIDE="$TMP_ROOT/no-proc" fm_herdr_lab_process_identity "$FIXTURE_LAUNCHER_PID") \
+    || fail "the lstart fallback could not identify the launcher fixture"
+  case "$launcher_identity" in
+    lstart=?*) ;;
+    *) fail "a host without /proc did not fall back to lstart: $launcher_identity" ;;
+  esac
+  viewer_identity=$(FM_PROC_ROOT_OVERRIDE="$TMP_ROOT/no-proc" fm_herdr_lab_process_identity "$FIXTURE_VIEWER_PID") \
+    || fail "the lstart fallback could not identify the viewer fixture"
+  forged_launcher=$(lstart_plus_one_second "${launcher_identity#lstart=}") || fail "could not shift the launcher lstart"
+  forged_viewer=$(lstart_plus_one_second "${viewer_identity#lstart=}") || fail "could not shift the viewer lstart"
+  printf 'launcher_pid=%s\nlauncher_identity=lstart=%s\nviewer_pid=%s\nviewer_identity=lstart=%s\n' \
+    "$FIXTURE_LAUNCHER_PID" "$forged_launcher" "$FIXTURE_VIEWER_PID" "$forged_viewer" > "$record"
+  FM_PROC_ROOT_OVERRIDE="$TMP_ROOT/no-proc" run_with_fake fm_herdr_lab_viewer_stop "$name" \
+    || fail "stop rejected an lstart-mismatched record"
+  kill -0 "$FIXTURE_VIEWER_PID" 2>/dev/null || fail "the lstart fallback signalled a reused viewer pid"
+
+  kill "$FIXTURE_VIEWER_PID" 2>/dev/null || true
+  wait "$FIXTURE_LAUNCHER_PID" 2>/dev/null || true
+  run_with_fake fm_herdr_lab_teardown "$name" || fail "viewer-reuse fixture teardown failed"
+  pass "fm-herdr-lab: a reused viewer pid with a different identity is never signalled"
 }
 
 test_interrupted_viewer_start_cancels_launcher() {
@@ -509,7 +656,7 @@ test_viewer_stop_retains_record_when_detach_is_unreadable() {
   local name="fm-lab-viewer-unreadable-$$" record status=0
   run_with_fake fm_herdr_lab_provision "$name" || fail "unreadable-detach fixture provision failed"
   record=$(run_with_fake fm_herdr_lab_viewer_record_path "$name")
-  printf 'launcher_pid=99999999\nlauncher_start=stale\nviewer_pid=99999999\nviewer_start=stale\n' > "$record"
+  printf 'launcher_pid=99999999\nlauncher_identity=stale\nviewer_pid=99999999\nviewer_identity=stale\n' > "$record"
   FM_FAKE_HERDR_FAST_POLL=1 FM_FAKE_HERDR_TITLE_FAIL=1 \
     run_with_fake fm_herdr_lab_viewer_stop "$name" >/dev/null 2>&1 || status=$?
   expect_code 1 "$status" "an unreadable detach result on a running session must fail closed"
@@ -548,6 +695,8 @@ test_viewer_timeout_allows_launcher_escalation
 test_viewer_start_requires_its_owned_process
 test_viewer_stop_only_signals_owned_processes
 test_viewer_stop_requires_the_recorded_parent
+test_viewer_stop_survives_lstart_drift
+test_viewer_stop_refuses_a_reused_pid
 test_interrupted_viewer_start_cancels_launcher
 test_teardown_refuses_while_viewer_attached
 test_viewer_stop_retains_record_when_detach_is_unreadable

@@ -207,8 +207,40 @@ fm_herdr_lab_viewer_reason() { # <session>
   printf '%s' "$out" | jq -r '.result.reason // empty' 2>/dev/null
 }
 
-fm_herdr_lab_process_start() { # <pid>
-  LC_ALL=C ps -p "$1" -o lstart= 2>/dev/null | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'
+# Prints one line identifying a live process across PID reuse, the value the
+# viewer record stores. A Linux-compatible /proc supplies stat field 22
+# (starttime, clock ticks since boot) qualified by the kernel boot id when that
+# is readable. The kernel fixes starttime at fork, while ps derives lstart from
+# the wall clock and a boot time that WSL2 re-renders seconds apart for the same
+# live process, so an lstart identity wrongly disowns the lab's own viewer.
+# Hosts without that /proc fall back to the locale-pinned lstart, which their
+# kernels record directly. FM_PROC_ROOT_OVERRIDE replaces /proc for tests.
+fm_herdr_lab_process_identity() { # <pid>
+  local pid=$1 proc_root stat_line starttime boot_id value
+  local -a stat_fields
+  case "$pid" in ''|*[!0-9]*) return 1 ;; esac
+  proc_root=${FM_PROC_ROOT_OVERRIDE:-/proc}
+  if [ -r "$proc_root/$pid/stat" ]; then
+    stat_line=$(cat "$proc_root/$pid/stat" 2>/dev/null) || return 1
+    # After the final comm delimiter, array index 19 is proc stat field 22.
+    read -r -a stat_fields <<< "${stat_line##*)}"
+    [ "${#stat_fields[@]}" -ge 20 ] || return 1
+    starttime=${stat_fields[19]}
+    case "$starttime" in ''|*[!0-9]*) return 1 ;; esac
+    boot_id=
+    [ ! -r "$proc_root/sys/kernel/random/boot_id" ] \
+      || boot_id=$(tr -cd 'a-f0-9-' < "$proc_root/sys/kernel/random/boot_id" 2>/dev/null) || boot_id=
+    if [ -n "$boot_id" ]; then
+      printf 'boot=%s starttime=%s\n' "$boot_id" "$starttime"
+    else
+      printf 'starttime=%s\n' "$starttime"
+    fi
+    return 0
+  fi
+  value=$(LC_ALL=C ps -p "$pid" -o lstart= 2>/dev/null | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+  [ -n "$value" ] || return 1
+  case "$value" in *$'\n'*|*$'\r'*) return 1 ;; esac
+  printf 'lstart=%s\n' "$value"
 }
 
 fm_herdr_lab_process_parent() { # <pid>
@@ -225,18 +257,18 @@ fm_herdr_lab_viewer_recorded_value() { # <session> <key>
 }
 
 fm_herdr_lab_viewer_owned_pair() { # <session>
-  local launcher_pid viewer_pid launcher_start viewer_start current_start parent_pid
+  local launcher_pid viewer_pid launcher_identity viewer_identity current_identity parent_pid
   launcher_pid=$(fm_herdr_lab_viewer_recorded_value "$1" launcher_pid) || return 1
   viewer_pid=$(fm_herdr_lab_viewer_recorded_value "$1" viewer_pid) || return 1
   case "$launcher_pid:$viewer_pid" in
     *[!0-9:]*) return 1 ;;
   esac
-  launcher_start=$(fm_herdr_lab_viewer_recorded_value "$1" launcher_start) || return 1
-  viewer_start=$(fm_herdr_lab_viewer_recorded_value "$1" viewer_start) || return 1
-  current_start=$(fm_herdr_lab_process_start "$launcher_pid") || return 1
-  [ -n "$current_start" ] && [ "$current_start" = "$launcher_start" ] || return 1
-  current_start=$(fm_herdr_lab_process_start "$viewer_pid") || return 1
-  [ -n "$current_start" ] && [ "$current_start" = "$viewer_start" ] || return 1
+  launcher_identity=$(fm_herdr_lab_viewer_recorded_value "$1" launcher_identity) || return 1
+  viewer_identity=$(fm_herdr_lab_viewer_recorded_value "$1" viewer_identity) || return 1
+  current_identity=$(fm_herdr_lab_process_identity "$launcher_pid") || return 1
+  [ -n "$current_identity" ] && [ "$current_identity" = "$launcher_identity" ] || return 1
+  current_identity=$(fm_herdr_lab_process_identity "$viewer_pid") || return 1
+  [ -n "$current_identity" ] && [ "$current_identity" = "$viewer_identity" ] || return 1
   parent_pid=$(fm_herdr_lab_process_parent "$viewer_pid") || return 1
   [ "$parent_pid" = "$launcher_pid" ] || return 1
   printf '%s %s' "$launcher_pid" "$viewer_pid"
