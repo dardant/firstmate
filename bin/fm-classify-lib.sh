@@ -2209,31 +2209,41 @@ crew_gate_awaits_human_decision() {  # <id> -> <run-id> on stdout
 # no-mistakes CI monitor waiting on checks to report: running, not reported yet,
 # or re-armed because the base branch advanced. bin/fm-crew-state.sh mints it
 # (nm_ci_checks_state owns the derivation from the ci step's log) and never for a
-# fixing step or a failed check; crew_ci_wait_class below is its only consumer.
+# fixing step or a failed check; crew_finish_verdict_class below is its only
+# consumer.
 FM_CI_AWAITING_CHECKS='ci: awaiting checks'
 
-# crew_absorb_class for crew <id>, except that a working run whose only activity
-# is that CI monitor waiting on checks prints `awaiting-checks` instead of
-# `working`. Compared as a whole component, for the same reason as
-# crew_gate_awaits_human_decision above, and with the same cost: one
-# fm-crew-state.sh read.
-crew_ci_wait_class() {  # <id>
-  local id=$1 line class src rest part
+# What crew <id>'s authoritative current state says about a finish the watcher
+# already holds on record (fm-watch.sh's crew_finish_on_record). Prints one token:
+#   finished        - the state is done, or no source names any state at all (an
+#                     idle crew whose last line only closed a decision), so
+#                     nothing contradicts the recorded finish;
+#   awaiting-checks - a working run whose only activity is the CI monitor waiting
+#                     on checks, the component compared whole for the same reason
+#                     as crew_gate_awaits_human_decision above;
+#   working|paused  - crew_absorb_class's verdict for anything else still running;
+#   none            - anything else: a failed, cancelled, parked, or unreadable
+#                     run, or no readable verdict, which must keep alarming.
+# Same cost as crew_absorb_class: one fm-crew-state.sh read.
+crew_finish_verdict_class() {  # <id>
+  local id=$1 line state src rest part
   [ -n "$id" ] || { printf 'none'; return; }
   line=$("$FM_CREW_STATE_BIN" "$id" 2>/dev/null) || true
-  class=$(_crew_absorb_class_of_line "$line")
-  if [ "$class" = working ]; then
-    src=${line#*source: }; src=${src%% *}
-    if [ "$src" = run-step ]; then
+  case "$line" in state:*) ;; *) printf 'none'; return ;; esac
+  state=${line#state: }; state=${state%% *}
+  src=${line#*source: }; src=${src%% *}
+  case "$state:$src" in
+    done:*|unknown:none) printf 'finished'; return ;;
+    working:run-step)
       rest="$line · "
       while [ -n "$rest" ]; do
         part=${rest%% · *}
         rest=${rest#* · }
         [ "$part" != "$FM_CI_AWAITING_CHECKS" ] || { printf 'awaiting-checks'; return; }
       done
-    fi
-  fi
-  printf '%s' "$class"
+      ;;
+  esac
+  _crew_absorb_class_of_line "$line"
 }
 
 # Directories excluded from the worktree write probe below, and the depth it walks.

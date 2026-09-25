@@ -257,7 +257,7 @@ TURNEND_CHURN_ABSORB_SECS=${FM_TURNEND_CHURN_ABSORB_SECS:-900}  # longest a task
 # only through interactive pane menus (no done: status) is never swallowed. An
 # ACTIONABLE wake (a captain-relevant signal, a no-verb signal without either
 # eligible proof, any check, a stale pane whose crew is neither provably working
-# nor parked on a finish already on record (crew_finish_on_record), a
+# nor parked on a finish already on record (crew_parked_on_finish), a
 # provably-working stale past the threshold, or anything unknown) is written to
 # the durable queue and exits. That wakes the LLM through the background-task
 # completion. The same classifier
@@ -1228,34 +1228,44 @@ wedge_dead_record() {  # <window> <since-file> <triage-label> <idle-age> <pane-h
 }
 
 # At the escalation threshold of an IDLE pane, a crew whose finish is already on
-# record (crew_finish_on_record) is parked awaiting merge or the captain, so its
-# quiet is not a wedge whatever made it read provably working when the timer
-# started. One crew-state read (crew_ci_wait_class) decides the rest:
+# record (crew_finish_on_record) may be parked awaiting merge or the captain even
+# though it read provably working when the timer started. One crew-state read
+# (crew_finish_verdict_class) decides:
 #   - awaiting-checks: its only activity is the no-mistakes CI monitor waiting on
 #     checks, typically re-armed because the base branch advanced. The escalation
-#     is deferred as a wait aged from the status log, so it rechecks once per
-#     PAUSE_RESURFACE_SECS and CI that never settles still resurfaces;
-#   - working: something else runs (a fixing step, a failed check being worked),
-#     so the unchanged schedule keeps it;
-#   - anything else: nothing runs any more (the checks went green again), so the
-#     pane is absorbed exactly as a new hash would be (absorb_done_stale) and its
-#     wedge timer is dropped.
+#     is deferred as a wait aged from .ci-wait-since-<key>, written when this CI
+#     wait is first deferred and dropped when it ends, so the PAUSE_RESURFACE_SECS
+#     recheck counts from the re-arm rather than from the done line, and CI that
+#     never settles still resurfaces;
+#   - finished: the checks went green again, so the pane is absorbed exactly as a
+#     new hash would be (absorb_done_stale) and its wedge timer is dropped;
+#   - anything else (a fixing step, a failed, cancelled, parked, or unreadable
+#     run): the unchanged schedule keeps it.
 # A busy pane never comes here: its turn keeps the BUSY_TURN_MAX_SECS bound.
 # Returns 0 when it has handled the window, 1 to continue toward escalation.
 wedge_finished_crew() {  # <window> <since-file> <triage-label> <idle-age> <escalation-file> <task> <pane-hash>
-  local win=$1 since_file=$2 label=$3 age=$4 escalation_file=$5 task=$6 hash=$7
-  crew_finish_on_record "$task" || return 1
-  case "$(crew_ci_wait_class "$task")" in
+  local win=$1 since_file=$2 label=$3 age=$4 escalation_file=$5 task=$6 hash=$7 key cws
+  key=$(window_key "$win")
+  cws="$STATE/.ci-wait-since-$key"
+  if ! crew_finish_on_record "$task"; then
+    rm -f "$cws"
+    return 1
+  fi
+  case "$(crew_finish_verdict_class "$task")" in
     awaiting-checks)
+      [ -e "$cws" ] || : > "$cws"
       wedge_defer_wait "$win" "$since_file" "$label" "$age" \
         "$(wait_record 'finished, CI monitor awaiting checks' 'awaiting CI checks on the recorded PR' \
-          external 'confirm the PR checks are progressing' "$STATE/$task.status")"
+          external 'confirm the PR checks are progressing' "$cws")"
       ;;
-    working|paused) return 1 ;;
-    *)
+    finished)
       rm -f "$since_file" "$escalation_file"
-      clear_write_tracking "$(window_key "$win")"
+      clear_write_tracking "$key"
       absorb_done_stale "$win" "$hash"
+      ;;
+    *)
+      rm -f "$cws"
+      return 1
       ;;
   esac
 }
@@ -1482,7 +1492,7 @@ clear_stale_hash_tracking() {  # <window-key>
   local key=$1
   clear_write_tracking "$key"
   rm -f "$STATE/.stale-$key" "$STATE/.stale-since-$key" "$STATE/.wedge-escalations-$key" \
-    "$STATE/.waiting-resurfaced-$key" "$STATE/.stale-done-$key"
+    "$STATE/.waiting-resurfaced-$key" "$STATE/.stale-done-$key" "$STATE/.ci-wait-since-$key"
 }
 
 clear_pause_tracking() {  # <window-key>
@@ -1702,8 +1712,16 @@ crew_finish_on_record() {  # <task>
   esac
 }
 
-# Absorb a stale pane whose crew's finish is already on record
-# (crew_finish_on_record above) and whose current state shows nothing running.
+# 0 when <task>'s finish is on record and its authoritative current state does
+# not contradict it (crew_finish_verdict_class answers `finished`): a later
+# failed, cancelled, parked, or unreadable run keeps alarming. The status reads
+# come first, so only a finished crew pays for the crew-state read.
+crew_parked_on_finish() {  # <task>
+  crew_finish_on_record "$1" && [ "$(crew_finish_verdict_class "$1")" = finished ]
+}
+
+# Absorb a stale pane whose crew is parked on its finish (crew_parked_on_finish
+# above).
 # The finish reached firstmate through its own status event, and the heartbeat
 # backstop still surfaces one that never did, so a finished idle pane - quiet while
 # it awaits a merge, or only redrawing (a harness recap, a resize) - is neither
@@ -2812,7 +2830,7 @@ EOF
               date +%s > "$ssf"
               clear_write_tracking "$key"
               triage_log "absorbed stale (provably working, overriding a stale captain-relevant status): $w"
-            elif crew_finish_on_record "$task"; then
+            elif crew_parked_on_finish "$task"; then
               absorb_done_stale "$w" "$h"
             elif captain_call_stale_bound "$key" "$task"; then
               # The line is captain-relevant and stays so, but the backlog says
@@ -2880,7 +2898,7 @@ EOF
                 handle_paused_stale "$w" "$task" "$h"
                 ;;
               *)
-                if crew_finish_on_record "$task"; then
+                if crew_parked_on_finish "$task"; then
                   absorb_done_stale "$w" "$h"
                 else
                   surface_nonterminal_stale "$w" "$h"

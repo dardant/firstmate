@@ -2248,7 +2248,7 @@ test_finish_on_record_redrawing_pane_stays_quiet() {
 # wedge-escalated every STALE_ESCALATE_SECS until the checks turned green; with
 # its finish on record the monitor's wait takes the long recheck instead.
 test_finished_pr_ship_ci_rearm_defers_wedge() {
-  local dir state window key awaiting
+  local dir state window key awaiting waited
   window="test:fm-rearmed-pr"
   key=$(printf '%s' "$window" | tr ':/.' '___')
   awaiting='state: working · source: run-step · ci running · ci: awaiting checks · status-log superseded by active run · run: 01RUNCIREARM'
@@ -2256,6 +2256,10 @@ test_finished_pr_ship_ci_rearm_defers_wedge() {
     'kind=ship\nmode=no-mistakes\npr=https://example.invalid/pull/3\n' \
     'working [at=1790200000]: validation started\ndone [at=1790200900]: PR https://example.invalid/pull/3 checks green\n')
   state="$dir/state"
+  # The PR has been parked far longer than the long cadence: the recheck must
+  # count from the re-arm, not from the done line.
+  set_mtime "$(( $(date +%s) - 20000 ))" "$state/rearmed-pr.status"
+  finish_stale_reseen "$dir" rearmed-pr
 
   finish_stale_round "$dir" "$window" 'idle composer, done' \
     FM_FAKE_CREW_STATE="$awaiting" FM_STALE_ESCALATE_SECS=1 \
@@ -2269,6 +2273,7 @@ test_finished_pr_ship_ci_rearm_defers_wedge() {
     "$state/.watch-triage.log" >/dev/null || fail "the CI re-arm deferral left no triage record"
   [ ! -e "$state/.wedge-escalations-$key" ] || fail "the CI re-arm deferral counted a wedge escalation"
   [ -s "$state/.stale-since-$key" ] || fail "the CI re-arm deferral did not restart the idle timer"
+  [ -e "$state/.ci-wait-since-$key" ] || fail "the CI re-arm deferral did not record when the CI wait began"
 
   # Bounded: CI that never settles still resurfaces on the long cadence.
   sleep 1.2
@@ -2280,6 +2285,9 @@ test_finished_pr_ship_ci_rearm_defers_wedge() {
     || fail "the long-cadence recheck did not name the CI wait: $(cat "$dir/watch.out")"
   grep -F 'possible wedge' "$dir/watch.out" >/dev/null \
     && fail "the long-cadence recheck was worded as a wedge: $(cat "$dir/watch.out")"
+  waited=$(sed -n 's/.*, waiting \([0-9][0-9]*\)s - finished, CI monitor awaiting checks.*/\1/p' "$dir/watch.out" | head -1)
+  [ -n "$waited" ] && [ "$waited" -lt 1000 ] \
+    || fail "the CI recheck was aged from the done line, not the re-arm: $(cat "$dir/watch.out")"
   ack_stopped_cycle "$state" || fail "could not acknowledge the CI recheck"
 
   # The re-armed checks go green again while the idle pane keeps its hash: the
@@ -2293,6 +2301,7 @@ test_finished_pr_ship_ci_rearm_defers_wedge() {
   grep -F "absorbed stale (finish already on record, crew parked): $window" "$state/.watch-triage.log" >/dev/null \
     || fail "the green-again pane was not absorbed as a finish on record"
   [ ! -e "$state/.stale-since-$key" ] || fail "the green-again pane kept its wedge timer"
+  [ ! -e "$state/.ci-wait-since-$key" ] || fail "the ended CI wait kept its since-marker"
   [ "$(cat "$state/.stale-done-$key" 2>/dev/null)" = "$(hash_text 'idle composer, done')" ] \
     || fail "the green-again pane hash was not remembered as absorbed"
   sleep 1.2
@@ -2301,6 +2310,45 @@ test_finished_pr_ship_ci_rearm_defers_wedge() {
     FM_STALE_ESCALATE_SECS=1 \
     || fail "the absorbed green-again pane alarmed on a later poll: $(cat "$dir/watch.out")"
   pass "a finished PR ship whose CI monitor re-armed is rechecked on the long cadence, then absorbed once its checks go green again"
+}
+
+# A finish on record never hides a later run failure or gate: after main
+# advances, the re-armed monitor's checks fail, the fixer works, and the run then
+# fails or parks at a gate. Both the stable pane's wedge threshold and a new
+# pane hash keep alarming, because the current state contradicts the finish.
+test_finished_pr_ship_later_run_failure_still_alarms() {
+  local dir state window key verdict
+  window="test:fm-refailed-pr"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  dir=$(finish_stale_case refailed-pr "$window" \
+    'kind=ship\nmode=no-mistakes\npr=https://example.invalid/pull/5\n' \
+    'working [at=1790200000]: validation started\ndone [at=1790200900]: PR https://example.invalid/pull/5 checks green\n')
+  state="$dir/state"
+
+  finish_stale_round "$dir" "$window" 'idle composer, done' \
+    FM_FAKE_CREW_STATE='state: working · source: run-step · ci running · status-log superseded by active run · run: 01RUNREFAIL' \
+    FM_STALE_ESCALATE_SECS=1 \
+    || fail "a fixing CI monitor's pane was surfaced: $(cat "$dir/watch.out")"
+  sleep 1.2
+  finish_stale_round "$dir" "$window" 'idle composer, done' \
+    FM_FAKE_CREW_STATE='state: failed · source: run-step · run failed · run: 01RUNREFAIL' FM_STALE_ESCALATE_SECS=1 \
+    && fail "a run that failed after the recorded finish was absorbed at the wedge threshold"
+  grep -F 'possible wedge, escalation 1' "$dir/watch.out" >/dev/null \
+    || fail "a run that failed after the recorded finish lost its wedge escalation: $(cat "$dir/watch.out")"
+  [ ! -e "$state/.stale-done-$key" ] || fail "a failed run was remembered as a parked finish"
+  ack_stopped_cycle "$state" || fail "could not acknowledge the failed-run escalation"
+
+  for verdict in 'state: failed · source: run-step · run cancelled · run: 01RUNREFAIL' \
+    'state: parked · source: run-step · parked at ci: 1 finding(s) · ask-user: authority decision · run: 01RUNREFAIL' \
+    'state: unknown · source: run-step · no-mistakes daemon unreachable; last ledger record failed - unverified' \
+    'no verdict'; do
+    finish_stale_round "$dir" "$window" "idle composer, redraw for $verdict" FM_FAKE_CREW_STATE="$verdict" \
+      && fail "a new hash over a finished crew whose run reads '$verdict' was absorbed"
+    grep -Fx "stale: $window" "$dir/watch.out" >/dev/null \
+      || fail "a new hash over a run reading '$verdict' did not surface: $(cat "$dir/watch.out")"
+    ack_stopped_cycle "$state" || fail "could not acknowledge the surfaced '$verdict' pane"
+  done
+  pass "a run that fails, is cancelled, parks, or is unreadable after a recorded finish still alarms"
 }
 
 # The CI-awaiting deferral is for an idle parked pane only. A busy turn past
@@ -6368,6 +6416,7 @@ test_finish_on_record_redrawing_pane_stays_quiet
 test_finish_on_record_reopened_by_later_steer
 test_finished_pr_ship_ci_rearm_defers_wedge
 test_finished_pr_ship_ci_rearm_busy_turn_still_escalates
+test_finished_pr_ship_later_run_failure_still_alarms
 test_finished_scout_with_resolved_line_never_wedge_escalates
 test_answered_decision_then_finish_stays_quiet
 test_unfinished_crew_with_resolved_line_still_surfaces
