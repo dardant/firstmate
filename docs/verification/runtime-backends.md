@@ -859,6 +859,37 @@ Observed `/config` row without the variable, then with it:
 
 Re-check the row after a Claude Code upgrade; a release that renamed the variable would show `true` again with the launch unchanged.
 
+## Claude worker auto-compaction
+
+A captain whose user-scope `~/.claude/settings.json` sets `"autoCompactEnabled": false` would otherwise hand that choice to every Claude worker, which then parks at `Context limit reached · /compact or /clear to continue · auto-compact is off` instead of compacting.
+The Claude launch in `bin/fm-spawn.sh` therefore carries `"autoCompactEnabled":true` in its per-launch `--settings` JSON, which Claude Code ranks above the user scope.
+
+Verified on 2026-09-25 with Claude Code 2.1.280 on Linux x86_64 (WSL2), with the user-scope file holding `"autoCompactEnabled": false`.
+Two interactive sessions were started side by side in the same scratch directory on a private tmux socket, one with and one without the per-launch setting:
+
+```sh
+tmux -L fmacverify new-session -d -s a -x 200 -y 50 "env -u CLAUDE_CODE_CHILD_SESSION claude --settings '{\"autoCompactEnabled\":true}'"
+tmux -L fmacverify new-session -d -s b -x 200 -y 50 "env -u CLAUDE_CODE_CHILD_SESSION claude"
+```
+
+`/config` in each session showed the effective value:
+
+```text
+a:    Auto-compact                               true
+b:    Auto-compact                               false
+```
+
+`/context` confirmed the runtime honors it, reserving the auto-compact buffer only in the session launched with the setting:
+
+```text
+a:    ⛝ Autocompact buffer: 33k tokens (3.3%)
+a:    Auto-compact window: 1m tokens
+b:    ⛁ Compact buffer: 3k tokens (0.3%)
+```
+
+The user-scope file still read `"autoCompactEnabled": false` afterwards.
+`tests/fm-spawn-dispatch-profile.test.sh` pins that every Claude crewmate and secondmate launch carries the setting; repeat the side-by-side check above after a Claude Code upgrade that changes settings precedence.
+
 ## Gemini
 
 The Gemini crewmate adapter was verified on 2026-09-04 with gemini-cli 0.58.0 on Linux, Node v24.20.0, tmux 3.4.

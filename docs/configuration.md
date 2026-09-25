@@ -447,6 +447,7 @@ This applies only to agents Firstmate launches; the captain's own primary Firstm
 [`fm-spawn.sh --help`](../bin/fm-spawn.sh) owns the delivery mechanics, with focused regression coverage in [`tests/fm-spawn-compact-adviser-disable.test.sh`](../tests/fm-spawn-compact-adviser-disable.test.sh) and [`tests/fm-spawn-compact-adviser-disable-remote.test.sh`](../tests/fm-spawn-compact-adviser-disable-remote.test.sh).
 
 Every claude launch's inline `--settings` JSON also carries `"attribution":{"commit":"","pr":"","sessionUrl":false}`, so a spawned worker never writes a Co-Authored-By trailer, Claude-Session link, or generated-with line into a commit or PR body regardless of which settings scopes end up loaded.
+The same JSON also carries `"autoCompactEnabled":true`, so a spawned worker, scout, or secondmate compacts and continues at the context limit even when the captain's own `~/.claude/settings.json` turns auto-compaction off; the captain's file is never edited and the captain's own primary session keeps that choice.
 
 ## Crew dispatch profiles (config/crew-dispatch.json)
 

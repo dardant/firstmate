@@ -77,6 +77,13 @@ A worker footer reading `Transcript saving is off` means the agent was started b
 The spawn disables Claude's `/bug` and `/feedback` model-drafted feedback flow for every Claude worker and secondmate, preventing a fleet-launched agent from queuing or submitting a bug report on the captain's behalf.
 The controls are scoped to the launched process and never modify the captain's global Claude settings; `launch_template()` in `../../../../../bin/fm-spawn.sh` owns their exact mechanics and defense-in-depth rationale.
 
+## Auto-compaction
+
+Every Claude worker, scout, and secondmate the spawn launches runs with auto-compaction on, even when the captain's user-scope `~/.claude/settings.json` sets `"autoCompactEnabled": false`.
+The per-launch `--settings` JSON outranks the user scope, so a long-running worker compacts and continues instead of parking at `Context limit reached · /compact or /clear to continue · auto-compact is off`, while the captain's own primary session keeps that setting.
+A worker that still parks on that message was launched before this fix or outside `../../../../../bin/fm-spawn.sh`; relaunch it through `../../../../../bin/fm-control.sh`.
+`../../../../../docs/verification/runtime-backends.md` under "Claude worker auto-compaction" owns the verified version and evidence.
+
 ## Task control channel
 
 A Claude task worker's launch brief and Firstmate steering-inbox messages arrive as file-shaped content that is otherwise indistinguishable from indirect prompt injection.
