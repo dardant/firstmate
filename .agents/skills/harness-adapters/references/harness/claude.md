@@ -81,7 +81,7 @@ The controls are scoped to the launched process and never modify the captain's g
 
 Every Claude worker, scout, and secondmate the spawn launches runs with auto-compaction on, even when the captain's user-scope `~/.claude/settings.json` sets `"autoCompactEnabled": false`.
 The per-launch `--settings` JSON outranks the user scope, so a long-running worker compacts and continues instead of parking at `Context limit reached · /compact or /clear to continue · auto-compact is off`, while the captain's own primary session keeps that setting.
-A worker that still parks on that message was launched before this fix or outside `../../../../../bin/fm-spawn.sh`; relaunch it through `../../../../../bin/fm-control.sh`.
+A worker that still parks on that message was launched by a Firstmate that predates this setting or outside `../../../../../bin/fm-spawn.sh`; relaunch it through `../../../../../bin/fm-control.sh`.
 `../../../../../docs/verification/runtime-backends.md` under "Claude worker auto-compaction" owns the verified version and evidence.
 
 ## Task control channel
