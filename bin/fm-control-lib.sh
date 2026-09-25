@@ -25,7 +25,8 @@
 #   2. Per-harness control mechanics: which key interrupts a running turn, how
 #      many times it must be sent, whether the composer needs clearing after
 #      that key, which adapter-owned cancellation acknowledgement is observable,
-#      which command exits the agent, and which task kinds the adapter is
+#      which command exits the agent, how its exit confirmation dialog (if it
+#      has one) is recognized and answered, and which task kinds the adapter is
 #      verified to run. These are the empirically verified facts previously
 #      carried only in the harness-adapters skill's per-adapter tables; that
 #      skill now points here so one executable owner holds them, and
@@ -190,6 +191,43 @@ fm_control_exit_command() {  # <harness>
     codex|pi|pi-signed|omp|gemini|agy) printf '/quit' ;;
     *) return 1 ;;
   esac
+}
+
+# fm_control_exit_confirmation_key: whether the visible viewport on stdin shows
+# <harness>'s own confirmation dialog for its exit command, and which key
+# answers it with a real exit. Prints the key and returns 0 when the verified
+# answerable shape is showing, and returns 1 otherwise. Always consumes stdin;
+# pure, like the rest of this file.
+#
+# Claude is the one adapter with such a dialog. When `/exit` is submitted while
+# a background shell or task is running, Claude does not exit but renders
+# "Background work is running" with three choices - "1. Exit and stop tasks",
+# "2. Move to background and exit", "3. Stay" - pointer on the first, footer
+# "Enter to confirm · Esc to cancel" (verified live, Claude Code 2.1.280 through
+# Herdr, tests/fm-control-claude-exit-dialog-live-e2e.test.sh). Only the first
+# choice satisfies exit's postcondition: "Move to background" keeps the session
+# running detached, which would leave a live agent on the task's worktree for a
+# relaunch to collide with, and "Stay" is no exit at all. Stopping the
+# background tasks ends harness-owned processes only; the worktree and every
+# uncommitted change are untouched. Enter picks the highlighted first choice,
+# so the shape is answerable only when the pointer sits on it; a dialog with the
+# pointer elsewhere is not recognized rather than being steered by guessed
+# arrow keys.
+# The heading, the choice line, and the footer as the last non-blank line are
+# all required, so a transcript that merely quotes the dialog above an ordinary
+# composer never matches.
+fm_control_exit_confirmation_key() {  # <harness>  (viewport on stdin)
+  local buf last
+  buf=$(cat)
+  case "${1-}" in
+    claude) ;;
+    *) return 1 ;;
+  esac
+  last=$(printf '%s\n' "$buf" | grep -v '^[[:space:]]*$' | tail -n 1)
+  printf '%s\n' "$last" | grep -qE '^[[:space:]]*Enter to confirm' || return 1
+  printf '%s\n' "$buf" | grep -qE '^[[:space:]]*Background work is running[[:space:]]*$' || return 1
+  printf '%s\n' "$buf" | grep -qE '^[[:space:]]*❯[[:space:]]*1\.[[:space:]]+Exit and stop tasks[[:space:]]*$' || return 1
+  printf 'Enter'
 }
 
 # Which named keys a backend adapter can deliver. Every session provider

@@ -345,6 +345,7 @@ family_for_basename() {
     fm-cmux-claude-composer-live-e2e.test.sh|\
     fm-composer-matrix-live-e2e.test.sh|\
     fm-composer-codex-idle-live-e2e.test.sh|\
+    fm-control-claude-exit-dialog-live-e2e.test.sh|\
     fm-codex-continuity-live-e2e.test.sh|fm-codex-hook-layer-live-e2e.test.sh|\
     fm-grok-continuity-live-e2e.test.sh|\
     fm-cursor-primary-live-e2e.test.sh|\
@@ -1540,9 +1541,12 @@ families_for_changed_path() {
       printf '%s\n' pr-forge
       ;;
     bin/fm-control-lib.sh)
+      # Its exit confirmation recognizer reads vendor-rendered dialog text, so
+      # a change also re-selects the live guard that proves it on real Claude.
       printf '%s\n' backend-dispatch
       printf '%s\n' session-bootstrap
       printf '%s\n' "__script__:fm-quota-choose.test.sh"
+      printf '%s\n' live-harness-optin
       ;;
     bin/fm-composer-lib.sh)
       # The shared shape catalogue is vendor-rendered signal; a change to it
