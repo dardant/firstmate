@@ -341,6 +341,67 @@ test_herdr_ship_aborted_respawn_keeps_the_reused_lease() {
   pass "fm-spawn herdr: an aborted respawn restores the prior record, and the next respawn reuses the same worktree"
 }
 
+# A respawn whose backlog commit fails after publication restores the prior
+# record, so its guidance must keep the reused worktree: closing out that copy
+# would discard the task's work and leave the restored record naming a slot
+# back in the pool.
+test_herdr_ship_respawn_backlog_failure_keeps_the_worktree() {
+  local dir out rc=0 slot before real
+  real=$(command -v tasks-axi) || { echo "skip: tasks-axi not found (backlog commit failure case)"; return 0; }
+  dir=$(new_case respawn-backlog lease13)
+  slot=$(cat "$dir/fake/slot")
+  printf '%s\n' '# Backlog' '' '## In flight' '' '## Queued' '' '## Done' > "$dir/home/data/backlog.md"
+  printf 'backend = "markdown"\n\n[markdown]\npath = "data/backlog.md"\n' > "$dir/home/.tasks.toml"
+  tasks-axi add lease13 "item for lease13" --kind ship --file "$dir/home/data/backlog.md" >/dev/null \
+    || fail "the fixture could not add the backlog item"
+  cat > "$dir/fakebin/tasks-axi" <<SH
+#!/usr/bin/env bash
+if [ "\${1:-}" = start ]; then
+  echo 'error: "backlog is unwritable"' >&2
+  exit 1
+fi
+exec "$real" "\$@"
+SH
+  chmod +x "$dir/fakebin/tasks-axi"
+  write_leased_record "$dir" lease13 "$slot" fm-task-lease13
+  before=$(cat "$dir/home/state/lease13.meta")
+  out=$(run_spawn "$dir" lease13) || rc=$?
+  [ "$rc" -ne 0 ] || fail "a respawn whose backlog commit fails must refuse"$'\n'"$out"
+  assert_contains "$out" "could not be moved to In flight" "the respawn should fail at the backlog commit"$'\n'"$out"
+  assert_contains "$out" "prior record was restored and still names its worktree $slot" \
+    "the failure should say the prior record still names the worktree"$'\n'"$out"
+  assert_not_contains "$out" "local copy $slot by hand" "the failure must not tell the operator to close out the reused worktree"
+  [ "$(cat "$dir/home/state/lease13.meta" 2>/dev/null)" = "$before" ] \
+    || fail "the failed respawn should restore the prior record"$'\n'"$out"
+  assert_not_contains "$(cat "$dir/fake/treehouse-log")" "return --force" "the failed respawn must not return the reused worktree"
+  pass "fm-spawn herdr: a respawn whose backlog commit fails restores the record and keeps its worktree"
+}
+
+# When the prior record cannot be put back, the snapshot is the only copy of
+# it, so it survives the exit where the error names it.
+test_herdr_ship_failed_restore_keeps_the_snapshot() {
+  local dir out rc=0 slot before snap real_mv
+  real_mv=$(command -v mv)
+  dir=$(new_case respawn-restore-fails lease14)
+  slot=$(cat "$dir/fake/slot")
+  cat > "$dir/fakebin/mv" <<SH
+#!/usr/bin/env bash
+for a in "\$@"; do case "\$a" in *.respawn-prior.*) exit 1 ;; esac; done
+exec "$real_mv" "\$@"
+SH
+  chmod +x "$dir/fakebin/mv"
+  write_leased_record "$dir" lease14 "$slot" fm-task-lease14
+  before=$(cat "$dir/home/state/lease14.meta")
+  out=$(run_spawn "$dir" lease14 --harness rovo) || rc=$?
+  [ "$rc" -ne 0 ] || fail "a rovo respawn that never shows ready must refuse"$'\n'"$out"
+  snap=$(printf '%s\n' "$out" | sed -n "s/.*restore it by hand from \([^ ]*\) to .*/\1/p" | head -1)
+  [ -n "$snap" ] || fail "the failed restore should name the kept snapshot"$'\n'"$out"
+  [ -f "$snap" ] || fail "the failed restore deleted the snapshot its error names: $snap"
+  [ "$(cat "$snap")" = "$before" ] || fail "the kept snapshot should hold the prior record"
+  assert_not_contains "$(cat "$dir/fake/treehouse-log")" "return --force" "the failed respawn must not return the reused worktree"
+  pass "fm-spawn herdr: a failed prior-record restore keeps the snapshot its error names"
+}
+
 # A record whose worktree is gone, or is leased to another holder, cannot be
 # reused; a fresh spawn over it refuses before leasing and points to relaunch.
 test_herdr_ship_refuses_fresh_spawn_over_an_unreusable_record() {
@@ -407,6 +468,8 @@ test_herdr_ship_abort_after_publish_releases_its_slot_claim() {
 test_herdr_ship_tab_opens_in_its_leased_worktree
 test_herdr_ship_fresh_spawn_reuses_its_leased_record
 test_herdr_ship_aborted_respawn_keeps_the_reused_lease
+test_herdr_ship_respawn_backlog_failure_keeps_the_worktree
+test_herdr_ship_failed_restore_keeps_the_snapshot
 test_herdr_ship_refuses_fresh_spawn_over_an_unreusable_record
 test_herdr_ship_abort_returns_its_lease
 test_herdr_ship_abort_returns_a_lease_no_record_names

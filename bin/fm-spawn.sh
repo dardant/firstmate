@@ -1121,21 +1121,23 @@ CONFIG_INHERIT_LOCK=
 CONFIG_INHERIT_LOCK_HELD=0
 
 # A respawn that reused its recorded worktree restores the prior record it
-# snapshotted, so the lease stays named and a later respawn reuses it again.
+# snapshotted, so the lease stays named and a later respawn reuses it again. A
+# failed restore keeps the snapshot where its error names it.
 spawn_fresh_commit_rollback() {
+  local prior=$SPAWN_WT_PRIOR_META
+  SPAWN_WT_PRIOR_META=
   if ! fm_backlog_atomic_transition rollback "$STATE/$ID.meta" \
     "$FM_ROOT/bin/fm-busy-event.sh" "$STATE" "$ID" "${BUSY_GEN:-}"; then
     echo "error: $FM_BACKLOG_TRANSITION_ERROR" >&2
+    [ -z "$prior" ] || echo "error: task $ID's prior record, which names its worktree $WT, is kept at $prior" >&2
     return 1
   fi
   SPAWN_FRESH_COMMIT_PENDING=0
-  if [ -n "$SPAWN_WT_PRIOR_META" ] &&
-    ! fm_backlog_atomic_transition publish "$SPAWN_WT_PRIOR_META" "$STATE/$ID.meta" "task record" "$STATE"; then
-    echo "error: could not restore task $ID's prior record from $SPAWN_WT_PRIOR_META: $FM_BACKLOG_TRANSITION_ERROR" >&2
+  [ -n "$prior" ] || return 0
+  if ! fm_backlog_atomic_transition publish "$prior" "$STATE/$ID.meta" "task record" "$STATE"; then
+    echo "error: could not restore task $ID's prior record, which still names its worktree $WT; restore it by hand from $prior to $STATE/$ID.meta: $FM_BACKLOG_TRANSITION_ERROR" >&2
     return 1
   fi
-  SPAWN_WT_PRIOR_META=
-  return 0
 }
 
 # spawn_launched_endpoint_agent_free: whether the launched endpoint provably
@@ -5196,10 +5198,20 @@ else
 fi
 if [ "$SPAWN_BACKLOG_COMMIT_STATUS" -ne 0 ]; then
   if [ "$RELAUNCH" -eq 0 ]; then
-    if spawn_fresh_commit_rollback; then
-      echo "error: task $ID's backlog item could not be moved to In flight ($FM_BACKLOG_TRANSITION_ERROR); its record was removed so no worker is left that the backlog does not own - close out endpoint $T and local copy $WT by hand, then re-run the spawn" >&2
+    spawn_commit_error=$FM_BACKLOG_TRANSITION_ERROR
+    if [ "$SPAWN_WT_REUSED" = 1 ]; then
+      spawn_closeout="close out endpoint $T by hand, leaving its worktree $WT, which holds the task's work, in place"
+      spawn_repair="restore its prior record and remove the busy state"
     else
-      echo "error: task $ID's backlog item could not be moved to In flight ($FM_BACKLOG_TRANSITION_ERROR), and failed-dispatch cleanup is incomplete; the provisional record may remain at $STATE/$ID.meta - close out endpoint $T and local copy $WT by hand, then remove the record and busy state before retrying" >&2
+      spawn_closeout="close out endpoint $T and local copy $WT by hand"
+      spawn_repair="remove the record and busy state"
+    fi
+    if ! spawn_fresh_commit_rollback; then
+      echo "error: task $ID's backlog item could not be moved to In flight ($spawn_commit_error), and failed-dispatch cleanup is incomplete; the provisional record may remain at $STATE/$ID.meta - $spawn_closeout, then $spawn_repair before retrying" >&2
+    elif [ "$SPAWN_WT_REUSED" = 1 ]; then
+      echo "error: task $ID's backlog item could not be moved to In flight ($spawn_commit_error); its prior record was restored and still names its worktree $WT - $spawn_closeout, then re-run the spawn" >&2
+    else
+      echo "error: task $ID's backlog item could not be moved to In flight ($spawn_commit_error); its record was removed so no worker is left that the backlog does not own - $spawn_closeout, then re-run the spawn" >&2
     fi
   else
     echo "error: task $ID was republished but its backlog item could not be moved to In flight ($FM_BACKLOG_TRANSITION_ERROR); fix the backlog and re-run the relaunch" >&2
