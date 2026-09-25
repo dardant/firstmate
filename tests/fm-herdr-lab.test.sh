@@ -90,7 +90,6 @@ run_with_fake() {
     FM_FAKE_HERDR_DELETE_FAIL="${FM_FAKE_HERDR_DELETE_FAIL:-}" \
     FM_FAKE_HERDR_TITLE_FAIL="${FM_FAKE_HERDR_TITLE_FAIL:-}" \
     FM_HERDR_LAB_STATE_DIR="$TRIPWIRES" \
-    FM_TASK_ID="${FM_FAKE_TASK_ID:-}" \
     "$@"
 }
 
@@ -245,73 +244,6 @@ SH
   pass "fm-herdr-lab: timed-out provisioning cancels the launch before teardown"
 }
 
-
-provision_from() { # <dir> <task-id> <session>
-  (cd "$1" && FM_FAKE_TASK_ID=$2 run_with_fake fm_herdr_lab_provision "$3")
-}
-
-test_provision_records_the_owning_task() {
-  local wt="$TMP_ROOT/owner-wt" name="fm-lab-owner-$$" status=0 real
-  mkdir -p "$wt/sub"
-  real=$(cd "$wt/sub" && pwd -P)
-  provision_from "$wt/sub" task-owner "$name" || fail "owned provision failed"
-  [ "$(cat "$TRIPWIRES/$name.owner" 2>/dev/null)" = "$(printf 'task=task-owner\ncwd=%s' "$real")" ] \
-    || fail "provision did not record the owning task and its physical working directory"
-  run_with_fake fm_herdr_lab_teardown "$name" || fail "owned lab teardown failed"
-  assert_absent "$TRIPWIRES/$name.owner" "teardown left the lab's owner record behind"
-
-  provision_from "$wt" '' "$name-free" || fail "unowned provision failed"
-  assert_absent "$TRIPWIRES/$name-free.owner" "a lab provisioned outside a task recorded an owner"
-  run_with_fake fm_herdr_lab_teardown "$name-free" || fail "unowned lab teardown failed"
-
-  provision_from "$wt" 'bad id' "$name-bad" >/dev/null 2>&1 || status=$?
-  expect_code 1 "$status" "a malformed task id must not provision an ambiguously owned lab"
-  assert_absent "$TRIPWIRES/$name-bad.fleet-state.json" "a refused owner record left its tripwire behind"
-  assert_absent "$FAKE_STATE/$name-bad" "a refused owner record still started the lab session"
-  pass "fm-herdr-lab: provision records the owning task and teardown retires it"
-}
-
-# A lab whose provisioning shell died before its EXIT trap ran must not outlive
-# its task; reap-task is the task teardown's backstop and must touch only that
-# task's own labs.
-test_reap_task_tears_down_only_that_tasks_labs() {
-  local wt="$TMP_ROOT/reap-wt" other="$TMP_ROOT/reap-other" base="fm-lab-reap-$$" out status=0 lab
-  mkdir -p "$wt/nested" "$other"
-  provision_from "$wt/nested" task-a "$base-mine" || fail "reap fixture provision failed"
-  provision_from "$wt" task-b "$base-other-task" || fail "reap fixture provision failed"
-  provision_from "$other" task-a "$base-other-home" || fail "reap fixture provision failed"
-  provision_from "$wt" '' "$base-unowned" || fail "reap fixture provision failed"
-
-  out=$(run_with_fake "$ROOT/bin/fm-herdr-lab.sh" reap-task task-a "$wt/") || fail "reap-task failed: $out"
-  assert_contains "$out" "$base-mine" "reap-task did not report the lab it tore down"
-  [ "$(cat "$FAKE_STATE/$base-mine")" = deleted ] || fail "reap-task left the task's own lab session behind"
-  assert_absent "$TRIPWIRES/$base-mine.fleet-state.json" "reap-task skipped the fleet-state tripwire check"
-  assert_absent "$TRIPWIRES/$base-mine.owner" "reap-task left the reaped lab's owner record"
-  for lab in "$base-other-task" "$base-other-home" "$base-unowned"; do
-    [ "$(cat "$FAKE_STATE/$lab")" = running ] || fail "reap-task tore down $lab, which the task does not own"
-  done
-
-  out=$(run_with_fake "$ROOT/bin/fm-herdr-lab.sh" reap-task task-a "$wt" 2>&1) || fail "a repeated reap-task failed: $out"
-  [ -z "$out" ] || fail "a reap-task with nothing left to reap printed output: $out"
-
-  provision_from "$wt" task-c "$base-stuck" || fail "reap fixture provision failed"
-  FM_FAKE_HERDR_DELETE_FAIL=1 run_with_fake "$ROOT/bin/fm-herdr-lab.sh" reap-task task-c "$wt" \
-    >/dev/null 2>&1 || status=$?
-  expect_code 1 "$status" "a lab reap-task could not remove must be reported"
-  assert_present "$TRIPWIRES/$base-stuck.owner" "a failed reap discarded the lab's owner record"
-
-  status=0
-  run_with_fake "$ROOT/bin/fm-herdr-lab.sh" reap-task task-a relative/path >/dev/null 2>&1 || status=$?
-  expect_code 2 "$status" "reap-task must refuse a relative worktree"
-  status=0
-  run_with_fake "$ROOT/bin/fm-herdr-lab.sh" reap-task task-a / >/dev/null 2>&1 || status=$?
-  expect_code 2 "$status" "reap-task must refuse the filesystem root"
-
-  for lab in "$base-other-task" "$base-other-home" "$base-unowned" "$base-stuck"; do
-    run_with_fake fm_herdr_lab_teardown "$lab" >/dev/null 2>&1 || fail "reap fixture teardown of $lab failed"
-  done
-  pass "fm-herdr-lab: reap-task tears down only the labs that task provisioned from its worktree"
-}
 
 # The pty attachment itself needs a real Herdr client, so the live guard
 # tests/fm-herdr-attached-viewer-live-e2e.test.sh owns that proof. What is
@@ -720,8 +652,6 @@ test_changed_default_trips_after_teardown
 test_stopped_owned_lab_can_reprovision
 test_failed_delete_retains_tripwire
 test_timed_out_provision_cancels_late_launch
-test_provision_records_the_owning_task
-test_reap_task_tears_down_only_that_tasks_labs
 test_viewer_refuses_unowned_sessions
 test_viewer_start_cancels_an_unrecorded_launcher
 test_viewer_timeout_allows_launcher_escalation

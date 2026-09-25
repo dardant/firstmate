@@ -11,7 +11,6 @@
 #   fm-herdr-lab.sh viewer stop <session>
 #   fm-herdr-lab.sh stop <session>
 #   fm-herdr-lab.sh teardown <session>
-#   fm-herdr-lab.sh reap-task <task-id> <worktree>
 #
 # Session names must begin with "fm-lab-" and can never be "default".
 # The name command sanitizes the label, caps it at 16 characters, and appends
@@ -26,14 +25,6 @@
 # destructive call.
 # Provision records the running default session as a fleet-state tripwire and
 # teardown requires that record to be identical afterward.
-# Inside a Firstmate task (FM_TASK_ID set) provision also records the task id and
-# its physical working directory as the lab's owner.
-# The lab server outlives whichever shell provisioned it, so a lab that shell
-# never tore down, such as one whose owner was killed before its EXIT trap could
-# run, stays registered after the task ends.
-# reap-task is bin/fm-teardown.sh's backstop for that: it runs the guarded
-# teardown below for every lab recorded for that task id from inside that
-# worktree, and nothing else.
 # The viewer command attaches or detaches one real foreground Herdr client on
 # an owned lab session over a fixed 40-row by 120-column pty;
 # bin/fm-herdr-lab-viewer.py owns the pty mechanics.
@@ -65,36 +56,6 @@ fm_herdr_lab_state_dir() {
 
 fm_herdr_lab_tripwire_path() { # <session>
   printf '%s/%s.fleet-state.json' "$(fm_herdr_lab_state_dir)" "$1"
-}
-
-fm_herdr_lab_owner_path() { # <session>
-  printf '%s/%s.owner' "$(fm_herdr_lab_state_dir)" "$1"
-}
-
-fm_herdr_lab_valid_task_id() { # <task-id>
-  [[ "${1:-}" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]*$ ]]
-}
-
-# Records which Firstmate task provisioned the lab, from where. Outside a task
-# nothing is recorded and no teardown will ever reap the lab on its own.
-fm_herdr_lab_record_owner() { # <session>
-  local task=${FM_TASK_ID:-} cwd
-  [ -n "$task" ] || return 0
-  fm_herdr_lab_valid_task_id "$task" || {
-    fm_herdr_lab_error "FM_TASK_ID is not a task id; refusing ambiguous lab ownership: $task"
-    return 1
-  }
-  cwd=$(pwd -P) || return 1
-  case "$cwd" in
-    /*) ;;
-    *) fm_herdr_lab_error "cannot record lab ownership from working directory '$cwd'"; return 1 ;;
-  esac
-  case "$cwd" in *$'\n'*|*$'\r'*)
-    fm_herdr_lab_error "cannot record lab ownership from a working directory containing a line break"
-    return 1
-    ;;
-  esac
-  printf 'task=%s\ncwd=%s\n' "$task" "$cwd" > "$(fm_herdr_lab_owner_path "$1")"
 }
 
 fm_herdr_lab_raw() { # <session> <herdr arguments...>
@@ -151,10 +112,6 @@ fm_herdr_lab_prepare() { # <session>
   }
   fm_herdr_lab_fleet_state "$name" > "$tripwire" || {
     rm -f "$tripwire"
-    return 1
-  }
-  fm_herdr_lab_record_owner "$name" || {
-    rm -f "$tripwire" "$(fm_herdr_lab_owner_path "$name")"
     return 1
   }
 }
@@ -544,7 +501,7 @@ fm_herdr_lab_verify_tripwire() { # <session>
   local name=$1 tripwire
   fm_herdr_lab_check_tripwire "$name" || return 1
   tripwire=$(fm_herdr_lab_tripwire_path "$name")
-  rm -f "$tripwire" "$(fm_herdr_lab_owner_path "$name")"
+  rm -f "$tripwire"
 }
 
 fm_herdr_lab_stop() { # <session>
@@ -598,38 +555,6 @@ fm_herdr_lab_teardown() { # <session>
   fm_herdr_lab_verify_tripwire "$name"
 }
 
-fm_herdr_lab_reap_task() { # <task-id> <worktree>
-  local task=${1:-} worktree=${2:-} real owner name recorded_task recorded_cwd status=0
-  fm_herdr_lab_valid_task_id "$task" || { fm_herdr_lab_error "reap-task needs a task id: $task"; return 2; }
-  case "$worktree" in
-    /?*) ;;
-    *) fm_herdr_lab_error "reap-task needs an absolute worktree path: $worktree"; return 2 ;;
-  esac
-  worktree=${worktree%/}
-  real=$(cd "$worktree" 2>/dev/null && pwd -P) || real=$worktree
-  [ "$real" != / ] || { fm_herdr_lab_error "reap-task refuses the filesystem root as a worktree"; return 2; }
-  for owner in "$(fm_herdr_lab_state_dir)"/fm-lab-*.owner; do
-    [ -f "$owner" ] || continue
-    name=${owner##*/}
-    name=${name%.owner}
-    fm_herdr_lab_validate_name "$name" 2>/dev/null || continue
-    recorded_task=$(sed -n 's/^task=//p' "$owner" | head -n 1)
-    recorded_cwd=$(sed -n 's/^cwd=//p' "$owner" | head -n 1)
-    [ "$recorded_task" = "$task" ] || continue
-    case "$recorded_cwd/" in
-      "$real"/*|"$worktree"/*) ;;
-      *) continue ;;
-    esac
-    if fm_herdr_lab_teardown "$name"; then
-      printf 'fm-herdr-lab: tore down lab session %s left behind by task %s\n' "$name" "$task"
-    else
-      fm_herdr_lab_error "could not tear down lab session '$name' left behind by task $task"
-      status=1
-    fi
-  done
-  return "$status"
-}
-
 fm_herdr_lab_name() { # <label>
   local label=${1:-lab}
   label=$(printf '%s' "$label" | tr -cd 'a-zA-Z0-9_-' | sed 's/^[^a-zA-Z0-9]*//; s/-*$//')
@@ -641,7 +566,7 @@ fm_herdr_lab_name() { # <label>
 }
 
 fm_herdr_lab_usage() {
-  sed -n '2,16p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  sed -n '2,15p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
 }
 
 fm_herdr_lab_main() {
@@ -675,10 +600,6 @@ fm_herdr_lab_main() {
     teardown)
       [ "$#" -eq 2 ] || { fm_herdr_lab_usage >&2; return 2; }
       fm_herdr_lab_teardown "$2"
-      ;;
-    reap-task)
-      [ "$#" -eq 3 ] || { fm_herdr_lab_usage >&2; return 2; }
-      fm_herdr_lab_reap_task "$2" "$3"
       ;;
     -h|--help|help)
       fm_herdr_lab_usage

@@ -623,13 +623,11 @@ run_teardown() {
   local case_dir=$1; shift
   # FM_DATA_OVERRIDE is pinned to the case dir because teardown closes this
   # home's backlog item itself; without it $DATA would resolve to the real
-  # repo's own home and a test could mutate live records. The Herdr lab state
-  # dir is pinned for the same reason: teardown tears down the task's labs.
+  # repo's own home and a test could mutate live records.
   FM_ROOT_OVERRIDE="$ROOT" \
   FM_STATE_OVERRIDE="$case_dir/state" \
   FM_DATA_OVERRIDE="$case_dir/data" \
   FM_CONFIG_OVERRIDE="$case_dir/config" \
-  FM_HERDR_LAB_STATE_DIR="$case_dir/herdr-lab" \
   PATH="$case_dir/fakebin:${FM_TEARDOWN_TEST_PATH:-$PATH}" \
     "$TEARDOWN" task-x1 "$@"
 }
@@ -3476,70 +3474,6 @@ test_leaked_worktree_process_is_reaped() {
   pass "a leaked descendant process rooted under the task's worktree is reaped by teardown, not left surviving"
 }
 
-# A Herdr lab session whose server runs detached from the worker, recorded by
-# bin/fm-herdr-lab.sh as provisioned by this task from its worktree, must not
-# outlive the task; another task's lab is never touched.
-add_fake_herdr_lab_server() {  # <case-dir>
-  cat > "$1/fakebin/herdr" <<'SH'
-#!/usr/bin/env bash
-set -eu
-session=${!#}
-state=$FM_FAKE_HERDR_STATE
-lab=absent
-[ ! -f "$state/$session" ] || lab=$(cat "$state/$session")
-case "$1 ${2:-}" in
-  "session list")
-    jq -nc --arg name "$session" --arg lab "$lab" '
-      {sessions: ([{default: true, name: "default", running: true, socket_path: "/fake/herdr.sock"}]
-        + (if $lab == "running" or $lab == "stopped"
-           then [{default: false, name: $name, running: ($lab == "running"), socket_path: "/fake/lab.sock"}]
-           else [] end))}'
-    ;;
-  "server --session") printf 'running\n' > "$state/$session" ;;
-  "status --json") jq -nc --arg lab "$lab" '{server: {running: ($lab == "running")}}' ;;
-  "session stop") printf 'stopped\n' > "$state/$session" ;;
-  "session delete") printf 'deleted\n' > "$state/$session" ;;
-  "terminal title") printf '%s\n' '{"result":{"reason":"no_foreground_client"}}' ;;
-  *) printf '%s\n' '{"ok":true}' ;;
-esac
-SH
-  chmod +x "$1/fakebin/herdr"
-  mkdir -p "$1/herdr-state" "$1/herdr-lab"
-}
-
-provision_fake_herdr_lab() {  # <case-dir> <task-id> <session>
-  ( cd "$1/wt" \
-    && FM_TASK_ID=$2 FM_HERDR_LAB_STATE_DIR="$1/herdr-lab" FM_FAKE_HERDR_STATE="$1/herdr-state" \
-      PATH="$1/fakebin:$PATH" "$ROOT/bin/fm-herdr-lab.sh" provision "$3" )
-}
-
-test_leftover_herdr_lab_is_torn_down() {
-  local case_dir rc
-  case_dir=$(make_case leftover-herdr-lab)
-  write_meta "$case_dir" no-mistakes ship
-  land_shippable_commit "$case_dir"
-  add_fake_herdr_lab_server "$case_dir"
-  provision_fake_herdr_lab "$case_dir" task-x1 fm-lab-mine || fail "leftover-herdr-lab: lab fixture provision failed"
-  provision_fake_herdr_lab "$case_dir" task-y2 fm-lab-theirs || fail "leftover-herdr-lab: lab fixture provision failed"
-
-  rc=0
-  FM_FAKE_HERDR_STATE="$case_dir/herdr-state" \
-    run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
-
-  expect_code 0 "$rc" "leftover-herdr-lab: teardown should succeed: $(cat "$case_dir/stderr")"
-  [ "$(cat "$case_dir/herdr-state/fm-lab-mine")" = deleted ] \
-    || fail "leftover-herdr-lab: the task's leftover lab session survived teardown"
-  assert_absent "$case_dir/herdr-lab/fm-lab-mine.owner" \
-    "leftover-herdr-lab: teardown left the reaped lab's ownership record"
-  assert_grep "fm-lab-mine" "$case_dir/stderr" \
-    "leftover-herdr-lab: teardown did not report the lab it tore down"
-  [ "$(cat "$case_dir/herdr-state/fm-lab-theirs")" = running ] \
-    || fail "leftover-herdr-lab: teardown touched another task's lab session"
-  assert_present "$case_dir/herdr-lab/fm-lab-theirs.owner" \
-    "leftover-herdr-lab: teardown removed another task's lab ownership record"
-  pass "a Herdr lab the task left behind is torn down with the task, and another task's lab is left alone"
-}
-
 test_leaked_tasktmp_process_is_reaped() {
   local case_dir rc pid
   case_dir=$(make_case leaked-tasktmp-reap)
@@ -3979,7 +3913,6 @@ test_not_found_status_after_abort_confirms_completion
 test_another_branchs_parked_run_is_never_touched
 test_own_autonomous_run_is_left_alone
 test_leaked_worktree_process_is_reaped
-test_leftover_herdr_lab_is_torn_down
 test_leaked_tasktmp_process_is_reaped
 test_lsof_absent_reaps_tmux_process_group
 test_lsof_error_refuses_before_removal
