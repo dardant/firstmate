@@ -2216,12 +2216,20 @@ test_finish_on_record_redrawing_pane_stays_quiet() {
   grep -F "absorbed stale (finish already on record" "$state/.watch-triage.log" >/dev/null \
     || fail "the finish-on-record absorb left no triage record"
 
-  # A pipeline still running keeps the provably-working path and its wedge timer,
-  # so a finish on record never hides a run that is actually executing.
-  finish_stale_round "$dir" "$window" 'idle composer | ci monitor' \
-    FM_FAKE_CREW_STATE='state: working · source: run-step · ci running' FM_STALE_ESCALATE_SECS=999 \
+  # A pipeline still fixing keeps the provably-working path and its wedge timer,
+  # so a finish on record never hides a run that is actually executing, and a
+  # quiet fixing step still escalates as a possible wedge.
+  finish_stale_round "$dir" "$window" 'idle composer | ci fix' \
+    FM_FAKE_CREW_STATE='state: working · source: run-step · ci running · validating (fixing)' FM_STALE_ESCALATE_SECS=1 \
     || fail "a provably-working pane was surfaced: $(cat "$dir/watch.out")"
   [ -s "$state/.stale-since-$key" ] || fail "a provably-working pane lost its wedge timer to the finish on record"
+  sleep 1.2
+  finish_stale_round "$dir" "$window" 'idle composer | ci fix' \
+    FM_FAKE_CREW_STATE='state: working · source: run-step · ci running · validating (fixing)' FM_STALE_ESCALATE_SECS=1 \
+    && fail "a quiet fixing step behind a finish on record never escalated"
+  grep -F "stale: $window (idle" "$dir/watch.out" | grep -F 'possible wedge, escalation 1' >/dev/null \
+    || fail "a quiet fixing step did not keep its wedge escalation: $(cat "$dir/watch.out")"
+  ack_stopped_cycle "$state" || fail "could not acknowledge the fixing-step wedge escalation"
 
   # Control: the same done line from a ship whose PR firstmate has not recorded
   # is only its implementation report, so the identical redraw still alarms.
@@ -2231,7 +2239,49 @@ test_finish_on_record_redrawing_pane_stays_quiet() {
     && fail "a ship with no recorded PR was absorbed as parked awaiting merge"
   grep -Fx "stale: $window" "$dir/watch.out" >/dev/null \
     || fail "the no-recorded-PR control did not surface the stale wake"
-  pass "a finish on record stays quiet on a quiet or redrawing pane, while a running pipeline and an unrecorded PR still take their usual paths"
+  pass "a finish on record stays quiet on a quiet or redrawing pane, while a fixing pipeline and an unrecorded PR still take their usual paths"
+}
+
+# A PR ship parked awaiting merge whose CI monitor re-armed because main
+# advanced: bin/fm-crew-state.sh reads the run working again, only awaiting
+# checks. Before the fix the idle pane was absorbed as provably working and then
+# wedge-escalated every STALE_ESCALATE_SECS until the checks turned green; with
+# its finish on record the monitor's wait takes the long recheck instead.
+test_finished_pr_ship_ci_rearm_defers_wedge() {
+  local dir state window key awaiting
+  window="test:fm-rearmed-pr"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  awaiting='state: working · source: run-step · ci running · ci: awaiting checks · status-log superseded by active run · run: 01RUNCIREARM'
+  dir=$(finish_stale_case rearmed-pr "$window" \
+    'kind=ship\nmode=no-mistakes\npr=https://example.invalid/pull/3\n' \
+    'working [at=1790200000]: validation started\ndone [at=1790200900]: PR https://example.invalid/pull/3 checks green\n')
+  state="$dir/state"
+
+  finish_stale_round "$dir" "$window" 'idle composer, done' \
+    FM_FAKE_CREW_STATE="$awaiting" FM_STALE_ESCALATE_SECS=1 \
+    || fail "a re-armed CI monitor's pane was surfaced: $(cat "$dir/watch.out")"
+  [ -s "$state/.stale-since-$key" ] || fail "the re-armed monitor did not start its idle timer"
+  sleep 1.2
+  finish_stale_round "$dir" "$window" 'idle composer, done' \
+    FM_FAKE_CREW_STATE="$awaiting" FM_STALE_ESCALATE_SECS=1 \
+    || fail "a finished ship whose CI monitor re-armed was wedge-escalated: $(cat "$dir/watch.out")"
+  grep -F "absorbed stale (overridden terminal status) (finished, CI monitor awaiting checks explains the quiet" \
+    "$state/.watch-triage.log" >/dev/null || fail "the CI re-arm deferral left no triage record"
+  [ ! -e "$state/.wedge-escalations-$key" ] || fail "the CI re-arm deferral counted a wedge escalation"
+  [ -s "$state/.stale-since-$key" ] || fail "the CI re-arm deferral did not restart the idle timer"
+
+  # Bounded: CI that never settles still resurfaces on the long cadence.
+  sleep 1.2
+  finish_stale_round "$dir" "$window" 'idle composer, done' \
+    FM_FAKE_CREW_STATE="$awaiting" FM_STALE_ESCALATE_SECS=1 FM_PAUSE_RESURFACE_SECS=1 \
+    && fail "a CI monitor awaiting checks past the long cadence never resurfaced"
+  grep -F "stale: $window (idle" "$dir/watch.out" | grep -F 'finished, CI monitor awaiting checks' \
+    | grep -F 'rechecked on a long cadence not a wedge' >/dev/null \
+    || fail "the long-cadence recheck did not name the CI wait: $(cat "$dir/watch.out")"
+  grep -F 'possible wedge' "$dir/watch.out" >/dev/null \
+    && fail "the long-cadence recheck was worded as a wedge: $(cat "$dir/watch.out")"
+  ack_stopped_cycle "$state" || fail "could not acknowledge the CI recheck"
+  pass "a finished PR ship whose CI monitor re-armed is rechecked on the long cadence, not wedge-escalated"
 }
 
 # Enqueue one firstmate steer for <task> through the steering-inbox owner, then
@@ -6252,6 +6302,7 @@ test_afk_busy_declared_pause_ticking_pane_hands_off_once
 test_nonterminal_stale_not_working_surfaced
 test_finish_on_record_redrawing_pane_stays_quiet
 test_finish_on_record_reopened_by_later_steer
+test_finished_pr_ship_ci_rearm_defers_wedge
 test_finished_scout_with_resolved_line_never_wedge_escalates
 test_answered_decision_then_finish_stays_quiet
 test_unfinished_crew_with_resolved_line_still_surfaces

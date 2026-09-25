@@ -977,9 +977,20 @@ wait_record() {  # <kind> <subject> <whom> <action> <age-record>
 # timer only through pause_state_class answering `working`, so its crew state is
 # a running step, never a parked gate.
 #
-# The second record is OFF unless the home creates config/wedge-defer-parked-gate,
+# A crew whose finish is already on record (crew_finish_on_record) and whose
+# only activity is its no-mistakes CI monitor waiting on checks
+# (crew_ci_awaits_checks) is parked awaiting merge: after the base branch
+# advances the monitor re-arms and reads working again, so without this record a
+# PR ship that already reported done would wedge-escalate every
+# STALE_ESCALATE_SECS until its checks turned green. It is aged from the status
+# log, so it rechecks once per PAUSE_RESURFACE_SECS and CI that never settles
+# still resurfaces; a fixing step or a failed check never mints the component, so
+# those keep the unchanged schedule. Its crew-state read is taken only behind the
+# cheap finish-on-record read.
+#
+# The parked-gate record below is OFF unless the home creates config/wedge-defer-parked-gate,
 # and that one guard is what makes an unconfigured home's behaviour identical to
-# having no second record at all: it is read before the fold, so no fold or
+# having no parked-gate record at all: it is read before the fold, so no fold or
 # crew-state read is spent, no wait record exists to defer on, no recheck wording
 # is reachable, and the lane keeps the unchanged escalation schedule, reason and
 # demand-deep-inspection wording. Unlike the status line, which is the worker's
@@ -988,7 +999,7 @@ wait_record() {  # <kind> <subject> <whom> <action> <age-record>
 # rather than a default every fleet inherits - the same reason
 # config/turnend-churn-absorb gates its own widened absorb.
 #
-# The second record takes TWO signals, and needs both. The crew's authoritative
+# The parked-gate record takes TWO signals, and needs both. The crew's authoritative
 # current state must be a no-mistakes gate whose answer is owed by a HUMAN
 # (crew_gate_awaits_human_decision in fm-classify-lib.sh, minted from the
 # findings table's `action` column by position), AND the task's own decision fold
@@ -1042,6 +1053,11 @@ wedge_wait_evidence() {  # <task> -> one wait_record on stdout
     fi
     wait_record 'declared wait' 'awaiting external' \
       external 'confirm the wait still holds' "$statusf"
+    return 0
+  fi
+  if crew_finish_on_record "$task" && crew_ci_awaits_checks "$task"; then
+    wait_record 'finished, CI monitor awaiting checks' 'awaiting CI checks on the recorded PR' \
+      external 'confirm the PR checks are progressing' "$statusf"
     return 0
   fi
   [ -e "$CONFIG/wedge-defer-parked-gate" ] || return 1
@@ -1238,10 +1254,10 @@ wedge_dead_record() {  # <window> <since-file> <triage-label> <idle-age> <pane-h
 # the dead-record probe (wedge_dead_record) run ONLY here, inside the
 # at-threshold branch that is about to escalate: at most one each per window per
 # STALE_ESCALATE_SECS, never on an ordinary poll. The crew-state read
-# wedge_wait_evidence may take under config/wedge-defer-parked-gate keeps that
-# same bound however long the wait lasts, because the deferral it feeds restarts
-# the idle timer like every other deferral below; an unconfigured home never
-# reaches that read at all. The wait consult runs first, because a pane that can
+# wedge_wait_evidence may take (for a finish on record, or under
+# config/wedge-defer-parked-gate) keeps that same bound however long the wait
+# lasts, because the deferral it feeds restarts the idle timer like every other
+# deferral below. The wait consult runs first, because a pane that can
 # account for its own quiet has nothing to prove through its worktree. The dead-record probe
 # runs last of the three, so the two cheaper deferrals keep the panes they
 # already own on their existing bounded cadences and only a pane that would

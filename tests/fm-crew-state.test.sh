@@ -1168,7 +1168,8 @@ EOF
   assert_contains "$out" "state: working" "base-advance rearm marker -> working"
   assert_not_contains "$out" "state: done" "base-advance rearm marker must not read as done"
   assert_not_contains "$out" "checks green" "base-advance rearm marker must not read as checks green"
-  pass "base-advance rearm after green stays working"
+  assert_contains "$out" " · ci: awaiting checks" "a re-armed monitor is only awaiting checks"
+  pass "base-advance rearm after green stays working, awaiting checks"
 }
 
 test_ci_monitoring_no_checks_yet_stays_working() {
@@ -1205,6 +1206,27 @@ test_ci_monitoring_still_waiting_stays_working() {
   pass "ci-monitoring run with checks not yet green stays working"
 }
 
+test_ci_monitoring_checks_failed_is_not_awaiting_checks() {
+  reset_fakes
+  local d; d=$(new_case ci-checks-failed)
+  make_repo_on_branch "$d/wt" fm/feat-cifailed
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-cifailed.meta" "window=fm:fm-feat-cifailed" "worktree=$d/wt" "kind=ship"
+  printf 'done: PR https://github.com/o/r/pull/2 checks green\n' > "$d/state/feat-cifailed.status"
+  FM_FAKE_AXI_STATUS="$(run_ci_monitoring fm/feat-cifailed)"
+  FM_FAKE_CI_LOGS=$(cat <<'EOF'
+base branch advanced (aaaaaaa..bbbbbbb), re-arming CI monitor timeout
+CI checks running, waiting for results...
+checks failed: 1 of 2 checks red
+EOF
+)
+  local out; out=$(run_crew_state "$d" feat-cifailed)
+  assert_contains "$out" "state: working" "a failed check on a live monitor stays working"
+  assert_not_contains "$out" "state: done" "a failed check must not read as done"
+  assert_not_contains "$out" "ci: awaiting checks" "a failed check is not merely awaiting checks"
+  pass "a failed check on a live ci monitor is not read as awaiting checks"
+}
+
 # A later merge-conflict auto-fix round after an earlier green reading must
 # not be masked: the MOST RECENT marker in the log tail wins.
 test_ci_monitoring_green_then_new_issue_stays_working() {
@@ -1223,6 +1245,7 @@ EOF
   local out; out=$(run_crew_state "$d" feat-cirelapse)
   assert_contains "$out" "state: working" "a later relapse marker must win over an earlier green one"
   assert_not_contains "$out" "state: done" "relapsed ci run must not read as done"
+  assert_not_contains "$out" "ci: awaiting checks" "a reported issue is not merely awaiting checks"
   pass "a fresh issue after an earlier green reading is not masked"
 }
 
@@ -1244,6 +1267,7 @@ EOF
   assert_contains "$out" "state: working" "a stale ready status must not mask a later CI relapse"
   assert_contains "$out" "source: run-step" "relapsed ci run remains run-step sourced"
   assert_not_contains "$out" "state: done" "relapsed ci run with stale done log must not read as done"
+  assert_contains "$out" " · ci: awaiting checks" "checks rerunning after a base advance are only awaited"
   pass "stale checks-green status log does not mask CI relapse"
 }
 
@@ -1260,6 +1284,7 @@ test_ci_fixing_after_green_stays_working() {
   assert_contains "$out" "state: working" "ci fixing step must stay working"
   assert_contains "$out" "source: run-step" "ci fixing remains run-step sourced"
   assert_not_contains "$out" "state: done" "ci fixing must not read as checks-green done"
+  assert_not_contains "$out" "ci: awaiting checks" "a fixing ci step is not merely awaiting checks"
   pass "ci fixing is not overridden by an earlier green marker"
 }
 
@@ -1276,6 +1301,7 @@ test_top_level_fixing_ci_running_after_green_stays_working() {
   assert_contains "$out" "source: run-step" "top-level fixing with ci running remains run-step sourced"
   assert_contains "$out" "validating (fixing)" "top-level fixing keeps fixing detail"
   assert_not_contains "$out" "state: done" "top-level fixing must not use stale green marker"
+  assert_not_contains "$out" "ci: awaiting checks" "top-level fixing is not merely awaiting checks"
   pass "top-level fixing is not overridden by a stale ci running row"
 }
 
@@ -4934,6 +4960,7 @@ test_ci_monitoring_no_checks_terminal_surfaces_done
 test_ci_monitoring_green_then_rearm_stays_working
 test_ci_monitoring_no_checks_yet_stays_working
 test_ci_monitoring_still_waiting_stays_working
+test_ci_monitoring_checks_failed_is_not_awaiting_checks
 test_ci_monitoring_green_then_new_issue_stays_working
 test_ci_ready_done_log_relapse_stays_working
 test_ci_fixing_after_green_stays_working

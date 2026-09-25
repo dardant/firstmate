@@ -2200,6 +2200,35 @@ crew_gate_awaits_human_decision() {  # <id> -> <run-id> on stdout
   printf '%s\n' "$run"
 }
 
+# The one spelling of the verdict component that says a working run is only its
+# no-mistakes CI monitor waiting on checks to report: running, not reported yet,
+# or re-armed because the base branch advanced. bin/fm-crew-state.sh mints it
+# (nm_ci_checks_state owns the derivation from the ci step's log) and never for a
+# fixing step or a failed check; crew_ci_awaits_checks below is its only consumer.
+FM_CI_AWAITING_CHECKS='ci: awaiting checks'
+
+# 0 if crew <id>'s authoritative current state is a working run whose only
+# activity is that CI monitor waiting on checks. Compared as a whole component,
+# for the same reason as crew_gate_awaits_human_decision above, and with the same
+# cost: one fm-crew-state.sh read.
+crew_ci_awaits_checks() {  # <id>
+  local id=$1 line state src rest part
+  [ -n "$id" ] || return 1
+  line=$("$FM_CREW_STATE_BIN" "$id" 2>/dev/null) || true
+  case "$line" in state:*) ;; *) return 1 ;; esac
+  state=${line#state: }; state=${state%% *}
+  [ "$state" = working ] || return 1
+  src=${line#*source: }; src=${src%% *}
+  [ "$src" = run-step ] || return 1
+  rest="$line · "
+  while [ -n "$rest" ]; do
+    part=${rest%% · *}
+    rest=${rest#* · }
+    [ "$part" != "$FM_CI_AWAITING_CHECKS" ] || return 0
+  done
+  return 1
+}
+
 # Directories excluded from the worktree write probe below, and the depth it walks.
 # The excluded set is everything a supervisor read or a package manager can write
 # without the crew doing any work - .git first, so firstmate's own read-only git
