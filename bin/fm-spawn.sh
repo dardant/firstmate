@@ -3110,7 +3110,7 @@ spawn_treehouse_lease_worktree() {
 # worktree of this project (spawn_worktree_isolated) and Treehouse reports it
 # leased to this task's own holder. Sets SPAWN_WT_REASON on refusal.
 spawn_recorded_worktree_reusable() {  # <worktree>
-  local wt=$1 wt_real common proj_common out path holder
+  local wt=$1 wt_real common proj_common state out path holder
   if ! wt_real=$(cd "$wt" 2>/dev/null && pwd -P); then
     SPAWN_WT_REASON="it no longer exists"
     return 1
@@ -3124,9 +3124,13 @@ spawn_recorded_worktree_reusable() {  # <worktree>
     SPAWN_WT_REASON="it is not a linked worktree of project '$PROJ_ABS'"
     return 1
   fi
-  if ! out=$(cd "$PROJ_ABS" && treehouse status --json 2>/dev/null |
-    jq -r '.[]? | select(.status == "leased") | [.path, (.lease_holder // "")] | @tsv' 2>/dev/null); then
-    SPAWN_WT_REASON="treehouse status could not report its lease"
+  # The lease lives in the slot's pool state (fm_treehouse_pool_slot), which
+  # every supported Treehouse writes; `treehouse status --json` postdates the
+  # pinned v2.0.1.
+  state="$(dirname "$(dirname "$wt_real")")/treehouse-state.json"
+  if ! out=$(jq -r '.worktrees[]? | select(.leased == true) | [.path, (.lease_holder // "")] | @tsv' \
+    "$state" 2>/dev/null); then
+    SPAWN_WT_REASON="its Treehouse pool state '$state' could not report its lease"
     return 1
   fi
   while IFS=$'\t' read -r path holder; do

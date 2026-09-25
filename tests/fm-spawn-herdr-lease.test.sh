@@ -32,7 +32,6 @@ printf '%s\n' "$*" >> "$D/treehouse-log"
 case "${1:-} ${2:-}" in
   'get --lease') printf '%s\n' "$(cat "$D/slot")"; exit 0 ;;
   'return --help') printf '      --force   Clean, reset, and return without prompting\n'; exit 0 ;;
-  'status --json') if [ -f "$D/status" ]; then cat "$D/status"; else printf '[]\n'; fi; exit 0 ;;
 esac
 exit 0
 SH
@@ -271,14 +270,16 @@ test_herdr_ship_abort_after_launch_keeps_a_booting_agents_lease() {
 
 # write_leased_record <case-dir> <id> <worktree> <holder>: an existing task
 # record naming <worktree> on an agent-free Herdr pane, as a restart husk
-# leaves it, and a Treehouse that reports <worktree> leased to <holder>.
+# leaves it, and, for a pool case, the pool state Treehouse keeps (every
+# supported version) recording <worktree> leased to <holder>.
 write_leased_record() {
   local dir=$1 id=$2 wt=$3 holder=$4
   fm_write_meta "$dir/home/state/$id.meta" "window=fmlab:ws1:p9" "worktree=$wt" \
     "project=$dir/proj" "kind=ship" "backend=herdr" "herdr_session=fmlab" \
     "herdr_workspace_id=ws1" "herdr_tab_id=tab9" "herdr_pane_id=ws1:p9"
-  printf '[{"name":"1","path":"%s","status":"leased","lease_id":"l1","lease_holder":"%s","processes":[]}]\n' \
-    "$wt" "$holder" > "$dir/fake/status"
+  [ -d "$dir/pool" ] || return 0
+  printf '{"worktrees":[{"name":"s1","path":"%s","leased":true,"lease_holder":"%s"}]}\n' \
+    "$wt" "$holder" > "$dir/pool/treehouse-state.json"
 }
 
 # A same-identity respawn after a Herdr restart finds its record naming a
@@ -311,7 +312,7 @@ test_herdr_ship_fresh_spawn_reuses_its_leased_record() {
 # the next respawn reuses the same worktree rather than leasing another.
 test_herdr_ship_aborted_respawn_keeps_the_reused_lease() {
   local dir out rc=0 slot before
-  dir=$(new_case respawn-abort lease10)
+  dir=$(new_case respawn-abort lease10 pool)
   slot=$(cat "$dir/fake/slot")
   write_leased_record "$dir" lease10 "$slot" fm-task-lease10
   before=$(cat "$dir/home/state/lease10.meta")
@@ -369,7 +370,7 @@ SH
 test_herdr_ship_respawn_backlog_failure_keeps_the_worktree() {
   local dir out rc=0 slot before
   command -v tasks-axi >/dev/null 2>&1 || { echo "skip: tasks-axi not found (backlog commit failure case)"; return 0; }
-  dir=$(new_case respawn-backlog lease13)
+  dir=$(new_case respawn-backlog lease13 pool)
   slot=$(cat "$dir/fake/slot")
   arm_backlog_commit_failure "$dir" lease13
   write_leased_record "$dir" lease13 "$slot" fm-task-lease13
@@ -392,7 +393,7 @@ test_herdr_ship_rollback_retry_restores_the_prior_record() {
   local dir out rc=0 slot before real_rm
   command -v tasks-axi >/dev/null 2>&1 || { echo "skip: tasks-axi not found (rollback retry case)"; return 0; }
   real_rm=$(command -v rm)
-  dir=$(new_case respawn-rollback-retry lease15)
+  dir=$(new_case respawn-rollback-retry lease15 pool)
   slot=$(cat "$dir/fake/slot")
   arm_backlog_commit_failure "$dir" lease15
   cat > "$dir/fakebin/rm" <<SH
@@ -426,7 +427,7 @@ SH
 test_herdr_ship_failed_restore_keeps_the_snapshot() {
   local dir out rc=0 slot before snap real_mv
   real_mv=$(command -v mv)
-  dir=$(new_case respawn-restore-fails lease14)
+  dir=$(new_case respawn-restore-fails lease14 pool)
   slot=$(cat "$dir/fake/slot")
   cat > "$dir/fakebin/mv" <<SH
 #!/usr/bin/env bash
@@ -462,7 +463,7 @@ test_herdr_ship_refuses_fresh_spawn_over_an_unreusable_record() {
   [ "$(cat "$dir/home/state/lease11.meta")" = "$before" ] || fail "the refused spawn changed the existing record"
 
   rc=0
-  dir=$(new_case respawn-foreign lease12)
+  dir=$(new_case respawn-foreign lease12 pool)
   slot=$(cat "$dir/fake/slot")
   write_leased_record "$dir" lease12 "$slot" fm-task-other
   before=$(cat "$dir/home/state/lease12.meta")
