@@ -1596,7 +1596,11 @@ A real Claude worker launched through `bin/fm-spawn.sh` that has started a backg
   Enter to confirm · Esc to cancel
 ```
 
-`fm_control_exit_confirmation_key` in `bin/fm-control-lib.sh` recognizes that shape, and the control plane answers it with Enter; the live guard proves the recognizer on the real viewport, then drives `relaunch` and `exit` through the dialog and requires the exact background process to be gone and an uncommitted worktree file to survive:
+`fm_control_exit_confirmation_key` in `bin/fm-control-lib.sh` recognizes that shape, and the control plane answers it with Enter; the live guard proves the recognizer on the real viewport, then drives `relaunch` and `exit` through the dialog and requires the exact background process to be gone and an uncommitted worktree file to survive.
+
+Re-verified 2026-09-25 on the same versions.
+A typed, unsubmitted `/exit` opens a completion popup of 19 rows below Claude's ruled composer, so a 20-row tail read holds only popup rows.
+With the tail-sized pre-Enter payload proof, `relaunch` stopped at `error: the exit command could not be sent to task cexit on herdr`; `fm_backend_herdr_proof_lines` now reads the whole bounded window for a `/`- or `$`-prefixed payload, and `tests/fm-backend-herdr.test.sh` pins that shape:
 
 ```sh
 FM_CONTROL_CLAUDE_EXIT_DIALOG_LIVE=1 tests/fm-control-claude-exit-dialog-live-e2e.test.sh

@@ -3270,14 +3270,21 @@ fm_backend_herdr_queued_enter_busy() {  # <target> <allow-rendered>
 
 # fm_backend_herdr_proof_lines: how many tail rows the pre-Enter payload proof
 # captures. A literal payload wraps, and a tail-only capture of a complete
-# wrap would look like the truncation this proof exists to refuse. The bound
-# stays inside the selected composer extraction; it is not a whole-pane search.
+# wrap would look like the truncation this proof exists to refuse. A `/`- or
+# `$`-prefixed payload opens a completion popup below the composer (the slash/$
+# hazard at fm_backend_herdr_send_text_submit), and live Claude 2.1.280 renders
+# about twenty popup rows there, which pushes the composer out of a short tail,
+# so that payload reads the whole bounded window. The bound stays inside the
+# selected composer extraction; it is not a whole-pane search.
 fm_backend_herdr_proof_lines() {  # <text>
   local text=$1 lines
   lines=$(( (${#text} / 40) + 8 ))
   if [ "$lines" -lt "$FM_COMPOSER_CAPTURE_LINES" ]; then
     lines=$FM_COMPOSER_CAPTURE_LINES
   fi
+  case "$text" in
+    /*|\$*) lines=200 ;;
+  esac
   if [ "$lines" -gt 200 ]; then
     lines=200
   fi

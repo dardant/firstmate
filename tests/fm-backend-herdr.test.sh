@@ -4980,6 +4980,36 @@ test_send_text_submit_three_paste_placeholders_submit_the_long_payload() {
   pass "fm_backend_herdr_send_text_submit: three paste placeholders with no literal remainder submit the long payload"
 }
 
+# Live Claude 2.1.278 on Herdr 0.9.0 answers a typed `/exit` with a completion
+# popup of about twenty rows below its ruled composer. The proof must still find
+# the composer above that popup, or fm-control could never type an exit command.
+test_send_text_submit_slash_command_proof_reads_past_the_completion_popup() {
+  local dir log resp fb out enter_count rule popup_rows i
+  dir="$TMP_ROOT/submit-slash-popup"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
+  rule=$(printf '\xe2\x94\x80%.0s' $(seq 1 60))
+  printf '{"result":{"agent":{"agent_status":"idle"}}}\n' > "$resp/2.out"
+  printf '{"result":{"agent":{"agent_status":"working"}}}\n' > "$resp/4.out"
+  herdr_submit_claude_prefix "$resp" /exit
+  printf '%s\n\xe2\x9d\xaf\xc2\xa0\n%s\n' "$rule" "$rule" > "$resp/2.out"
+  {
+    printf '\xe2\x97\x8f READY\n\n%s\n\xe2\x9d\xaf\xc2\xa0/exit\n%s\n' "$rule" "$rule"
+    printf '  /exit                                  Exit the CLI\n'
+    for i in $(seq 1 18); do
+      printf '  /skill-%02d                              Skill %02d description\n' "$i" "$i"
+    done
+  } > "$resp/4.out"
+  popup_rows=$(awk '/\/exit$/ { found = NR } END { print NR - found }' "$resp/4.out")
+  [ "$popup_rows" -ge 20 ] || fail "the popup fixture must push the composer out of a 20-row tail, it has $popup_rows rows below"
+  fb=$(make_herdr_fakebin "$dir")
+  out=$( PATH="$fb:$PATH" FAKE_HERDR_LOG="$log" FAKE_HERDR_RESPONSES="$resp" FM_BACKEND_HERDR_SUBMIT_POLLS=1 \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_send_text_submit default:w1:p2 /exit 3 0.01 0.01' "$ROOT" )
+  [ "$out" = empty ] || fail "a typed /exit whose composer sits above a tall completion popup should be submitted, got '$out'"
+  enter_count=$(grep -c $'\x1f''pane'$'\x1f''send-keys'$'\x1f''w1:p2'$'\x1f''enter' "$log")
+  [ "$enter_count" -eq 1 ] || fail "the proven /exit should be submitted once, sent $enter_count Enter(s)"
+  [ "$(herdr_ctrl_u_count "$log")" -eq 0 ] || fail "a proven /exit must not be cleared"
+  pass "fm_backend_herdr_send_text_submit: a slash command is proven and submitted when Claude's completion popup pushes the composer out of a short tail"
+}
+
 # A non-Claude harness keeps the unproven type-then-Enter path: its composer
 # is never read before Enter, so a harness-specific placeholder or an
 # unselectable composer cannot turn a landed send into send-failed.
@@ -5809,6 +5839,7 @@ test_send_text_submit_lone_paste_placeholder_submits_the_long_payload
 test_send_text_submit_multiline_paste_placeholder_submits_the_long_payload
 test_send_text_submit_refuses_placeholder_followed_by_a_literal_remainder
 test_send_text_submit_three_paste_placeholders_submit_the_long_payload
+test_send_text_submit_slash_command_proof_reads_past_the_completion_popup
 test_send_text_submit_non_claude_skips_the_payload_proof
 test_dispatch_routes_herdr_backend
 test_dispatch_busy_state_unknown_for_tmux
