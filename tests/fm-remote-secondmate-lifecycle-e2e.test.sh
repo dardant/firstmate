@@ -56,7 +56,12 @@ cleanup() {
       fm_remote_job_stop_worker_tree "$worker_pid" 2>/dev/null || true
     done
   done
-  rm -rf -- "$TMP_ROOT"
+  # Spawns leave read-only git-hooks directories under the fixture state.
+  fm_test_remove_tree "$TMP_ROOT"
+  if [ -e "$TMP_ROOT" ]; then
+    printf 'not ok - the fixture root was left behind: %s\n' "$TMP_ROOT" >&2
+    exit 1
+  fi
 }
 trap cleanup EXIT
 
