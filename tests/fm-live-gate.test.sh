@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Behavior tests for tests/lib.sh's fm_live_gate, the single decision every
 # live-harness guard opens with, and for the wiring that makes that decision
-# reach the whole family.
+# reach the whole family. Its late-prerequisite exit fm_live_unavailable and its
+# sibling fm_require_tool, the prerequisite gate for deterministic suites, are
+# driven the same way at the end.
 #
 # The gate is what turns "a live guard exists" into "a live guard actually ran
 # on the machine that has the harness", so the cases below drive it the way a
@@ -199,6 +201,70 @@ EOF
   pass "all $checked live guards refuse together on FM_LIVE=0"
 }
 
+test_a_late_missing_prerequisite_follows_the_gate_rule() {
+  local path result request
+  path="$TMP_ROOT/unavailable.test.sh"
+  {
+    printf '#!/usr/bin/env bash\nset -u\n'
+    printf '. "%s/tests/lib.sh"\n' "$ROOT"
+    printf 'fm_live_gate default-on FM_FAKE_LIVE fmfakeharness\n'
+    printf 'fm_live_unavailable "fmfakeharness has not trusted the fixture"\n'
+    printf 'printf "ran\\n"\n'
+  } > "$path"
+  chmod +x "$path"
+
+  result=$(run_guard "$path")
+  [ "$(printf '%s' "$result" | sed -n 1p)" = 0 ] || fail "an unrequested guard must skip on a late missing prerequisite: $result"
+  assert_contains "$result" "skip: live: fmfakeharness has not trusted the fixture" \
+    "a late prerequisite skip must name what the host is missing"
+  assert_not_contains "$result" ran "a late prerequisite skip must stop the guard"
+
+  for request in FM_FAKE_LIVE=1 FM_LIVE=1; do
+    result=$(run_guard "$path" "$request")
+    [ "$(printf '%s' "$result" | sed -n 1p)" = 1 ] || fail "$request must turn a late missing prerequisite into a failure: $result"
+    assert_contains "$result" "live guard was requested but fmfakeharness has not trusted the fixture" \
+      "the requested failure must name the missing prerequisite"
+    assert_not_contains "$result" "skip:" "a requested run must never report a late prerequisite as a skip"
+  done
+}
+
+test_require_tool_skips_locally_and_fails_in_ci() {
+  local path result ci
+  path="$TMP_ROOT/require-tool.test.sh"
+  {
+    printf '#!/usr/bin/env bash\nset -u\n'
+    printf '. "%s/tests/lib.sh"\n' "$ROOT"
+    # The guard reads its own $1, so the literal is deliberate.
+    # shellcheck disable=SC2016
+    printf 'fm_require_tool "$1" "to parse the fixture"\n'
+    printf 'printf "ran\\n"\n'
+  } > "$path"
+  chmod +x "$path"
+
+  set +e
+  result=$(clean_env PATH="$BIN:/usr/bin:/bin" "$path" fmfakeharness 2>&1)
+  set -e
+  assert_contains "$result" ran "a present prerequisite must let the suite run"
+
+  set +e
+  result=$(clean_env PATH="$BIN:/usr/bin:/bin" "$path" fmmissingtool 2>&1; printf 'rc=%s\n' "$?")
+  set -e
+  assert_contains "$result" "skip: fmmissingtool not found (required to parse the fixture)" \
+    "a developer host must get a skip naming the tool to install"
+  assert_contains "$result" "rc=0" "a local prerequisite skip must exit 0"
+  assert_not_contains "$result" ran "an absent prerequisite must stop the suite before it runs"
+
+  for ci in GITHUB_ACTIONS=true CI=true; do
+    set +e
+    result=$(clean_env "$ci" PATH="$BIN:/usr/bin:/bin" "$path" fmmissingtool 2>&1; printf 'rc=%s\n' "$?")
+    set -e
+    assert_contains "$result" "rc=1" "$ci must turn an absent prerequisite into a failure"
+    assert_contains "$result" "fmmissingtool is required to parse the fixture" \
+      "the CI failure must name the missing tool and its purpose"
+    assert_not_contains "$result" "skip:" "$ci must never report required coverage as a skip"
+  done
+}
+
 test_default_on_runs_when_the_tool_is_installed
 pass "a default-on guard runs wherever its tools are installed"
 test_default_on_skips_and_names_the_absent_tool
@@ -218,3 +284,7 @@ pass "any entry point of a multi-mode guard turns it on"
 test_gate_lets_a_guard_drive_the_real_fleet_scripts_under_a_gate_marker
 pass "the shared gate carries the gate-refusal bypass into every live guard"
 test_every_live_guard_is_wired_to_the_shared_gate
+test_require_tool_skips_locally_and_fails_in_ci
+pass "a missing prerequisite skips on a developer host and fails in CI"
+test_a_late_missing_prerequisite_follows_the_gate_rule
+pass "a prerequisite found missing after the gate skips unless the run was requested"

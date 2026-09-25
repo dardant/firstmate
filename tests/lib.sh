@@ -262,6 +262,12 @@ fi
 # actually ran. Setting one to 0 (or FM_LIVE=0) turns it off; a guard's own
 # variable wins over FM_LIVE.
 #
+# A guard that finds a host prerequisite missing only after the gate - one no
+# `command -v` can see, such as a harness that has not trusted the directory it
+# must run in - ends through fm_live_unavailable <reason>, which applies the same
+# rule: `skip: live: <reason>` normally, a hard failure when the run was
+# requested.
+#
 # Sourcing this library also exports FM_GATE_REFUSE_BYPASS=1, which is what
 # lets a live guard drive the real fm-spawn/fm-send/fm-teardown from inside a
 # no-mistakes gate worktree instead of being refused by
@@ -329,7 +335,66 @@ fm_live_gate() {
     exit 0
   done
 
+  FM_LIVE_GATE_REQUESTED=$requested
   return 0
+}
+
+fm_live_unavailable() {  # <reason>
+  if [ "${FM_LIVE_GATE_REQUESTED:-0}" = 1 ]; then
+    fail "live guard was requested but $1"
+  fi
+  printf 'skip: live: %s\n' "$1"
+  exit 0
+}
+
+# --- prerequisite-tool gate -------------------------------------------------
+#
+# fm_require_tool <tool> <purpose>
+#
+# For a deterministic suite that needs a general-purpose tool the host may not
+# have (ruby for YAML parsing, say), rather than a harness. It returns 0 when
+# <tool> is on PATH. Otherwise, on a developer host, it ends the script with one
+# runner-readable line naming what to install:
+#
+#   skip: <tool> not found (required <purpose>)
+#
+# In CI (GITHUB_ACTIONS=true or CI=true, the signals bin/fm-lint.sh reads) the
+# runner image is expected to provide the tool, so an absent one is a hard
+# failure there and never a silent skip of required coverage.
+
+fm_require_tool() {
+  local tool=$1 purpose=$2
+  command -v "$tool" >/dev/null 2>&1 && return 0
+  if [ "${GITHUB_ACTIONS:-}" = true ] || [ "${CI:-}" = true ]; then
+    fail "$tool is required $purpose, and the CI runner does not provide it"
+  fi
+  printf 'skip: %s not found (required %s)\n' "$tool" "$purpose"
+  exit 0
+}
+
+# --- waiting for a background step to reach its marker ----------------------
+#
+# fm_wait_for_marker <path> <pid> <exited-message> <hung-message>
+#
+# Waits for a background process <pid> to create <path>, the usual way a test
+# holds a concurrent step at a deliberate block before driving its rival.
+# It fails with <exited-message> as soon as <pid> ends without the marker, and
+# with <hung-message> only after FM_TEST_MARKER_WAIT_SECS of wall clock (default
+# 180). That bound is a hang detector, not a speed assertion: a loaded host
+# (many parallel suites on one machine) routinely takes tens of seconds to
+# reach a marker, and a healthy run returns as soon as the marker appears.
+
+fm_wait_for_marker() {
+  local path=$1 pid=$2 exited=$3 hung=$4 deadline
+  deadline=$((SECONDS + ${FM_TEST_MARKER_WAIT_SECS:-180}))
+  while [ ! -e "$path" ]; do
+    if ! kill -0 "$pid" 2>/dev/null; then
+      [ -e "$path" ] && return 0
+      fail "$exited"
+    fi
+    [ "$SECONDS" -lt "$deadline" ] || fail "$hung"
+    sleep 0.02
+  done
 }
 
 # --- fakebin / PATH shims ---------------------------------------------------
