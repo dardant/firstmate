@@ -2351,6 +2351,61 @@ test_finished_pr_ship_later_run_failure_still_alarms() {
   pass "a run that fails, is cancelled, parks, or is unreadable after a recorded finish still alarms"
 }
 
+# A finished pane that never redraws once absorbed (the recap disabled, nothing
+# else ticking) keeps its hash for hours while the no-mistakes CI monitor
+# re-arms, fails, and fixes in the daemon, never in the pane. Before the fix
+# every such poll was inert and never read the crew state again, so a run that
+# failed behind it never alarmed. It is re-read on the long cadence: still
+# parked stays quiet, anything else alarms at once, on both the terminal and
+# the non-terminal path.
+test_absorbed_finish_stable_pane_rechecks_on_long_cadence() {
+  local dir state window key text task meta status idle failed
+  idle='state: done · source: status-log · PR https://example.invalid/pull/6 checks green · run still monitoring PR'
+  failed='state: failed · source: run-step · run failed · run: 01RUNSTABLE'
+  text='idle composer, done'
+  for task in stable-pr stable-scout; do
+    window="test:fm-$task"
+    key=$(printf '%s' "$window" | tr ':/.' '___')
+    case "$task" in
+      stable-pr)
+        meta='kind=ship\nmode=no-mistakes\npr=https://example.invalid/pull/6\n'
+        status='working [at=1790200000]: validation started\ndone [at=1790200900]: PR https://example.invalid/pull/6 checks green\n' ;;
+      stable-scout)
+        meta='kind=scout\n'
+        status='done [at=1790200060]: report written to data/scout/report.md\nnote [at=1790200130]: report linked in the backlog\n' ;;
+    esac
+    dir=$(finish_stale_case "$task" "$window" "$meta" "$status")
+    state="$dir/state"
+
+    finish_stale_round "$dir" "$window" "$text" FM_FAKE_CREW_STATE="$idle" \
+      || fail "$task: a finished pane was surfaced: $(cat "$dir/watch.out")"
+    [ "$(cat "$state/.stale-done-$key" 2>/dev/null)" = "$(hash_text "$text")" ] \
+      || fail "$task: the finished pane hash was not remembered as absorbed"
+
+    # Inside the long cadence the absorbed hash is not re-read.
+    finish_stale_round "$dir" "$window" "$text" FM_FAKE_CREW_STATE="$failed" \
+      || fail "$task: an absorbed pane re-read its crew state inside the long cadence: $(cat "$dir/watch.out")"
+
+    # Past the cadence, a crew still parked on its finish stays quiet and starts
+    # a fresh window.
+    set_mtime "$(( $(date +%s) - 20000 ))" "$state/.stale-done-$key"
+    finish_stale_round "$dir" "$window" "$text" FM_FAKE_CREW_STATE="$idle" \
+      || fail "$task: a still-parked finish alarmed on its recheck: $(cat "$dir/watch.out")"
+    [ $(( $(date +%s) - $(file_mtime "$state/.stale-done-$key") )) -lt 1000 ] \
+      || fail "$task: the still-parked recheck did not restart its window"
+
+    # Past the cadence, a run that failed behind the unchanged pane alarms.
+    set_mtime "$(( $(date +%s) - 20000 ))" "$state/.stale-done-$key"
+    finish_stale_round "$dir" "$window" "$text" FM_FAKE_CREW_STATE="$failed" \
+      && fail "$task: a run that failed behind an unchanged absorbed pane never alarmed"
+    grep -Fx "stale: $window" "$dir/watch.out" >/dev/null \
+      || fail "$task: the failed run behind an absorbed pane did not surface: $(cat "$dir/watch.out")"
+    [ ! -e "$state/.stale-done-$key" ] || fail "$task: a failed run kept its absorbed marker"
+    ack_stopped_cycle "$state" || fail "$task: could not acknowledge the surfaced failed run"
+  done
+  pass "an absorbed finish on an unchanged pane is rechecked on the long cadence and alarms once its run fails"
+}
+
 # The CI-awaiting deferral is for an idle parked pane only. A busy turn past
 # FM_BUSY_TURN_MAX_SECS behind the same recorded finish and re-armed monitor
 # (the crew kept working in that turn, or someone typed into its pane) keeps the
@@ -6417,6 +6472,7 @@ test_finish_on_record_reopened_by_later_steer
 test_finished_pr_ship_ci_rearm_defers_wedge
 test_finished_pr_ship_ci_rearm_busy_turn_still_escalates
 test_finished_pr_ship_later_run_failure_still_alarms
+test_absorbed_finish_stable_pane_rechecks_on_long_cadence
 test_finished_scout_with_resolved_line_never_wedge_escalates
 test_answered_decision_then_finish_stays_quiet
 test_unfinished_crew_with_resolved_line_still_surfaces

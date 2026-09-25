@@ -1726,9 +1726,10 @@ crew_parked_on_finish() {  # <task>
 # backstop still surfaces one that never did, so a finished idle pane - quiet while
 # it awaits a merge, or only redrawing (a harness recap, a resize) - is neither
 # re-alarmed once per new hash nor timed toward a wedge escalation.
-# The hash is remembered in .stale-done-<key> so the same-hash polls stay inert; a
-# new hash, a busy pane, or a stale-bookkeeping reset drops it, so the next quiet
-# stretch is classified afresh.
+# The hash is remembered in .stale-done-<key> so the same-hash polls stay inert
+# apart from recheck_done_stale's long-cadence re-read; a new hash, a busy pane,
+# or a stale-bookkeeping reset drops it, so the next quiet stretch is classified
+# afresh.
 absorb_done_stale() {  # <window> <hash>
   local win=$1 h=$2 key
   key=$(window_key "$win")
@@ -1736,6 +1737,25 @@ absorb_done_stale() {  # <window> <hash>
   printf '%s' "$h" > "$STATE/.stale-$key"
   printf '%s' "$h" > "$STATE/.stale-done-$key"
   triage_log "absorbed stale (finish already on record, crew parked): $win"
+}
+
+# A pane absorbed by absorb_done_stale whose hash never changes is re-read once
+# per PAUSE_RESURFACE_SECS, aged from its .stale-done-<key> marker, so a run that
+# later fails behind a pane that never redraws still alarms. A crew still parked
+# on its finish restarts that window; anything else drops the absorbed hash, so
+# the same poll classifies the pane afresh as a new stale hash.
+recheck_done_stale() {  # <window> <task> <hash>
+  local key sdf
+  key=$(window_key "$1")
+  sdf="$STATE/.stale-done-$key"
+  [ "$(cat "$sdf" 2>/dev/null || true)" = "$3" ] || return 0
+  [ "$(age_of "$sdf")" -ge "$PAUSE_RESURFACE_SECS" ] || return 0
+  if crew_parked_on_finish "$2"; then
+    touch "$sdf"
+  else
+    rm -f "$sdf" "$STATE/.stale-$key"
+    triage_log "finish on record no longer parked on recheck, reclassifying stale: $1"
+  fi
 }
 
 # Surface a stale pane no classifier could resolve, so firstmate inspects it: it
@@ -2787,6 +2807,7 @@ EOF
       if [ "$n" -ge 2 ] && [ "$busy_now" -ne 0 ]; then
         # The pane is idle/stale at hash $h. Triage decides whether this wakes
         # firstmate. Detection itself is unchanged from above.
+        recheck_done_stale "$w" "$task" "$h"
         if [ "$kind" = secondmate ]; then
           case "$(pause_state_class "$w" "$task")" in
             paused) handle_paused_stale "$w" "$task" "$h" ;;
@@ -2917,8 +2938,8 @@ EOF
                 *)       handle_paused_stale "$w" "$task" "$h" ;;
               esac
             elif [ "$(cat "$sdf" 2>/dev/null || true)" = "$h" ]; then
-              # Absorbed as a finish on record: inert, exactly like a terminal
-              # hash already surfaced, so no wedge timer runs for it.
+              # Absorbed as a finish on record: no wedge timer runs for it, and
+              # recheck_done_stale above re-reads its crew state on the long cadence.
               :
             else
               wedge_timer_check "$w" "$ssf" "non-terminal stale" "$ewf" "$task" "$h"
