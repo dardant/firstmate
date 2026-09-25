@@ -977,20 +977,9 @@ wait_record() {  # <kind> <subject> <whom> <action> <age-record>
 # timer only through pause_state_class answering `working`, so its crew state is
 # a running step, never a parked gate.
 #
-# A crew whose finish is already on record (crew_finish_on_record) and whose
-# only activity is its no-mistakes CI monitor waiting on checks
-# (crew_ci_awaits_checks) is parked awaiting merge: after the base branch
-# advances the monitor re-arms and reads working again, so without this record a
-# PR ship that already reported done would wedge-escalate every
-# STALE_ESCALATE_SECS until its checks turned green. It is aged from the status
-# log, so it rechecks once per PAUSE_RESURFACE_SECS and CI that never settles
-# still resurfaces; a fixing step or a failed check never mints the component, so
-# those keep the unchanged schedule. Its crew-state read is taken only behind the
-# cheap finish-on-record read.
-#
-# The parked-gate record below is OFF unless the home creates config/wedge-defer-parked-gate,
+# The second record is OFF unless the home creates config/wedge-defer-parked-gate,
 # and that one guard is what makes an unconfigured home's behaviour identical to
-# having no parked-gate record at all: it is read before the fold, so no fold or
+# having no second record at all: it is read before the fold, so no fold or
 # crew-state read is spent, no wait record exists to defer on, no recheck wording
 # is reachable, and the lane keeps the unchanged escalation schedule, reason and
 # demand-deep-inspection wording. Unlike the status line, which is the worker's
@@ -999,7 +988,7 @@ wait_record() {  # <kind> <subject> <whom> <action> <age-record>
 # rather than a default every fleet inherits - the same reason
 # config/turnend-churn-absorb gates its own widened absorb.
 #
-# The parked-gate record takes TWO signals, and needs both. The crew's authoritative
+# The second record takes TWO signals, and needs both. The crew's authoritative
 # current state must be a no-mistakes gate whose answer is owed by a HUMAN
 # (crew_gate_awaits_human_decision in fm-classify-lib.sh, minted from the
 # findings table's `action` column by position), AND the task's own decision fold
@@ -1053,11 +1042,6 @@ wedge_wait_evidence() {  # <task> -> one wait_record on stdout
     fi
     wait_record 'declared wait' 'awaiting external' \
       external 'confirm the wait still holds' "$statusf"
-    return 0
-  fi
-  if crew_finish_on_record "$task" && crew_ci_awaits_checks "$task"; then
-    wait_record 'finished, CI monitor awaiting checks' 'awaiting CI checks on the recorded PR' \
-      external 'confirm the PR checks are progressing' "$statusf"
     return 0
   fi
   [ -e "$CONFIG/wedge-defer-parked-gate" ] || return 1
@@ -1243,6 +1227,39 @@ wedge_dead_record() {  # <window> <since-file> <triage-label> <idle-age> <pane-h
   wake "$reason"
 }
 
+# At the escalation threshold of an IDLE pane, a crew whose finish is already on
+# record (crew_finish_on_record) is parked awaiting merge or the captain, so its
+# quiet is not a wedge whatever made it read provably working when the timer
+# started. One crew-state read (crew_ci_wait_class) decides the rest:
+#   - awaiting-checks: its only activity is the no-mistakes CI monitor waiting on
+#     checks, typically re-armed because the base branch advanced. The escalation
+#     is deferred as a wait aged from the status log, so it rechecks once per
+#     PAUSE_RESURFACE_SECS and CI that never settles still resurfaces;
+#   - working: something else runs (a fixing step, a failed check being worked),
+#     so the unchanged schedule keeps it;
+#   - anything else: nothing runs any more (the checks went green again), so the
+#     pane is absorbed exactly as a new hash would be (absorb_done_stale) and its
+#     wedge timer is dropped.
+# A busy pane never comes here: its turn keeps the BUSY_TURN_MAX_SECS bound.
+# Returns 0 when it has handled the window, 1 to continue toward escalation.
+wedge_finished_crew() {  # <window> <since-file> <triage-label> <idle-age> <escalation-file> <task> <pane-hash>
+  local win=$1 since_file=$2 label=$3 age=$4 escalation_file=$5 task=$6 hash=$7
+  crew_finish_on_record "$task" || return 1
+  case "$(crew_ci_wait_class "$task")" in
+    awaiting-checks)
+      wedge_defer_wait "$win" "$since_file" "$label" "$age" \
+        "$(wait_record 'finished, CI monitor awaiting checks' 'awaiting CI checks on the recorded PR' \
+          external 'confirm the PR checks are progressing' "$STATE/$task.status")"
+      ;;
+    working|paused) return 1 ;;
+    *)
+      rm -f "$since_file" "$escalation_file"
+      clear_write_tracking "$(window_key "$win")"
+      absorb_done_stale "$win" "$hash"
+      ;;
+  esac
+}
+
 # Repeat-poll wedge-timer bookkeeping for an already-classified stale hash
 # absorbed as provably-working - repairs a missing/corrupt timer (self-heals a
 # watcher restart between recording the hash and recording the timer), or
@@ -1254,16 +1271,17 @@ wedge_dead_record() {  # <window> <since-file> <triage-label> <idle-age> <pane-h
 # the dead-record probe (wedge_dead_record) run ONLY here, inside the
 # at-threshold branch that is about to escalate: at most one each per window per
 # STALE_ESCALATE_SECS, never on an ordinary poll. The crew-state read
-# wedge_wait_evidence may take (for a finish on record, or under
-# config/wedge-defer-parked-gate) keeps that same bound however long the wait
-# lasts, because the deferral it feeds restarts the idle timer like every other
-# deferral below. The wait consult runs first, because a pane that can
+# wedge_wait_evidence may take under config/wedge-defer-parked-gate, and the one
+# wedge_finished_crew takes for an idle pane whose finish is on record, keep that
+# same bound however long the wait lasts, because each deferral restarts the idle
+# timer like every other deferral below and the finished absorb drops it. The
+# wait consult runs first, because a pane that can
 # account for its own quiet has nothing to prove through its worktree. The dead-record probe
 # runs last of the three, so the two cheaper deferrals keep the panes they
 # already own on their existing bounded cadences and only a pane that would
 # otherwise alarm pays for a backend read.
-wedge_timer_check() {  # <window> <since-file> <triage-label> <escalation-count-file> <task> <pane-hash>
-  local win=$1 since_file=$2 label=$3 escalation_file=$4 task=$5 hash=$6 since age n reason evidence
+wedge_timer_check() {  # <window> <since-file> <triage-label> <escalation-count-file> <task> <pane-hash> [busy]
+  local win=$1 since_file=$2 label=$3 escalation_file=$4 task=$5 hash=$6 pane=${7:-idle} since age n reason evidence
   since=$(cat "$since_file" 2>/dev/null || true)
   case "$since" in
     ''|*[!0-9]*)
@@ -1278,6 +1296,10 @@ wedge_timer_check() {  # <window> <since-file> <triage-label> <escalation-count-
       if [ "$age" -ge "$STALE_ESCALATE_SECS" ]; then
         if evidence=$(wedge_wait_evidence "$task") &&
            wedge_defer_wait "$win" "$since_file" "$label" "$age" "$evidence"; then
+          return 0
+        fi
+        if [ "$pane" != busy ] &&
+           wedge_finished_crew "$win" "$since_file" "$label" "$age" "$escalation_file" "$task" "$hash"; then
           return 0
         fi
         if crew_worktree_written_since "$task" "$STATE" "$since_file"; then
@@ -1442,7 +1464,7 @@ busy_turn_bound_check() {  # <window> <task> <hash> <since-file> <escalation-fil
     handle_paused_stale "$win" "$task" "$h"
     return 0
   fi
-  wedge_timer_check "$win" "$since_file" "busy (no completed turn)" "$escalation_file" "$task" "$h"
+  wedge_timer_check "$win" "$since_file" "busy (no completed turn)" "$escalation_file" "$task" "$h" busy
   return 1
 }
 

@@ -2281,7 +2281,71 @@ test_finished_pr_ship_ci_rearm_defers_wedge() {
   grep -F 'possible wedge' "$dir/watch.out" >/dev/null \
     && fail "the long-cadence recheck was worded as a wedge: $(cat "$dir/watch.out")"
   ack_stopped_cycle "$state" || fail "could not acknowledge the CI recheck"
-  pass "a finished PR ship whose CI monitor re-armed is rechecked on the long cadence, not wedge-escalated"
+
+  # The re-armed checks go green again while the idle pane keeps its hash: the
+  # finish on record is parked with nothing running, so the timer's next
+  # threshold absorbs it as a new hash would, instead of alarming a wedge.
+  sleep 1.2
+  finish_stale_round "$dir" "$window" 'idle composer, done' \
+    FM_FAKE_CREW_STATE='state: done · source: run-step · checks green: PR ready for review (still monitoring for merge/close) · run: 01RUNCIREARM' \
+    FM_STALE_ESCALATE_SECS=1 \
+    || fail "a finished ship whose re-armed checks went green was wedge-escalated: $(cat "$dir/watch.out")"
+  grep -F "absorbed stale (finish already on record, crew parked): $window" "$state/.watch-triage.log" >/dev/null \
+    || fail "the green-again pane was not absorbed as a finish on record"
+  [ ! -e "$state/.stale-since-$key" ] || fail "the green-again pane kept its wedge timer"
+  [ "$(cat "$state/.stale-done-$key" 2>/dev/null)" = "$(hash_text 'idle composer, done')" ] \
+    || fail "the green-again pane hash was not remembered as absorbed"
+  sleep 1.2
+  finish_stale_round "$dir" "$window" 'idle composer, done' \
+    FM_FAKE_CREW_STATE='state: done · source: run-step · checks green: PR ready for review (still monitoring for merge/close) · run: 01RUNCIREARM' \
+    FM_STALE_ESCALATE_SECS=1 \
+    || fail "the absorbed green-again pane alarmed on a later poll: $(cat "$dir/watch.out")"
+  pass "a finished PR ship whose CI monitor re-armed is rechecked on the long cadence, then absorbed once its checks go green again"
+}
+
+# The CI-awaiting deferral is for an idle parked pane only. A busy turn past
+# FM_BUSY_TURN_MAX_SECS behind the same recorded finish and re-armed monitor
+# (the crew kept working in that turn, or someone typed into its pane) keeps the
+# unchanged wedge escalation.
+test_finished_pr_ship_ci_rearm_busy_turn_still_escalates() {
+  local dir state fakebin out capture_file window key pid awaiting
+  dir=$(make_case rearmed-busy); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"; window="test:fm-rearmed-busy"
+  awaiting='state: working · source: run-step · ci running · ci: awaiting checks · status-log superseded by active run · run: 01RUNBUSY'
+  printf 'Working...' > "$capture_file"
+  printf 'window=%s\nkind=ship\nharness=pi\nmode=no-mistakes\npr=https://example.invalid/pull/4\n' "$window" > "$state/rearmed-busy.meta"
+  record_pi_busy "$state" rearmed-busy
+  printf 'done [at=1790200900]: PR https://example.invalid/pull/4 checks green\n' > "$state/rearmed-busy.status"
+  printf '%s' "$(seen_sig "$state/rearmed-busy.status")" > "$state/.seen-rearmed-busy_status"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  printf '%s' "$(hash_text "Working...")" > "$state/.hash-$key"
+  printf '1\n' > "$state/.count-$key"
+  touch -t 200001010000 "$state/rearmed-busy.turn-ended"
+  prime_turnend_seen "$state/rearmed-busy.turn-ended"
+
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
+    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_FAKE_CREW_STATE="$awaiting" \
+    FM_BUSY_TURN_MAX_SECS=1 FM_STALE_ESCALATE_SECS=999 FM_POLL=1 FM_SIGNAL_GRACE=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  if ! wait_poll_cycle "$state" "$pid"; then
+    reap "$pid"; fail "priming round for the busy re-armed pane was not absorbed: $(cat "$out")"
+  fi
+  reap "$pid"
+  ack_stopped_cycle "$state" || fail "could not acknowledge the busy re-armed priming stop"
+
+  echo $(( $(date +%s) - 500 )) > "$state/.stale-since-$key"
+  : > "$out"
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
+    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_FAKE_CREW_STATE="$awaiting" \
+    FM_BUSY_TURN_MAX_SECS=1 FM_STALE_ESCALATE_SECS=240 FM_POLL=1 FM_SIGNAL_GRACE=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  wait_for_exit "$pid" 100 || { reap "$pid"; fail "a hung busy turn behind a re-armed CI monitor was deferred: $(cat "$out")"; }
+  grep -F 'possible wedge, escalation 1' "$out" >/dev/null \
+    || fail "a hung busy turn behind a re-armed CI monitor lost its wedge escalation: $(cat "$out")"
+  ack_stopped_cycle "$state" || fail "could not acknowledge the busy re-armed escalation"
+  pass "a hung busy turn behind a recorded finish and a re-armed CI monitor keeps its wedge escalation"
 }
 
 # Enqueue one firstmate steer for <task> through the steering-inbox owner, then
@@ -6303,6 +6367,7 @@ test_nonterminal_stale_not_working_surfaced
 test_finish_on_record_redrawing_pane_stays_quiet
 test_finish_on_record_reopened_by_later_steer
 test_finished_pr_ship_ci_rearm_defers_wedge
+test_finished_pr_ship_ci_rearm_busy_turn_still_escalates
 test_finished_scout_with_resolved_line_never_wedge_escalates
 test_answered_decision_then_finish_stays_quiet
 test_unfinished_crew_with_resolved_line_still_surfaces
