@@ -1,0 +1,2 @@
+d939aad370cdf47fa0de2b4dfb367965223f8f038f9fecf6c059cf198c70d5c3  /home/dardan/.claude/settings.json
+autoCompactEnabled = false

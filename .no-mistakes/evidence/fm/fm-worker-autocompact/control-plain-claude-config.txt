@@ -1,0 +1,38 @@
+ ▐▛███▛█   Claude Code v2.1.280
+▝▜██████▀  Opus 5.5 (1M context) with high effort · Claude Max
+  ▝▝ ▝▝    /tmp/fm-autocompact.CrW8LR/wt
+
+
+❯ /config
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Settings  Status   Config   Usage   Stats
+
+
+  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+  │ ⌕ Search settings…                                                                                               │
+  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+    Auto-compact                               false
+    Continue automatically at usage limit      true
+    Switch models when a message is flagged    Not asked yet
+    Show tips                                  true
+    Reduce motion                              false
+    Thinking mode                              true
+    Fast mode (Opus 5.5)                       false
+    Prompt suggestions                         true
+    Session recap                              true
+    Rewind code (checkpoints)                  true
+    Dynamic workflows                          true
+    Ultracode keyword trigger                  true
+    Dynamic workflow size                      medium (default)
+    Verbose output                             false
+    Terminal progress bar                      true
+    Show turn duration                         true
+    Time format                                auto
+    Default permission mode                    Manual
+    Worktree base ref                          fresh
+    Use auto mode during plan                  true
+  ↓ 26 more below
+
+  Type to filter · Enter/↓ to select · ↑ to tabs · Esc to clear

@@ -1,0 +1,1 @@
+3831754 claude --dangerously-skip-permissions --settings {"feedbackDrafts":"off","attribution":{"commit":"","pr":"","sessionUrl":false},"autoCompactEnabled":true} --append-system-prompt You are a task worker launched by Firstmate, your supervising orchestrator

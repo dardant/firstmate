@@ -1,0 +1,1 @@
+3918655 claude --dangerously-skip-permissions --settings {"feedbackDrafts":"off","attribution":{"commit":"","pr":"","sessionUrl":false},"autoCompactEnabled":true} --model claude-haiku-4-5-20251001 ⁣
