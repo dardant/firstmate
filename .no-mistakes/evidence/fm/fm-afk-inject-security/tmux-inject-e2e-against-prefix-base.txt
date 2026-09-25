@@ -1,0 +1,5 @@
+ok - Scenario A: partial input defers injection; digest arrives clean after idle
+ok - Scenario B: swallowed Enter produces exactly one clean digest
+ok - Scenario C: a normal captain status injects exactly one clean single-line sentinel digest
+not ok - Scenario D: the shell executed a command substitution from the digest
+exit=1

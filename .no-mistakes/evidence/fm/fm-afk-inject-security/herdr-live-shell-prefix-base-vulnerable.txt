@@ -1,0 +1,14 @@
+### PRE-FIX base da71dc8 daemon, same live Herdr pane (zsh, bare ❯), same escalation
+flush_rc=0
+proof_file=EXISTS (shell executed $(touch ...))
+buffer=cleared
+--- daemon log ---
+### pane after:
+/tmp/fm-afkown-cwd.zuqki8
+❯ <2063>FIRSTMATE_OP: v1 away-supervisor: Supervisor escalate (1 event(s)): needs-decision: worker quoted $(touch /tmp/
+fm-afkown-proof-base) in its status line; (pre-read; re-arm not needed — watcher daemon-managed)
+zsh: no matches found: (1 event(s)):
+zsh: command not found: pre-read
+zsh: command not found: re-arm
+/tmp/fm-afkown-cwd.zuqki8
+❯

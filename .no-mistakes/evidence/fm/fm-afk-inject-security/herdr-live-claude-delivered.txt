@@ -1,0 +1,22 @@
+### FIXED daemon escalate_flush into idle real Claude 2.1.280 (Herdr lab pane w1:p1)
+flush_rc=0
+proof_file=absent
+buffer=cleared
+--- daemon log ---
+### pane after:
+  ▝▝ ▝▝    /tmp/fm-afkown-cwd.zuqki8
+
+
+❯ FIRSTMATE_OP: v1 away-supervisor: Supervisor escalate (1 event(s)): needs-decision: afk ownership lab check - reply
+  with the single word ACK and do nothing else (pre-read; re-arm not needed — watcher daemon-managed)
+
+● ACK
+
+✻ Baked for 1s · done 2:46 PM
+
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⚠ Transcript saving is off — inherited CLAUDE_CODE_CHILD_SESSION marker · restart with CLAUDE_CODE_FORCE_SESSION_P…
+  Opus 5.5 (1M context) | 1M ctx | 975k left (97%)
+  ⏵⏵ auto mode on (shift+tab to cycle)

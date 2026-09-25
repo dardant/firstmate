@@ -1,0 +1,18 @@
+### Claude suspended with ^Z; zsh (bare ❯) owns the terminal; claude still a descendant of the pane shell
+### agent get:
+{"error":{"code":"agent_not_found","message":"agent target w1:p1 not found"},"id":"cli:agent:get"}
+
+### pane process-info foreground:
+{"shell_pid":1523314,"fg":[{"pid":1523314,"name":"zsh"}]}
+### verdicts:
+owner(claude)=foreign  composer_unnamed=empty  composer_claude=unknown
+### FIXED daemon escalate_flush:
+flush_rc=1
+proof_file=absent
+buffer=kept: needs-decision: worker quoted $(touch /tmp/fm-afkown-proof-susp) in its status line;
+--- daemon log ---
+  [2026-09-25T14:46:43-0400] inject refused: supervisor pane is not owned by the primary harness (harness=claude owner=foreign); a shell or other program would receive the digest
+### pane after:
+zsh: suspended  claudeft+tab to cycle)
+/tmp/fm-afkown-cwd.zuqki8 50s
+❯

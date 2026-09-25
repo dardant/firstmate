@@ -1,0 +1,4 @@
+### real Claude 2.1.280 trust dialog ('❯ No, exit' row):
+{"id":"cli:agent:get","result":{"agent":{"agent":"claude","agent_status":"blocked","cwd":"/tmp/fm-afkown-cwd.zuqki8","focused":true,"foreground_cwd":"/tmp/fm-afkown-cwd.zuqki8","pane_id":"w1:p1","revision":0,"state_change_seq":1,"tab_id":"w1:t1","terminal_id":"term_65c531c7287311","workspace_id":"w1"},"type":"agent_info"}}
+
+owner(claude)=owned  composer_unnamed=pending  composer_claude=pending
