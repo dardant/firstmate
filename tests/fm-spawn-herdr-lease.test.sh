@@ -341,18 +341,15 @@ test_herdr_ship_aborted_respawn_keeps_the_reused_lease() {
   pass "fm-spawn herdr: an aborted respawn restores the prior record, and the next respawn reuses the same worktree"
 }
 
-# A respawn whose backlog commit fails after publication restores the prior
-# record, so its guidance must keep the reused worktree: closing out that copy
-# would discard the task's work and leave the restored record naming a slot
-# back in the pool.
-test_herdr_ship_respawn_backlog_failure_keeps_the_worktree() {
-  local dir out rc=0 slot before real
-  real=$(command -v tasks-axi) || { echo "skip: tasks-axi not found (backlog commit failure case)"; return 0; }
-  dir=$(new_case respawn-backlog lease13)
-  slot=$(cat "$dir/fake/slot")
+# arm_backlog_commit_failure <case-dir> <id>: a markdown backlog holding the
+# task's item, and a tasks-axi whose In-flight move always fails, so the spawn
+# fails at its post-publication backlog commit.
+arm_backlog_commit_failure() {
+  local dir=$1 id=$2 real
+  real=$(command -v tasks-axi)
   printf '%s\n' '# Backlog' '' '## In flight' '' '## Queued' '' '## Done' > "$dir/home/data/backlog.md"
   printf 'backend = "markdown"\n\n[markdown]\npath = "data/backlog.md"\n' > "$dir/home/.tasks.toml"
-  tasks-axi add lease13 "item for lease13" --kind ship --file "$dir/home/data/backlog.md" >/dev/null \
+  tasks-axi add "$id" "item for $id" --kind ship --file "$dir/home/data/backlog.md" >/dev/null \
     || fail "the fixture could not add the backlog item"
   cat > "$dir/fakebin/tasks-axi" <<SH
 #!/usr/bin/env bash
@@ -363,6 +360,18 @@ fi
 exec "$real" "\$@"
 SH
   chmod +x "$dir/fakebin/tasks-axi"
+}
+
+# A respawn whose backlog commit fails after publication restores the prior
+# record, so its guidance must keep the reused worktree: closing out that copy
+# would discard the task's work and leave the restored record naming a slot
+# back in the pool.
+test_herdr_ship_respawn_backlog_failure_keeps_the_worktree() {
+  local dir out rc=0 slot before
+  command -v tasks-axi >/dev/null 2>&1 || { echo "skip: tasks-axi not found (backlog commit failure case)"; return 0; }
+  dir=$(new_case respawn-backlog lease13)
+  slot=$(cat "$dir/fake/slot")
+  arm_backlog_commit_failure "$dir" lease13
   write_leased_record "$dir" lease13 "$slot" fm-task-lease13
   before=$(cat "$dir/home/state/lease13.meta")
   out=$(run_spawn "$dir" lease13) || rc=$?
@@ -375,6 +384,41 @@ SH
     || fail "the failed respawn should restore the prior record"$'\n'"$out"
   assert_not_contains "$(cat "$dir/fake/treehouse-log")" "return --force" "the failed respawn must not return the reused worktree"
   pass "fm-spawn herdr: a respawn whose backlog commit fails restores the record and keeps its worktree"
+}
+
+# A rollback that fails once is retried when the spawn exits; the snapshot
+# must survive that first failure so the retry still restores the prior record.
+test_herdr_ship_rollback_retry_restores_the_prior_record() {
+  local dir out rc=0 slot before real_rm
+  command -v tasks-axi >/dev/null 2>&1 || { echo "skip: tasks-axi not found (rollback retry case)"; return 0; }
+  real_rm=$(command -v rm)
+  dir=$(new_case respawn-rollback-retry lease15)
+  slot=$(cat "$dir/fake/slot")
+  arm_backlog_commit_failure "$dir" lease15
+  cat > "$dir/fakebin/rm" <<SH
+#!/usr/bin/env bash
+for a in "\$@"; do
+  case "\$a" in
+    */state/lease15.meta)
+      if [ ! -e "\$FAKE_DIR/rm-failed" ]; then : > "\$FAKE_DIR/rm-failed"; exit 1; fi ;;
+  esac
+done
+exec "$real_rm" "\$@"
+SH
+  chmod +x "$dir/fakebin/rm"
+  write_leased_record "$dir" lease15 "$slot" fm-task-lease15
+  before=$(cat "$dir/home/state/lease15.meta")
+  out=$(run_spawn "$dir" lease15) || rc=$?
+  [ "$rc" -ne 0 ] || fail "a respawn whose backlog commit fails must refuse"$'\n'"$out"
+  [ -e "$dir/fake/rm-failed" ] || fail "the fixture never failed the first rollback"$'\n'"$out"
+  assert_contains "$out" "failed-dispatch cleanup is incomplete" "the first rollback should have failed"$'\n'"$out"
+  [ "$(cat "$dir/home/state/lease15.meta" 2>/dev/null)" = "$before" ] \
+    || fail "the retried rollback should restore the prior record"$'\n'"$out"
+  assert_not_contains "$out" "no task record names it" "a restored record must not be reported as orphaned"
+  [ -z "$(find "$dir/home/state" -name '.lease15.meta.*' 2>/dev/null)" ] \
+    || fail "the restored snapshot should be consumed: $(ls -a "$dir/home/state")"
+  assert_not_contains "$(cat "$dir/fake/treehouse-log")" "return --force" "the respawn must not return the reused worktree"
+  pass "fm-spawn herdr: a rollback retried at exit still restores the prior record"
 }
 
 # When the prior record cannot be put back, the snapshot is the only copy of
@@ -469,6 +513,7 @@ test_herdr_ship_tab_opens_in_its_leased_worktree
 test_herdr_ship_fresh_spawn_reuses_its_leased_record
 test_herdr_ship_aborted_respawn_keeps_the_reused_lease
 test_herdr_ship_respawn_backlog_failure_keeps_the_worktree
+test_herdr_ship_rollback_retry_restores_the_prior_record
 test_herdr_ship_failed_restore_keeps_the_snapshot
 test_herdr_ship_refuses_fresh_spawn_over_an_unreusable_record
 test_herdr_ship_abort_returns_its_lease

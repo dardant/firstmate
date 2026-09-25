@@ -1110,6 +1110,7 @@ SPAWN_SLOT_CLAIMED=0
 SPAWN_WT_LEASED=0
 SPAWN_WT_REUSED=0
 SPAWN_WT_PRIOR_META=
+SPAWN_WT_PRIOR_META_KEEP=0
 SPAWN_WT_LEASE_HOLDER=
 SPAWN_LAUNCH_DELIVERY_STARTED=0
 RELAUNCH_REPLACEMENT_PENDING=0
@@ -1121,23 +1122,28 @@ CONFIG_INHERIT_LOCK=
 CONFIG_INHERIT_LOCK_HELD=0
 
 # A respawn that reused its recorded worktree restores the prior record it
-# snapshotted, so the lease stays named and a later respawn reuses it again. A
-# failed restore keeps the snapshot where its error names it.
+# snapshotted, so the lease stays named and a later respawn reuses it again.
+# The snapshot survives a failed rollback, so the exit-time retry can still
+# restore it, and a failed restore keeps it where its error names it.
 spawn_fresh_commit_rollback() {
-  local prior=$SPAWN_WT_PRIOR_META
-  SPAWN_WT_PRIOR_META=
   if ! fm_backlog_atomic_transition rollback "$STATE/$ID.meta" \
     "$FM_ROOT/bin/fm-busy-event.sh" "$STATE" "$ID" "${BUSY_GEN:-}"; then
     echo "error: $FM_BACKLOG_TRANSITION_ERROR" >&2
-    [ -z "$prior" ] || echo "error: task $ID's prior record, which names its worktree $WT, is kept at $prior" >&2
+    if [ -n "$SPAWN_WT_PRIOR_META" ]; then
+      SPAWN_WT_PRIOR_META_KEEP=1
+      echo "error: task $ID's prior record, which names its worktree $WT, is kept at $SPAWN_WT_PRIOR_META" >&2
+    fi
     return 1
   fi
   SPAWN_FRESH_COMMIT_PENDING=0
-  [ -n "$prior" ] || return 0
-  if ! fm_backlog_atomic_transition publish "$prior" "$STATE/$ID.meta" "task record" "$STATE"; then
-    echo "error: could not restore task $ID's prior record, which still names its worktree $WT; restore it by hand from $prior to $STATE/$ID.meta: $FM_BACKLOG_TRANSITION_ERROR" >&2
+  [ -n "$SPAWN_WT_PRIOR_META" ] || return 0
+  if ! fm_backlog_atomic_transition publish "$SPAWN_WT_PRIOR_META" "$STATE/$ID.meta" "task record" "$STATE"; then
+    SPAWN_WT_PRIOR_META_KEEP=1
+    echo "error: could not restore task $ID's prior record, which still names its worktree $WT; restore it by hand from $SPAWN_WT_PRIOR_META to $STATE/$ID.meta: $FM_BACKLOG_TRANSITION_ERROR" >&2
     return 1
   fi
+  SPAWN_WT_PRIOR_META=
+  SPAWN_WT_PRIOR_META_KEEP=0
 }
 
 # spawn_launched_endpoint_agent_free: whether the launched endpoint provably
@@ -1371,7 +1377,7 @@ spawn_abort_cleanup() {
     fm_lock_release "$SPAWN_CONTROL_LOCK" || true
   fi
   [ -z "$SPAWN_META_TMP" ] || rm -f "$SPAWN_META_TMP" 2>/dev/null || true
-  [ -z "$SPAWN_WT_PRIOR_META" ] || rm -f "$SPAWN_WT_PRIOR_META" 2>/dev/null || true
+  [ -z "$SPAWN_WT_PRIOR_META" ] || [ "$SPAWN_WT_PRIOR_META_KEEP" = 1 ] || rm -f "$SPAWN_WT_PRIOR_META" 2>/dev/null || true
   if [ "$CONFIG_INHERIT_LOCK_HELD" = 1 ]; then
     CONFIG_INHERIT_LOCK_HELD=0
     fm_lock_release "$CONFIG_INHERIT_LOCK" || true
