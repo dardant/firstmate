@@ -633,7 +633,11 @@ mark_escalated_seen() {  # <state> <captured-endpoint-file>
 #
 # Resolved lazily and memoized: harness detection walks process ancestry, which
 # is too heavy to pay on every source of this library (the unit tests and the
-# launcher source it purely for its pure functions).
+# launcher source it purely for its pure functions). A daemon that
+# bin/fm-afk-launch.sh starts in its own detached terminal has no harness
+# ancestor, so the launcher detects the harness in the captain's context and
+# passes it in FM_DAEMON_PRIMARY_HARNESS; an undetectable harness stays
+# `unknown`, which the ownership proof refuses rather than guessing.
 fm_daemon_primary_harness() {
   if [ -z "${FM_DAEMON_PRIMARY_HARNESS:-}" ]; then
     FM_DAEMON_PRIMARY_HARNESS=$("$FM_DAEMON_DIR/fm-harness.sh" 2>/dev/null || printf 'unknown')
