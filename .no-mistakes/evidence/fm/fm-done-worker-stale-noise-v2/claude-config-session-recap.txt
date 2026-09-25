@@ -1,0 +1,17 @@
+▝▜██████▀  Opus 5.5 (1M context) with high effort · Claude Max
+  ▝▝ ▝▝    ~/.no-mistakes/worktrees/a2097c65a770/01M3CRSB4M4003NW3CKB3S2V3T
+
+
+❯ /config
+
+─────────────────────────────────────────────────────────────────────────────────────────────
+  Settings  Status   Config   Usage   Stats
+
+
+  ╭───────────────────────────────────────────────────────────────────────────────────────╮
+  │ ⌕ recap                                                                               │
+  ╰───────────────────────────────────────────────────────────────────────────────────────╯
+
+    Session recap                              false
+
+  Type to filter · Enter/↓ to select · ↑ to tabs · Esc to clear

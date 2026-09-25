@@ -1,0 +1,11 @@
+           Claude Code v2.1.280
+ ▐▛███▛█   Opus 5.5 (1M context) with h…
+▝▜██████▀  Claude Max
+  ▝▝ ▝▝    …/01M3CRSB4M4003NW3CKB3S2V3T
+
+
+────────────────────────────────────────────
+❯
+────────────────────────────────────────────
+  Opus 5.5 (1M context) | 1M ctx
+  ⏵⏵ bypass permissions on (shift+tab to
