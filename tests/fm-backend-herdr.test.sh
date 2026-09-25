@@ -3922,7 +3922,7 @@ test_composer_state_pi_dollar_status_footer_is_empty() {
   printf '%s\n' $'transcript\n─────────────────────────────────────────────────────\n\n─────────────────────────────────────────────────────\n$0.000 (sub) 5.4%/272k (auto)' > "$resp/1.out"
   printf '{"result":{"agent":{"agent":"pi","agent_status":"idle"}}}\n' > "$resp/2.out"
   fb=$(make_herdr_fakebin "$dir")
-  out=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" \
+  out=$( PATH="$fb:$PATH" FAKE_HERDR_LOG="$log" FAKE_HERDR_RESPONSES="$resp" \
     bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_composer_state lab:w1:p2' "$ROOT" )
   [ "$out" = empty ] || fail "an idle Pi composer with a dollar-first status footer should read empty, got '$out'"
   pass "fm_backend_herdr_composer_state: a dollar-first Pi status footer reads empty, not a dead shell"
