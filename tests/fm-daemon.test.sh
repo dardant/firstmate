@@ -616,7 +616,7 @@ test_unknown_wake_ack_suppresses_handled_identity() {
   state="$dir/state"
   fakebin="$dir/fakebin"
   sent="$dir/sent.log"; : > "$sent"
-  capture="$dir/pane.txt"; printf '\342\235\257 \n' > "$capture"
+  capture="$dir/pane.txt"; claude_idle_composer > "$capture"
 
   FM_ESCALATE_BATCH_SECS=999 handle_wake "frobnicate: already-handled" "$state" \
     || fail "the first unknown wake was not handled"
@@ -631,7 +631,7 @@ test_unknown_wake_ack_suppresses_handled_identity() {
 
   afk_enter "$state"
   PATH="$fakebin:$PATH" FM_FAKE_TMUX_PANE_ALIVE=1 FM_FAKE_TMUX_SENT="$sent" \
-    FM_FAKE_TMUX_CAPTURE="$capture" FM_ESCALATE_BATCH_SECS=0 escalate_flush "$state" \
+    FM_FAKE_TMUX_CAPTURE="$capture" FM_FAKE_TMUX_CURSOR_Y=1 FM_ESCALATE_BATCH_SECS=0 escalate_flush "$state" \
     || fail "unknown-wake flush failed"
   grep -F 'unknown wake: frobnicate: already-handled' "$state/.subsuper-unknown-acked" >/dev/null \
     || fail "a delivered unknown wake was not acknowledged"
@@ -673,7 +673,7 @@ test_unknown_wake_ack_failure_still_clears_delivered_digest() {
   state="$dir/state"
   fakebin="$dir/fakebin"
   sent="$dir/sent.log"; : > "$sent"
-  capture="$dir/pane.txt"; printf '\342\235\257 \n' > "$capture"
+  capture="$dir/pane.txt"; claude_idle_composer > "$capture"
   mkdir -p "$state/.subsuper-unknown-acked"
 
   FM_ESCALATE_BATCH_SECS=999 handle_wake "frobnicate: ack-write-fails" "$state" \
@@ -681,7 +681,7 @@ test_unknown_wake_ack_failure_still_clears_delivered_digest() {
   escalate_add "$state" "done: PR https://example.test/pull/10"
   afk_enter "$state"
   PATH="$fakebin:$PATH" FM_FAKE_TMUX_PANE_ALIVE=1 FM_FAKE_TMUX_SENT="$sent" \
-    FM_FAKE_TMUX_CAPTURE="$capture" FM_ESCALATE_BATCH_SECS=0 escalate_flush "$state" 2>/dev/null \
+    FM_FAKE_TMUX_CAPTURE="$capture" FM_FAKE_TMUX_CURSOR_Y=1 FM_ESCALATE_BATCH_SECS=0 escalate_flush "$state" 2>/dev/null \
     || fail "a delivered digest was reported undelivered after its acknowledgement write failed"
   grep -F 'unknown wake: frobnicate: ack-write-fails' "$sent" >/dev/null \
     || fail "the digest was not delivered: $(cat "$sent")"
