@@ -151,6 +151,7 @@ The reclaim path never moves, closes, deletes, or renames a workspace and never 
 A failed replacement rolls back only the exact response-derived new pane when focus-safe verification permits it.
 Version 1 journals, dead or missing panes, duplicate or absent tokens, renamed or detached spaces, cross-home mismatches, inconsistent endpoint bindings, active target tabs, and ambiguous identity or focus fall back flat without mutating the old projection when duplicate-agent risk is positively absent.
 A live or unknown recorded or token-matched endpoint refuses duplicate launch.
+A ship or scout record that names a worktree never reaches this recovery: a fresh spawn over it refuses before leasing, naming that worktree, because the record's worktree holds a durable lease a second spawn would orphan; `bin/fm-control.sh <id> relaunch` recovers such a restart husk by adopting the restored pane in place, which keeps its projected space.
 
 Locked session start has one narrower cleanup for a restored projected child that is no longer current task state.
 It runs only when the current home has at least one ordinary presentation journal and considers only that home; a primary never recursively sweeps a secondmate home.
@@ -170,7 +171,7 @@ A malformed or missing title or token, duplicate token, zero or multiple journal
 
 Operational compromises:
 
-- Grouping is best-effort; only an exact same-identity version 2 binding survives a Herdr restart in place.
+- Grouping is best-effort; a ship or scout keeps its projected space across a Herdr restart only through `relaunch`, which adopts the restored pane in place.
 - A failed journal publication or projected workspace create stops that spawn instead of falling back flat, so a Herdr create failure surfaces as a spawn failure in every Herdr home rather than only in homes that opted in; every earlier degradation on the fresh projected-create path (no session server, contended presentation lock, absent or ambiguous parent) still warns and continues flat.
 - Recovery of an existing presentation journal deliberately refuses the spawn when the shared presentation lock is contended rather than falling back flat, and default-on makes that refusal reachable in any Herdr home.
 - Existing layouts are not force-renamed or rearranged.
@@ -181,7 +182,7 @@ Operational compromises:
 - Regaining a dedicated space after degradation requires stopping the flat task, manually checking the stale projection, and clearing its journal before a genuinely fresh launch.
 - The visible token is only a restart-stable correlator and never substitutes for the exact binding.
 
-`tests/fm-backend-herdr-presentation-e2e.test.sh` covers multi-home ordering, concurrency, lock contention, legacy coexistence, focus preservation, exact same-identity restart replacement, ambiguous bindings and tokens, and exact-pane cleanup through the guarded lab path.
+`tests/fm-backend-herdr-presentation-e2e.test.sh` covers multi-home ordering, concurrency, lock contention, legacy coexistence, focus preservation, the refused fresh spawn over a restarted task's leased record, ambiguous bindings and tokens, and exact-pane cleanup through the guarded lab path.
 `tests/fm-herdr-session-cleanup.test.sh` covers every discovery, ownership, topology, process, locking, revalidation, focus, retirement, and continue-on-error boundary.
 `tests/fm-herdr-session-cleanup-e2e.test.sh` covers the restored-shell cleanup in a guarded non-default named lab.
 `tests/fm-backend-herdr-focus-flash-e2e.test.sh` reproduces the raw explicit-close focus steal on the installed release and proves the focus-safe emptying-close plan removes a doomed workspace with no wrong-focus interval; [`verification/runtime-backends.md`](verification/runtime-backends.md#workspace-removal-focus-safety) owns the active versioned evidence.
@@ -284,6 +285,7 @@ Stopping and restarting a named Herdr server preserves workspace, tab, pane, and
 Herdr's `[session] resume_agents_on_restore` (default on, present in both the 0.7.4 CI pin and 0.9.0, with its behavior verified on 0.9.0) re-runs a resume command, such as `claude --resume <id>`, for each pane whose agent reported a session reference through Herdr's own integration, in that pane's root shell directory.
 A ship or scout therefore leases its worktree with `treehouse get --lease` before its tab exists and opens the tab inside it, so a restored worker resumes in its own worktree; a tab opened in the project and moved by the interactive `treehouse get` subshell kept its root shell in the primary checkout, and a restart resumed the worker there ([verification](verification/runtime-backends.md#herdr-restore-working-directory)).
 A resumed agent runs Herdr's resume command rather than Firstmate's launch command, so it carries none of the launch's flags or instructions; `bin/fm-control.sh <id> relaunch` replaces it with a fully launched one.
+A ship or scout whose pane came back a husk is recovered the same way: `relaunch` adopts the restored pane, whose root shell already sits in the recorded worktree, while a fresh `bin/fm-spawn.sh <id>` over the record refuses rather than lease a second worktree and leave the first, with its branch and work, leased to no record.
 A restored same-labeled tab with a missing pane or no registered agent is a husk.
 Create replaces only a confidently dead or no-agent husk, creates the replacement before closing the old tab, and refuses live or unknown states.
 This prevents closing the workspace's last tab before a replacement exists.

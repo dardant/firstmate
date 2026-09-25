@@ -1159,31 +1159,45 @@ spawn_launched_endpoint_agent_free() {
 # a live worker there (the kimi and backlog-commit failures do not close their
 # endpoint), and a slot back in the pool would be leased to another task under
 # that worker. The holder guard is added where the installed Treehouse offers
-# it. Anything else leaves the lease and names the manual return.
+# it. Anything else leaves the lease and names the manual return. Succeeds only
+# when the slot was returned.
 spawn_return_leased_worktree() {
   local manual="(cd '$PROJ_ABS' && treehouse return --force '$WT')" dirty
   local -a args=(return --force)
   if [ "$SPAWN_LAUNCH_DELIVERY_STARTED" = 1 ] && ! spawn_launched_endpoint_agent_free; then
     echo "warning: leaving task $ID's leased worktree $WT in place; its endpoint $T was launched and is not proven agent-free. Once that endpoint is closed, return it with: $manual" >&2
-    return 0
+    return 1
   fi
   if [ "$SPAWN_TREEHOUSE_PROJECT_LOCK_HELD" != 1 ]; then
     if [ -z "$SPAWN_TREEHOUSE_PROJECT_LOCK" ] ||
       ! fm_lock_acquire_wait_bounded "$SPAWN_TREEHOUSE_PROJECT_LOCK" 10; then
       echo "warning: leaving task $ID's leased worktree $WT in place; the Treehouse project lock could not be taken to return it. Return it with: $manual" >&2
-      return 0
+      return 1
     fi
     SPAWN_TREEHOUSE_PROJECT_LOCK_HELD=1
   fi
   if ! dirty=$(git -C "$WT" status --porcelain --ignore-submodules=none 2>/dev/null) || [ -n "$dirty" ]; then
     echo "warning: leaving task $ID's leased worktree $WT in place; it is not provably clean, and returning it would discard its work. Once that work is saved or deliberately dropped, return it with: $manual" >&2
-    return 0
+    return 1
   fi
   if treehouse return --help 2>/dev/null | grep -q -- '--if-lease-holder'; then
     args+=(--if-lease-holder "$SPAWN_WT_LEASE_HOLDER")
   fi
-  ( cd "$PROJ_ABS" && treehouse "${args[@]}" "$WT" ) >/dev/null 2>&1 ||
+  if ! ( cd "$PROJ_ABS" && treehouse "${args[@]}" "$WT" ) >/dev/null 2>&1; then
     echo "warning: could not return task $ID's leased worktree $WT; return it with: $manual" >&2
+    return 1
+  fi
+}
+
+# spawn_record_names_worktree: whether a task record survives for this task
+# and names <worktree>, so that worktree belongs to the record rather than to
+# an aborting spawn. A record that exists but cannot be read counts as naming
+# it, so an abort never returns a slot a live record may still own.
+spawn_record_names_worktree() {  # <worktree>
+  local meta="$STATE/$ID.meta"
+  [ -e "$meta" ] || [ -L "$meta" ] || return 1
+  [ -f "$meta" ] && [ -r "$meta" ] || return 0
+  [ "$(fm_meta_get "$meta" worktree)" = "$1" ]
 }
 
 parse_orca_worktree_result() {
@@ -1299,15 +1313,25 @@ spawn_abort_cleanup() {
     SPAWN_META_LOCK_HELD=0
     fm_lock_release "$SPAWN_META_LOCK" || true
   fi
+  # A worktree this spawn leased for a Herdr task
+  # (spawn_treehouse_lease_worktree) is durable until returned, so an abort
+  # returns it unless a surviving record names it, rather than stranding a
+  # slot no record describes, including one after publication whose record
+  # was rolled back (spawn_return_leased_worktree). A return re-takes the
+  # Treehouse project lock when publication had already released it.
+  if [ "$SPAWN_WT_LEASED" = 1 ] && [ -n "${WT:-}" ] && ! spawn_record_names_worktree "$WT"; then
+    SPAWN_WT_LEASED=0
+    spawn_return_leased_worktree || true
+  fi
   # A spawn that aborts after claiming its slot but before its record survives
   # must not leave a claim naming a task no record describes. The release is a
   # read-then-remove, so it runs only while the project lock that wrote the
-  # claim is still held (aborts before metadata publication); a later abort has
-  # already released that lock and leaves the claim for the next spawn's
-  # atomic replacement rather than racing it. The release itself never removes
-  # another task's claim.
+  # claim is held - through metadata publication, or again after a lease
+  # return re-took it; otherwise that lock is released and the claim is left
+  # for the next spawn's atomic replacement rather than racing it. The release
+  # itself never removes another task's claim.
   if [ "$SPAWN_SLOT_CLAIMED" = 1 ] && [ -n "${WT:-}" ] &&
-    [ ! -e "$STATE/$ID.meta" ] && [ ! -L "$STATE/$ID.meta" ] &&
+    ! spawn_record_names_worktree "$WT" &&
     fm_treehouse_pool_slot "$PROJ_ABS" "$WT"; then
     SPAWN_SLOT_CLAIMED=0
     if [ "$SPAWN_TREEHOUSE_PROJECT_LOCK_HELD" = 1 ]; then
@@ -1315,16 +1339,6 @@ spawn_abort_cleanup() {
     else
       echo "warning: leaving task $ID's slot claim on $WT in place; the Treehouse project lock is no longer held, so the next spawn's claim replaces it" >&2
     fi
-  fi
-  # A worktree leased for a Herdr task (spawn_treehouse_lease_worktree) is
-  # durable until returned, so an abort that ends without a surviving record
-  # returns it rather than stranding a slot no record describes, including
-  # one after publication whose record was rolled back
-  # (spawn_return_leased_worktree).
-  if [ "$SPAWN_WT_LEASED" = 1 ] && [ -n "${WT:-}" ] &&
-    [ ! -e "$STATE/$ID.meta" ] && [ ! -L "$STATE/$ID.meta" ]; then
-    SPAWN_WT_LEASED=0
-    spawn_return_leased_worktree
   fi
   if [ "$SPAWN_TREEHOUSE_PROJECT_LOCK_HELD" = 1 ]; then
     SPAWN_TREEHOUSE_PROJECT_LOCK_HELD=0
@@ -3000,9 +3014,25 @@ spawn_worktree_isolated() { # <path>
 # instead of its worktree (verified in an isolated Herdr lab, recorded in
 # docs/verification/runtime-backends.md "Herdr restore working directory").
 # The lease is held until bin/fm-teardown.sh's `treehouse return --force`; an
-# abort that leaves no task record returns it (spawn_return_leased_worktree).
+# abort that leaves no record naming it returns it
+# (spawn_return_leased_worktree). A fresh spawn over a record that already
+# names a worktree refuses before leasing: that worktree may hold a durable
+# lease no later get or prune frees, and publishing over the record would
+# orphan it with its branch and work. `fm-control.sh <id> relaunch` rebinds a
+# replacement onto the recorded worktree instead.
 spawn_treehouse_lease_worktree() {
-  local out
+  local out meta="$STATE/$ID.meta" recorded
+  if [ -e "$meta" ] || [ -L "$meta" ]; then
+    if [ ! -f "$meta" ] || [ ! -r "$meta" ]; then
+      echo "error: task $ID has a task record at $meta that cannot be read; refusing to lease a second worktree over it" >&2
+      return 1
+    fi
+    recorded=$(fm_meta_get "$meta" worktree)
+    if [ -n "$recorded" ]; then
+      echo "error: task $ID's record already names worktree '$recorded'; a fresh spawn would lease another worktree and orphan that one. Use '$FM_ROOT/bin/fm-control.sh $ID relaunch', which rebinds a replacement onto the recorded worktree" >&2
+      return 1
+    fi
+  fi
   SPAWN_WT_LEASE_HOLDER="fm-task-$ID"
   out=$(cd "$PROJ_ABS" && treehouse get --lease --lease-holder "$SPAWN_WT_LEASE_HOLDER") || {
     echo "error: treehouse get --lease could not lease a worktree for task $ID in project '$PROJ_ABS'" >&2

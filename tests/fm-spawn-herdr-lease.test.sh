@@ -110,12 +110,19 @@ SH
   chmod +x "$fb/treehouse" "$fb/herdr" "$fb/rovo"
 }
 
-# new_case <name> <id> -> case dir with a project, a leasable slot, a home, and fakes.
+# new_case <name> <id> [pool] -> case dir with a project, a leasable slot, a
+# home, and fakes. With `pool`, the slot sits in a Treehouse pool layout, so
+# the spawn claims it as a pool slot.
 new_case() {
-  local dir="$TMP_ROOT/$1" id=$2
+  local dir="$TMP_ROOT/$1" id=$2 slot="$TMP_ROOT/$1/slot"
   mkdir -p "$dir/home/state" "$dir/home/data/$id" "$dir/home/config" "$dir/fake"
-  fm_git_worktree "$dir/proj" "$dir/slot" "slot-$id"
-  printf '%s' "$(cd "$dir/slot" && pwd -P)" > "$dir/fake/slot"
+  if [ "${3:-}" = pool ]; then
+    mkdir -p "$dir/pool/s1"
+    printf '{}\n' > "$dir/pool/treehouse-state.json"
+    slot="$dir/pool/s1/slot"
+  fi
+  fm_git_worktree "$dir/proj" "$slot" "slot-$id"
+  printf '%s' "$(cd "$slot" && pwd -P)" > "$dir/fake/slot"
   : > "$dir/fake/treehouse-log"
   : > "$dir/fake/herdr-log"
   printf 'off\n' > "$dir/home/config/herdr-presentation-spaces"
@@ -261,8 +268,62 @@ test_herdr_ship_abort_after_launch_keeps_a_booting_agents_lease() {
   pass "fm-spawn herdr: an abort after launch keeps the lease while an unregistered harness still runs"
 }
 
+# A record that already names a worktree may hold a durable lease no later get
+# or prune frees; a fresh spawn over it would lease a second slot and orphan
+# the first. It refuses before leasing and points to relaunch.
+test_herdr_ship_refuses_fresh_spawn_over_a_leased_record() {
+  local dir out rc=0 before
+  dir=$(new_case respawn-refused lease7)
+  fm_write_meta "$dir/home/state/lease7.meta" "window=fmlab:ws1:p9" "worktree=$dir/old-slot" \
+    "project=$dir/proj" "kind=ship" "backend=herdr"
+  before=$(cat "$dir/home/state/lease7.meta")
+  out=$(run_spawn "$dir" lease7) || rc=$?
+  [ "$rc" -ne 0 ] || fail "a fresh spawn over a record naming a worktree must refuse"$'\n'"$out"
+  assert_contains "$out" "record already names worktree '$dir/old-slot'" "the refusal should name the recorded worktree"
+  assert_contains "$out" "fm-control.sh lease7 relaunch" "the refusal should point to relaunch"
+  assert_not_contains "$(cat "$dir/fake/treehouse-log")" "get --lease" "the refused spawn must lease nothing"
+  [ "$(cat "$dir/home/state/lease7.meta")" = "$before" ] || fail "the refused spawn changed the existing record"
+  pass "fm-spawn herdr: a fresh spawn over a record that names a worktree refuses before leasing"
+}
+
+# The abort return keys on whether this spawn leased the slot and a surviving
+# record names it, not on a record merely existing: a record that names no
+# worktree does not own the slot this spawn just leased.
+test_herdr_ship_abort_returns_a_lease_no_record_names() {
+  local dir out rc=0 slot
+  dir=$(new_case abort-unnamed lease8)
+  slot=$(cat "$dir/fake/slot")
+  fm_write_meta "$dir/home/state/lease8.meta" "window=fmlab:ws1:p9" "kind=ship" "backend=herdr"
+  arm_misplaced_pane "$dir"
+  out=$(run_spawn "$dir" lease8) || rc=$?
+  [ "$rc" -ne 0 ] || fail "a ship whose pane is not in its leased worktree must refuse"$'\n'"$out"
+  assert_contains "$out" "not its leased worktree" "the refusal should name the leased worktree"
+  assert_contains "$(cat "$dir/fake/treehouse-log")" "return --force $slot" \
+    "an abort should return a leased worktree no surviving record names"$'\n'"$out"
+  pass "fm-spawn herdr: an abort returns a leased worktree that the surviving record does not name"
+}
+
+# After publication the project lock was released, so the lease return takes
+# it again; the slot claim is then released under that same lock rather than
+# left on a slot already back in the pool.
+test_herdr_ship_abort_after_publish_releases_its_slot_claim() {
+  local dir out rc=0 slot
+  dir=$(new_case abort-claim lease9 pool)
+  slot=$(cat "$dir/fake/slot")
+  out=$(run_spawn "$dir" lease9 --harness rovo) || rc=$?
+  [ "$rc" -ne 0 ] || fail "a rovo ship that never shows ready must refuse"$'\n'"$out"
+  assert_contains "$(cat "$dir/fake/treehouse-log")" "return --force $slot" \
+    "an abort after publication should return the pooled worktree it leased"$'\n'"$out"
+  [ ! -e "$(dirname "$slot")/.fm-slot-owner" ] || fail "the returned slot still carries this task's claim"$'\n'"$out"
+  assert_not_contains "$out" "slot claim on" "an abort that returned the slot must not report leaving its claim"
+  pass "fm-spawn herdr: an abort after publication returns the slot and releases its claim"
+}
+
 test_herdr_ship_tab_opens_in_its_leased_worktree
+test_herdr_ship_refuses_fresh_spawn_over_a_leased_record
 test_herdr_ship_abort_returns_its_lease
+test_herdr_ship_abort_returns_a_lease_no_record_names
+test_herdr_ship_abort_after_publish_releases_its_slot_claim
 test_herdr_ship_abort_keeps_a_dirty_lease
 test_herdr_ship_abort_after_publish_returns_its_lease
 test_herdr_ship_abort_after_launch_keeps_a_live_agents_lease
