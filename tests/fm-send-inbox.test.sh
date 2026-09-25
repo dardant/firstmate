@@ -42,7 +42,8 @@ TMP_ROOT=$(cd "$TMP_ROOT" && pwd)
 
 # Stub tmux: logs literal typed text to FM_SEND_LOG and lets the submit and
 # composer paths reach clean verdicts. FM_FAKE_TMUX_COMPOSER=pending renders a
-# composer visibly holding text; FM_FAKE_TMUX_SEND_FAIL=1 fails send-keys.
+# composer visibly holding text, FM_FAKE_TMUX_COMPOSER=imports-dialog Claude's
+# external-imports launch dialog; FM_FAKE_TMUX_SEND_FAIL=1 fails send-keys.
 make_stubs() { # <dir> -> echoes fakebin dir
   local dir=$1 fb="$1/fakebin"
   mkdir -p "$fb"
@@ -71,6 +72,10 @@ case "${1:-}" in
   capture-pane)
     if [ "${FM_FAKE_TMUX_COMPOSER:-}" = pending ]; then
       printf '╭──────────────╮\n│ leftover txt │\n╰──────────────╯\n'
+    elif [ "${FM_FAKE_TMUX_COMPOSER:-}" = imports-dialog ]; then
+      printf '  Allow external CLAUDE.md file imports?\n'
+      printf "  This project's CLAUDE.md imports files outside the current working directory. Never allow this for third-party repositories.\n"
+      printf '  ❯ No, disable external imports\n    Yes, allow external imports\n  Enter to confirm · Esc to cancel\n'
     else
       printf '╭────╮\n│    │\n╰────╯\n'
     fi
@@ -184,6 +189,26 @@ test_pending_composer_skips_ring_advisorily() {
   assert_contains "$(cat "$err")" "watcher will re-ring" \
     "the skip notice should point at the re-ring"
   pass "fm-send inbox: a visibly pending composer skips the ring, and the steer stays durably sent"
+}
+
+# The doorbell's Enter would answer a launch dialog, so a steer to a parked
+# pane is recorded but not rung, and the notice names the dialog and its
+# keyless recovery rather than blaming pending composer text.
+test_launch_dialog_skip_names_the_dialog() {
+  local dir err rc
+  dir=$(setup_case dialogskip)
+  err="$dir/send.err"
+  run_send "$dir" "$err" FM_FAKE_TMUX_COMPOSER=imports-dialog -- t1 "steer past a parked dialog"
+  rc=$?
+  expect_code 0 "$rc" "a skipped ring is still a sent steer"
+  [ -f "$dir/home/state/t1.inbox/001.msg" ] || fail "the steer was not recorded"
+  [ ! -s "$dir/send.log" ] || fail "a parked launch dialog should skip the ring:"$'\n'"$(cat "$dir/send.log")"
+  assert_contains "$(cat "$err")" "pane is parked on a launch dialog" "the skip notice should name the launch dialog"
+  assert_contains "$(cat "$err")" "fm-control.sh t1 exit" "the skip notice should name the keyless exit recovery"
+  assert_contains "$(cat "$err")" "fm-control.sh t1 relaunch" "the skip notice should name the relaunch recovery"
+  assert_not_contains "$(cat "$err")" "composer visibly holds pending text" \
+    "the skip notice must not blame pending composer text"
+  pass "fm-send inbox: a parked launch dialog skips the ring and the notice names the dialog"
 }
 
 test_failed_ring_is_still_sent() {
@@ -415,6 +440,7 @@ test_text_steer_rides_inbox
 test_multiline_steer_is_legal
 test_resend_enqueues_new_sequence
 test_pending_composer_skips_ring_advisorily
+test_launch_dialog_skip_names_the_dialog
 test_failed_ring_is_still_sent
 test_harness_invocations_stay_typed
 test_explicit_target_stays_typed

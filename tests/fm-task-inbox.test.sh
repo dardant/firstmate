@@ -313,7 +313,7 @@ test_ring_skips_launch_dialog() {
   PATH="$dir/fakebin:$PATH" FM_SEND_LOG="$log" FM_FAKE_TMUX_AGENT=claude \
     FM_FAKE_TMUX_CAPTURE="$(imports_dialog_capture "$dir")" \
     inbox_lib "$state" fm_task_inbox_ring tmux sess:fm-t1 "$rec" fm-t1 || rc=$?
-  [ "$rc" = 1 ] || fail "a pane parked on a launch dialog should skip the ring with 1, got $rc"
+  [ "$rc" = 4 ] || fail "a pane parked on a launch dialog should skip the ring with its own code 4, got $rc"
   [ ! -s "$log" ] || fail "a launch dialog was typed into:"$'\n'"$(cat "$log")"
   [ -f "$rec" ] || fail "skipping the ring must leave the durable record in place"
   pass "inbox: the ring never types into a pane parked on a launch dialog"

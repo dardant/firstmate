@@ -1692,12 +1692,13 @@ ok - real herdr: a restarted server resumes the ship's agent inside its recorded
 Against the spawn from before this change the same guard failed at its first assertion, naming the project as the pane's root directory.
 A Herdr release that rejects `pane report-agent-session` runs only that first assertion and prints that the restore phase was not exercised.
 On the 0.7.4 CI pin the guard passes too, but only because it attaches the lab's foreground viewer (`bin/fm-herdr-lab.sh viewer start`) after the restart, as the captain's terminal would be attached: 0.7.4 keeps the session reference and the pane's worktree directory across the restart yet starts restored panes, and so runs the resume, only once a client attaches.
-`tests/fm-spawn-herdr-lease.test.sh` pins the lease-first ordering and the abort-path lease return without Herdr or Treehouse installed: an abort returns a clean leased worktree that no surviving record names, before or after the record is published, releasing its slot claim with it, and keeps one that holds work or whose launched agent is not proven gone; a fresh spawn over a record that already names a worktree refuses before leasing and leaves that record unchanged.
-The projection suite ran again on 2026-09-25 against Herdr 0.9.0, where its restart sections now drive that refusal through the real spawn after a lab `stop` and `provision`, in place of the same-identity reclaim recorded on 2026-07-24 above, which a ship or scout record naming a leased worktree no longer reaches:
+`tests/fm-spawn-herdr-lease.test.sh` pins the lease-first ordering and the abort-path lease return without Herdr or Treehouse installed: an abort returns a clean leased worktree that no surviving record names, before or after the record is published, releasing its slot claim with it, and keeps one that holds work or whose launched agent is not proven gone; a fresh spawn over a record naming a worktree that is still this task's own lease reuses it, leasing and returning nothing and keeping its work and slot claim, while one whose worktree is missing or leased to another holder refuses before leasing and leaves that record unchanged.
+The projection suite ran again on 2026-09-25 against Herdr 0.9.0, where its same-identity restart sections, after a lab `stop` and `provision`, now also assert that each reclaim reuses the worktree its record names instead of leasing another:
 
 ```text
-ok - real Herdr lab: Hi Bit and Wheelhouse-style restarts refuse a fresh spawn over the leased record and leave the projection untouched
-ok - real Herdr lab: a secondmate child's restart binding stays in its exact home and refuses a fresh spawn over its record
+ok - real Herdr lab: Hi Bit and Wheelhouse-style same-identity restarts reclaim one nested space with exact focus and idempotence
+ok - real Herdr lab: secondmate restart binding and reclaim stay isolated to the exact child home and parent
+ok - real Herdr lab: concurrent cross-home recoveries replace exact husks under one session lock with no focus drift
 ok - real Herdr lab validation completed on Herdr 0.9.0 with the default-session tripwire intact
 ```
 

@@ -1108,6 +1108,7 @@ SPAWN_TREEHOUSE_PROJECT_LOCK=
 SPAWN_TREEHOUSE_PROJECT_LOCK_HELD=0
 SPAWN_SLOT_CLAIMED=0
 SPAWN_WT_LEASED=0
+SPAWN_WT_REUSED=0
 SPAWN_WT_LEASE_HOLDER=
 SPAWN_LAUNCH_DELIVERY_STARTED=0
 RELAUNCH_REPLACEMENT_PENDING=0
@@ -1322,6 +1323,11 @@ spawn_abort_cleanup() {
   if [ "$SPAWN_WT_LEASED" = 1 ] && [ -n "${WT:-}" ] && ! spawn_record_names_worktree "$WT"; then
     SPAWN_WT_LEASED=0
     spawn_return_leased_worktree || true
+  fi
+  # A reused worktree holds the task's own work, so an abort never returns it;
+  # when the rollback also removed the record that named it, say so.
+  if [ "$SPAWN_WT_REUSED" = 1 ] && [ -n "${WT:-}" ] && ! spawn_record_names_worktree "$WT"; then
+    echo "warning: task $ID's worktree $WT is still leased to $SPAWN_WT_LEASE_HOLDER, but no task record names it after this aborted respawn; once its work is saved, return it with: (cd '$PROJ_ABS' && treehouse return --force '$WT')" >&2
   fi
   # A spawn that aborts after claiming its slot but before its record survives
   # must not leave a claim naming a task no record describes. The release is a
@@ -3016,12 +3022,15 @@ spawn_worktree_isolated() { # <path>
 # The lease is held until bin/fm-teardown.sh's `treehouse return --force`; an
 # abort that leaves no record naming it returns it
 # (spawn_return_leased_worktree). A fresh spawn over a record that already
-# names a worktree refuses before leasing: that worktree may hold a durable
-# lease no later get or prune frees, and publishing over the record would
-# orphan it with its branch and work. `fm-control.sh <id> relaunch` rebinds a
-# replacement onto the recorded worktree instead.
+# names a worktree - a same-identity respawn after a Herdr restart - leases
+# nothing: that worktree holds a durable lease no later get or prune frees, so
+# a second lease would orphan it with its branch and work. The spawn instead
+# reuses it, exactly as it stands, once spawn_recorded_worktree_reusable proves
+# it is this task's own live lease and no worker still runs in the recorded
+# endpoint; anything else refuses and points to `fm-control.sh <id> relaunch`.
 spawn_treehouse_lease_worktree() {
   local out meta="$STATE/$ID.meta" recorded
+  SPAWN_WT_LEASE_HOLDER="fm-task-$ID"
   if [ -e "$meta" ] || [ -L "$meta" ]; then
     if [ ! -f "$meta" ] || [ ! -r "$meta" ]; then
       echo "error: task $ID has a task record at $meta that cannot be read; refusing to lease a second worktree over it" >&2
@@ -3029,11 +3038,16 @@ spawn_treehouse_lease_worktree() {
     fi
     recorded=$(fm_meta_get "$meta" worktree)
     if [ -n "$recorded" ]; then
-      echo "error: task $ID's record already names worktree '$recorded'; a fresh spawn would lease another worktree and orphan that one. Use '$FM_ROOT/bin/fm-control.sh $ID relaunch', which rebinds a replacement onto the recorded worktree" >&2
-      return 1
+      if ! spawn_recorded_worktree_reusable "$recorded"; then
+        echo "error: task $ID's record already names worktree '$recorded', which a fresh spawn cannot reuse ($SPAWN_WT_REASON); leasing another would orphan it. Use '$FM_ROOT/bin/fm-control.sh $ID relaunch', which rebinds a replacement onto the recorded worktree" >&2
+        return 1
+      fi
+      herdr_projection_existing_meta_allows_flat "$meta" || return 1
+      WT=$recorded
+      SPAWN_WT_REUSED=1
+      return 0
     fi
   fi
-  SPAWN_WT_LEASE_HOLDER="fm-task-$ID"
   out=$(cd "$PROJ_ABS" && treehouse get --lease --lease-holder "$SPAWN_WT_LEASE_HOLDER") || {
     echo "error: treehouse get --lease could not lease a worktree for task $ID in project '$PROJ_ABS'" >&2
     return 1
@@ -3048,6 +3062,45 @@ spawn_treehouse_lease_worktree() {
   validate_spawn_worktree "treehouse get --lease" "project $PROJ_ABS"
 }
 
+# spawn_recorded_worktree_reusable: whether <worktree>, named by this task's
+# existing record, may be reused by a fresh spawn: it still exists as a linked
+# worktree of this project (spawn_worktree_isolated) and Treehouse reports it
+# leased to this task's own holder. Sets SPAWN_WT_REASON on refusal.
+spawn_recorded_worktree_reusable() {  # <worktree>
+  local wt=$1 wt_real common proj_common out path holder
+  if ! wt_real=$(cd "$wt" 2>/dev/null && pwd -P); then
+    SPAWN_WT_REASON="it no longer exists"
+    return 1
+  fi
+  spawn_worktree_isolated "$wt_real" || return 1
+  common=$(git -C "$wt_real" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) &&
+    common=$(cd "$common" 2>/dev/null && pwd -P) || common=
+  proj_common=$(git -C "$PROJ_ABS" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) &&
+    proj_common=$(cd "$proj_common" 2>/dev/null && pwd -P) || proj_common=
+  if [ -z "$common" ] || [ "$common" != "$proj_common" ]; then
+    SPAWN_WT_REASON="it is not a linked worktree of project '$PROJ_ABS'"
+    return 1
+  fi
+  if ! out=$(cd "$PROJ_ABS" && treehouse status --json 2>/dev/null |
+    jq -r '.[]? | select(.status == "leased") | [.path, (.lease_holder // "")] | @tsv' 2>/dev/null); then
+    SPAWN_WT_REASON="treehouse status could not report its lease"
+    return 1
+  fi
+  while IFS=$'\t' read -r path holder; do
+    [ -n "$path" ] || continue
+    [ "$(cd "$path" 2>/dev/null && pwd -P)" = "$wt_real" ] || continue
+    if [ "$holder" = "$SPAWN_WT_LEASE_HOLDER" ]; then
+      return 0
+    fi
+    SPAWN_WT_REASON="Treehouse reports it leased to '${holder:-no holder}', not '$SPAWN_WT_LEASE_HOLDER'"
+    return 1
+  done <<EOF
+$out
+EOF
+  SPAWN_WT_REASON="Treehouse reports no lease on it for '$SPAWN_WT_LEASE_HOLDER'"
+  return 1
+}
+
 validate_spawn_worktree() { # <source> <inspect-target>
   local source=$1 inspect_target=$2
   if ! spawn_worktree_isolated "$WT"; then
@@ -3058,13 +3111,15 @@ validate_spawn_worktree() { # <source> <inspect-target>
 
 # spawn_claim_pool_slot: record this task as the owner of its Treehouse pool
 # slot; the comment at the interactive `treehouse get` call below owns why.
+# A reused worktree's claim already belongs to the task's record, so an abort
+# leaves it rather than releasing it.
 spawn_claim_pool_slot() {
   if fm_treehouse_pool_slot "$PROJ_ABS" "$WT"; then
     if ! fm_treehouse_slot_owner_claim "$WT" "$ID" "$FM_HOME"; then
       echo "error: could not claim Treehouse pool slot $WT for task $ID; refusing to launch a worker whose slot cannot later be proved to be its own; inspect window $T" >&2
       exit 1
     fi
-    SPAWN_SLOT_CLAIMED=1
+    [ "$SPAWN_WT_REUSED" = 1 ] || SPAWN_SLOT_CLAIMED=1
   fi
 }
 
@@ -4004,10 +4059,11 @@ if [ "$RELAUNCH" -eq 1 ]; then
     fi
   fi
   [ "$KIND" = secondmate ] || validate_spawn_worktree "relaunch" "$T"
-elif [ "$SPAWN_WT_LEASED" = 1 ]; then
-  # The worktree was leased before the endpoint existed and the endpoint was
-  # opened inside it, so there is nothing to acquire in the pane. Still prove
-  # the shell actually sits there before anything is written into it.
+elif [ "$SPAWN_WT_LEASED" = 1 ] || [ "$SPAWN_WT_REUSED" = 1 ]; then
+  # The worktree was leased (or reused from this task's record) before the
+  # endpoint existed and the endpoint was opened inside it, so there is nothing
+  # to acquire in the pane. Still prove the shell actually sits there before
+  # anything is written into it.
   leased_wt_real=$(real_path_or_raw "$WT")
   leased_seen=
   for _ in $(seq 1 20); do
@@ -4097,7 +4153,7 @@ elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
   # through metadata publication, so no other spawn or return sees a half-claim.
   spawn_claim_pool_slot
 fi
-if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ]; then
+if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ] && [ "$SPAWN_WT_REUSED" != 1 ]; then
   freshen_spawn_worktree_base "$WT" || exit 1
 fi
 

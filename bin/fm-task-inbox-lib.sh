@@ -276,11 +276,12 @@ fm_task_inbox_doorbell_line() {  # <record-path>
 # composer pre-check, then the backend's submit machinery with a minimal retry
 # budget, verdict discarded.
 # Returns 0 rang, 1 skipped because the composer PROVENLY holds pending text
-# or the pane shows a recognized launch dialog (the watcher re-rings later and
-# escalates), 2 the backend send failed, 3 skipped because
+# (the watcher re-rings later), 2 the backend send failed, 3 skipped because
 # the endpoint is positively dead or missing (nothing typed; recovery owns the
-# record). No return value is delivery proof; the acknowledgement move is the
-# only delivery signal.
+# record), 4 skipped because the pane shows a recognized launch dialog (the
+# watcher re-rings later and escalates; the pane needs a keyless
+# `fm-control.sh <id> exit` or `relaunch`). No return value is delivery proof;
+# the acknowledgement move is the only delivery signal.
 # The skip is deliberately narrow: only an exact `pending` verdict defers,
 # because there our Enter could submit someone's real half-typed content, and
 # so does a pane positively matching a launch dialog signature
@@ -304,7 +305,7 @@ fm_task_inbox_ring() {  # <backend> <target> <record-path> [expected-label]
   esac
   if tail=$(fm_backend_capture "$backend" "$target" 40 "$label" 2>/dev/null) &&
     printf '%s' "$tail" | fm_busy_any_launch_prompt_parked; then
-    return 1
+    return 4
   fi
   # Accepted residual race: terminal input and Enter are separate delivery
   # steps, so an agent exiting after the liveness check could leave a bare

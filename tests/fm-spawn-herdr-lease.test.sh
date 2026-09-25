@@ -32,6 +32,7 @@ printf '%s\n' "$*" >> "$D/treehouse-log"
 case "${1:-} ${2:-}" in
   'get --lease') printf '%s\n' "$(cat "$D/slot")"; exit 0 ;;
   'return --help') printf '      --force   Clean, reset, and return without prompting\n'; exit 0 ;;
+  'status --json') if [ -f "$D/status" ]; then cat "$D/status"; else printf '[]\n'; fi; exit 0 ;;
 esac
 exit 0
 SH
@@ -268,22 +269,90 @@ test_herdr_ship_abort_after_launch_keeps_a_booting_agents_lease() {
   pass "fm-spawn herdr: an abort after launch keeps the lease while an unregistered harness still runs"
 }
 
-# A record that already names a worktree may hold a durable lease no later get
-# or prune frees; a fresh spawn over it would lease a second slot and orphan
-# the first. It refuses before leasing and points to relaunch.
-test_herdr_ship_refuses_fresh_spawn_over_a_leased_record() {
-  local dir out rc=0 before
-  dir=$(new_case respawn-refused lease7)
-  fm_write_meta "$dir/home/state/lease7.meta" "window=fmlab:ws1:p9" "worktree=$dir/old-slot" \
-    "project=$dir/proj" "kind=ship" "backend=herdr"
-  before=$(cat "$dir/home/state/lease7.meta")
+# write_leased_record <case-dir> <id> <worktree> <holder>: an existing task
+# record naming <worktree> on an agent-free Herdr pane, as a restart husk
+# leaves it, and a Treehouse that reports <worktree> leased to <holder>.
+write_leased_record() {
+  local dir=$1 id=$2 wt=$3 holder=$4
+  fm_write_meta "$dir/home/state/$id.meta" "window=fmlab:ws1:p9" "worktree=$wt" \
+    "project=$dir/proj" "kind=ship" "backend=herdr" "herdr_session=fmlab" \
+    "herdr_workspace_id=ws1" "herdr_tab_id=tab9" "herdr_pane_id=ws1:p9"
+  printf '[{"name":"1","path":"%s","status":"leased","lease_id":"l1","lease_holder":"%s","processes":[]}]\n' \
+    "$wt" "$holder" > "$dir/fake/status"
+}
+
+# A same-identity respawn after a Herdr restart finds its record naming a
+# worktree that Treehouse still holds under this task's own lease. It reuses
+# that worktree exactly as it stands: nothing new is leased, nothing is
+# returned, its work and slot claim survive, and the new record names it.
+test_herdr_ship_fresh_spawn_reuses_its_leased_record() {
+  local dir out rc=0 slot create
+  dir=$(new_case respawn-reuses lease7 pool)
+  slot=$(cat "$dir/fake/slot")
+  write_leased_record "$dir" lease7 "$slot" fm-task-lease7
+  printf 'task=lease7\nhome=%s\n' "$dir/home" > "$(dirname "$slot")/.fm-slot-owner"
+  printf 'in progress\n' > "$slot/wip.txt"
   out=$(run_spawn "$dir" lease7) || rc=$?
-  [ "$rc" -ne 0 ] || fail "a fresh spawn over a record naming a worktree must refuse"$'\n'"$out"
+  expect_code 0 "$rc" "a fresh spawn over its own leased record should reuse it"$'\n'"$out"
+  assert_not_contains "$(cat "$dir/fake/treehouse-log")" "get --lease" "the respawn must lease no second worktree"
+  assert_not_contains "$(cat "$dir/fake/treehouse-log")" "return" "the respawn must not return the reused worktree"
+  create=$(grep '^tab create' "$dir/fake/herdr-log" | head -1)
+  assert_contains "$create" "--cwd $slot" "the respawned tab should open in the recorded worktree, got: $create"
+  [ "$(sed -n 's/^worktree=//p' "$dir/home/state/lease7.meta" | tail -1)" = "$slot" ] \
+    || fail "the respawned record should still name the reused worktree"
+  [ "$(cat "$slot/wip.txt" 2>/dev/null)" = "in progress" ] || fail "the respawn discarded the reused worktree's work"
+  assert_contains "$(cat "$(dirname "$slot")/.fm-slot-owner" 2>/dev/null)" "task=lease7" \
+    "the reused slot should still be claimed by its task"
+  pass "fm-spawn herdr: a fresh spawn over its own leased record reuses that worktree and leases nothing"
+}
+
+# An aborted respawn never returns the reused worktree: it holds the task's
+# work. When the rollback also removed the record, the warning names it.
+test_herdr_ship_aborted_respawn_keeps_the_reused_lease() {
+  local dir out rc=0 slot
+  dir=$(new_case respawn-abort lease10)
+  slot=$(cat "$dir/fake/slot")
+  write_leased_record "$dir" lease10 "$slot" fm-task-lease10
+  out=$(run_spawn "$dir" lease10 --harness rovo) || rc=$?
+  [ "$rc" -ne 0 ] || fail "a rovo respawn that never shows ready must refuse"$'\n'"$out"
+  assert_not_contains "$(cat "$dir/fake/treehouse-log")" "get --lease" "the respawn must lease no second worktree"
+  assert_not_contains "$(cat "$dir/fake/treehouse-log")" "return --force" \
+    "an aborted respawn must not return the task's reused worktree"$'\n'"$out"
+  [ -d "$slot" ] || fail "the aborted respawn removed the reused worktree"
+  [ ! -e "$dir/home/state/lease10.meta" ] || fail "the aborted respawn's record should be rolled back"
+  assert_contains "$out" "still leased to fm-task-lease10" "the warning should name the kept lease"
+  assert_contains "$out" "treehouse return --force '$slot'" "the warning should name the manual return"
+  pass "fm-spawn herdr: an aborted respawn keeps the reused worktree's lease"
+}
+
+# A record whose worktree is gone, or is leased to another holder, cannot be
+# reused; a fresh spawn over it refuses before leasing and points to relaunch.
+test_herdr_ship_refuses_fresh_spawn_over_an_unreusable_record() {
+  local dir out rc=0 before slot
+  dir=$(new_case respawn-missing lease11)
+  write_leased_record "$dir" lease11 "$dir/old-slot" fm-task-lease11
+  before=$(cat "$dir/home/state/lease11.meta")
+  out=$(run_spawn "$dir" lease11) || rc=$?
+  [ "$rc" -ne 0 ] || fail "a fresh spawn over a record naming a missing worktree must refuse"$'\n'"$out"
   assert_contains "$out" "record already names worktree '$dir/old-slot'" "the refusal should name the recorded worktree"
-  assert_contains "$out" "fm-control.sh lease7 relaunch" "the refusal should point to relaunch"
+  assert_contains "$out" "no longer exists" "the refusal should say why the worktree cannot be reused"
+  assert_contains "$out" "fm-control.sh lease11 relaunch" "the refusal should point to relaunch"
   assert_not_contains "$(cat "$dir/fake/treehouse-log")" "get --lease" "the refused spawn must lease nothing"
-  [ "$(cat "$dir/home/state/lease7.meta")" = "$before" ] || fail "the refused spawn changed the existing record"
-  pass "fm-spawn herdr: a fresh spawn over a record that names a worktree refuses before leasing"
+  [ "$(cat "$dir/home/state/lease11.meta")" = "$before" ] || fail "the refused spawn changed the existing record"
+
+  rc=0
+  dir=$(new_case respawn-foreign lease12)
+  slot=$(cat "$dir/fake/slot")
+  write_leased_record "$dir" lease12 "$slot" fm-task-other
+  before=$(cat "$dir/home/state/lease12.meta")
+  out=$(run_spawn "$dir" lease12) || rc=$?
+  [ "$rc" -ne 0 ] || fail "a fresh spawn over a worktree leased to another holder must refuse"$'\n'"$out"
+  assert_contains "$out" "leased to 'fm-task-other', not 'fm-task-lease12'" "the refusal should name the foreign holder"
+  assert_contains "$out" "fm-control.sh lease12 relaunch" "the refusal should point to relaunch"
+  assert_not_contains "$(cat "$dir/fake/treehouse-log")" "get --lease" "the refused spawn must lease nothing"
+  assert_not_contains "$(cat "$dir/fake/treehouse-log")" "return" "the refused spawn must return nothing"
+  [ "$(cat "$dir/home/state/lease12.meta")" = "$before" ] || fail "the refused spawn changed the existing record"
+  pass "fm-spawn herdr: a fresh spawn over a record whose worktree is gone or not its lease refuses before leasing"
 }
 
 # The abort return keys on whether this spawn leased the slot and a surviving
@@ -320,7 +389,9 @@ test_herdr_ship_abort_after_publish_releases_its_slot_claim() {
 }
 
 test_herdr_ship_tab_opens_in_its_leased_worktree
-test_herdr_ship_refuses_fresh_spawn_over_a_leased_record
+test_herdr_ship_fresh_spawn_reuses_its_leased_record
+test_herdr_ship_aborted_respawn_keeps_the_reused_lease
+test_herdr_ship_refuses_fresh_spawn_over_an_unreusable_record
 test_herdr_ship_abort_returns_its_lease
 test_herdr_ship_abort_returns_a_lease_no_record_names
 test_herdr_ship_abort_after_publish_releases_its_slot_claim

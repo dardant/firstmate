@@ -57,6 +57,7 @@ case "${1:-}" in
     printf '%%1\n'
     exit 0 ;;
   capture-pane)
+    [ -z "${FM_FAKE_TMUX_CAPTURE_FAIL:-}" ] || exit 1
     if [ -n "${FM_FAKE_TMUX_CAPTURE:-}" ]; then
       cat "$FM_FAKE_TMUX_CAPTURE"
       exit 0
@@ -269,9 +270,32 @@ EOF
   pass "fm-send --key: a pane parked on a launch dialog refuses every key and names exit/relaunch"
 }
 
+# fm-control refuses a key when the pane cannot be captured, because a launch
+# dialog cannot then be ruled out; --key must fail closed the same way rather
+# than send an Escape that could record the imports decline.
+test_key_send_refuses_uncapturable_pane() {
+  local dir fb home err log rc
+  dir="$TMP_ROOT/key-nocapture"; mkdir -p "$dir"
+  fb=$(make_stubs "$dir"); home=$(setup_home keynocapture); err="$dir/send.err"; log="$dir/tmux.log"; : > "$log"
+  fm_write_meta "$home/state/lane-nocap.meta" "window=sess:fm-lane-nocap" "kind=ship" "harness=claude"
+
+  PATH="$fb:$PATH" FM_HOME="$home" FM_ROOT_OVERRIDE="$home" FM_TMUX_LOG="$log" FM_SEND_SETTLE=0 \
+    FM_FAKE_TMUX_CAPTURE_FAIL=1 \
+    "$SEND" lane-nocap --key Escape >/dev/null 2>"$err"; rc=$?
+  [ "$rc" -ne 0 ] || fail "a --key into an uncapturable pane reported success"
+  if grep -q 'send-keys' "$log"; then
+    fail "a --key was delivered to a pane that could not be captured:"$'\n'"$(cat "$log")"
+  fi
+  assert_contains "$(cat "$err")" "cannot be ruled out" "the refusal should say a dialog cannot be ruled out"
+  assert_contains "$(cat "$err")" "fm-control.sh lane-nocap exit" "the refusal should name the keyless exit recovery"
+  assert_contains "$(cat "$err")" "fm-control.sh lane-nocap relaunch" "the refusal should name the relaunch recovery"
+  pass "fm-send --key: a pane that cannot be captured refuses every key and names exit/relaunch"
+}
+
 test_exact_lane_id_send_still_works
 test_key_send_exit_status_follows_delivery
 test_key_send_refuses_launch_dialog
+test_key_send_refuses_uncapturable_pane
 test_unset_fm_home_fails
 test_unresolvable_target_does_not_tmux_fallback
 test_prefixless_herdr_pane_id_fails

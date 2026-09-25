@@ -773,14 +773,21 @@ if [ "${1:-}" = "--key" ]; then
   semantic_key=$(fm_send_normalize_key "$key")
   # Any key answers a harness launch dialog (Escape on Claude's external-imports
   # dialog records a standing decline), so a pane visibly parked on one refuses
-  # every key, the same signature owner the doorbell and fm-control consult.
-  if [ "$TARGET_BACKEND" != remote ] &&
-    dialog_tail=$(fm_backend_capture "$TARGET_BACKEND" "$T" 40 "$EXPECTED_LABEL" 2>/dev/null) &&
-    printf '%s' "$dialog_tail" | fm_busy_any_launch_prompt_parked; then
+  # every key, the same signature owner the doorbell and fm-control consult. A
+  # pane that cannot be captured cannot rule a dialog out, so it refuses too,
+  # exactly as fm-control does.
+  if [ "$TARGET_BACKEND" != remote ]; then
     dialog_id=$T
     [ -z "$TARGET_META" ] || dialog_id=$(fm_send_id_from_meta "$TARGET_META")
-    echo "error: $T shows a harness launch dialog, and key '$key' would answer it (Escape on Claude's external-imports dialog records a standing decline); nothing was sent. Stop the parked agent without a key via '$SCRIPT_DIR/fm-control.sh $dialog_id exit' or '$SCRIPT_DIR/fm-control.sh $dialog_id relaunch', and leave the dialog's question to the operator" >&2
-    exit 1
+    dialog_recovery="Stop the agent without a key via '$SCRIPT_DIR/fm-control.sh $dialog_id exit' or '$SCRIPT_DIR/fm-control.sh $dialog_id relaunch', and leave any dialog's question to the operator"
+    if ! dialog_tail=$(fm_backend_capture "$TARGET_BACKEND" "$T" 40 "$EXPECTED_LABEL" 2>/dev/null); then
+      echo "error: $T could not be captured, so a harness launch dialog cannot be ruled out, and key '$key' could answer one (Escape on Claude's external-imports dialog records a standing decline); nothing was sent. Retry once the pane can be read, or: $dialog_recovery" >&2
+      exit 1
+    fi
+    if printf '%s' "$dialog_tail" | fm_busy_any_launch_prompt_parked; then
+      echo "error: $T shows a harness launch dialog, and key '$key' would answer it (Escape on Claude's external-imports dialog records a standing decline); nothing was sent. $dialog_recovery" >&2
+      exit 1
+    fi
   fi
   if [ "$TARGET_BACKEND" = remote ]; then
     FM_SEND_REMOTE_BUDGET=${FM_SEND_REMOTE_BUDGET:-30}
@@ -1097,6 +1104,11 @@ else
     fm_task_inbox_ring "$TARGET_BACKEND" "$T" "$INBOX_RECORD" "$EXPECTED_LABEL" || ring_rc=$?
     case "$ring_rc" in
     1) echo "fm-send: doorbell skipped (composer visibly holds pending text); the steer is durably recorded at $INBOX_RECORD and the watcher will re-ring" >&2 ;;
+    4)
+      ring_id=$T
+      [ -z "$TARGET_META" ] || ring_id=$(fm_send_id_from_meta "$TARGET_META")
+      echo "fm-send: doorbell skipped (pane is parked on a launch dialog; use '$SCRIPT_DIR/fm-control.sh $ring_id exit' or '$SCRIPT_DIR/fm-control.sh $ring_id relaunch'); the steer is durably recorded at $INBOX_RECORD and the watcher will re-ring" >&2
+      ;;
     2) echo "fm-send: doorbell did not reach $T; the steer is durably recorded at $INBOX_RECORD and the watcher will re-ring" >&2 ;;
     3) echo "fm-send: doorbell not typed because the agent in $T has exited; the steer is durably recorded at $INBOX_RECORD for recovery (stuck-crewmate-recovery), and the watcher will not re-ring a dead pane" >&2 ;;
     esac
