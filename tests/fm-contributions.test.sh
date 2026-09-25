@@ -554,6 +554,7 @@ printf '%s\n' "$*" >> "$FORGE/calls"
 fault=$(cat "$FORGE/fault" 2>/dev/null || true)
 case "$fault" in latency) sleep "${FORGE_LATENCY:-2}" ;; esac
 case "$fault:$*" in
+  # Advance once before the parallel read wave; its readers share this clock.
   reserve:'api repos/o/r/issues/9')
     printf '%s\n' "$(( $(cat "$FORGE/clock") + 6 ))" > "$FORGE/clock" ;;
   exhaust:'api repos/o/r/issues/8/comments?'*)
