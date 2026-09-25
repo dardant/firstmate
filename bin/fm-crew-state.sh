@@ -838,7 +838,10 @@ nm_effective_ci_step_status() {
 # actual PR #252 run). Reads the ci step's log via `axi logs --full` and scans
 # it for the MOST RECENT recognized marker (the log is append-only/chronological,
 # so the last match is current): green with nothing red after it means CI is
-# green right now, still only waiting on merge/close.
+# green right now, still only waiting on merge/close. Short of green, `pending`
+# means the monitor is only waiting on checks to report (running or not
+# reported yet), while `not-ready` means a check failed or the monitor reported
+# issues.
 # "base branch advanced (..), re-arming CI monitor timeout" is deliberately NOT
 # a marker: the monitor logs a checks state only when that state changes, and a
 # base advance re-arms only its idle timeout without clearing readiness, so the
@@ -856,7 +859,8 @@ nm_ci_checks_state() {
     | tail -1)
   case "$marker" in
     *"checks passed"*|*"no CI checks reported - still monitoring"*) printf 'green' ;;
-    *"no CI checks reported yet"*|*"checks failed"*|*"issues detected"*|*"CI checks running"*) printf 'not-ready' ;;
+    *"no CI checks reported yet"*|*"CI checks running"*) printf 'pending' ;;
+    *"checks failed"*|*"issues detected"*) printf 'not-ready' ;;
     *) printf 'unknown' ;;
   esac
 }
@@ -1147,9 +1151,15 @@ if [ "$HAVE_RUN" = 1 ]; then
     elif [ "$CI_STEP_STATUS" = fixing ]; then
       CI_LOG_STATE=not-ready
     fi
-    if [ "$CI_LOG_STATE" != not-ready ]; then
-      emit_ship_status_done "run still monitoring PR"
-    fi
+    case "$CI_LOG_STATE" in
+      not-ready|pending) ;;
+      *) emit_ship_status_done "run still monitoring PR" ;;
+    esac
+  fi
+  # Its own ${SEP} component, like the human-owed gate: the monitor is only
+  # waiting on checks to report, not fixing and not failing.
+  if [ "$RUN_STATE" = working ] && [ "$CI_LOG_STATE" = pending ]; then
+    RUN_DETAIL="$RUN_DETAIL${SEP}$FM_CI_AWAITING_CHECKS"
   fi
 
   # Reconcile the status log. A needs-decision/blocked log line that the run-step

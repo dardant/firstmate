@@ -2391,6 +2391,454 @@ test_nonterminal_stale_not_working_surfaced() {
   pass "a not-provably-working non-terminal stale is surfaced immediately (never left to wait out the timer)"
 }
 
+# --- a finish already on record stays quiet on a stale or redrawing pane ------
+# 2026-09-23/24 claude+herdr: ships that reported done with checks green and sat
+# awaiting merge, and a scout whose last status line was a resolved decision,
+# kept drawing stale wakes for their idle panes. Each redraw of a done pane
+# (Claude's session recap) was a new hash the terminal path re-alarmed, and a
+# resolved last line sent a stable pane down the non-terminal path, which
+# surfaced it and then wedge-escalated it every STALE_ESCALATE_SECS. A crew with
+# nothing running whose final `done` is already on record has nothing new to say
+# about its pane, while a ship whose `done` only committed its implementation
+# (no recorded PR yet) keeps alarming.
+
+# Run one watcher over <window> with its pane showing <text>, primed as already
+# stale so the first poll classifies it. 0 if the watcher absorbed (still alive
+# after a whole poll cycle, nothing queued), 1 if it exited on a wake.
+finish_stale_round() {  # <dir> <window> <text> [env assignments...]
+  local dir=$1 window=$2 text=$3 state key pid
+  shift 3
+  state="$dir/state"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  printf '%s' "$text" > "$dir/pane.txt"
+  printf '%s' "$(hash_text "$text")" > "$state/.hash-$key"
+  printf '1\n' > "$state/.count-$key"
+  : > "$dir/watch.out"
+  env PATH="$dir/fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$dir/pane.txt" \
+    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$dir/fakebin/fm-crew-state.sh" FM_POLL=1 FM_SIGNAL_GRACE=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$@" "$WATCH" > "$dir/watch.out" &
+  pid=$!
+  if wait_poll_cycle "$state" "$pid"; then
+    reap "$pid"
+    [ ! -s "$state/.wake-queue" ] || return 1
+    ack_stopped_cycle "$state" || fail "could not acknowledge an intentional watcher stop"
+    return 0
+  fi
+  wait "$pid" 2>/dev/null || true
+  return 1
+}
+
+# Build a case whose task <name> records <meta-lines> and <status-lines>, with the
+# status log already seen so only the stale path is exercised.
+finish_stale_case() {  # <name> <window> <meta-lines> <status-lines>
+  local dir state task=$1
+  dir=$(make_case "$1"); state="$dir/state"
+  printf 'window=%s\n%b' "$2" "$3" > "$state/$task.meta"
+  printf '%b' "$4" > "$state/$task.status"
+  printf '%s' "$(seen_sig "$state/$task.status")" > "$state/.seen-${task}_status"
+  printf '%s\n' "$dir"
+}
+
+# Re-prime <task>'s status suppressor after a fixture append, so the append is
+# not surfaced as a status signal ahead of the stale path under test.
+finish_stale_reseen() {  # <dir> <task>
+  printf '%s' "$(seen_sig "$1/state/$2.status")" > "$1/state/.seen-${2}_status"
+}
+
+test_finish_on_record_redrawing_pane_stays_quiet() {
+  local dir state window key idle
+  window="test:fm-held-pr"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  idle='state: done · source: status-log · PR https://example.invalid/pull/1 checks green · run still monitoring PR'
+  dir=$(finish_stale_case held-pr "$window" \
+    'kind=ship\nmode=no-mistakes\npr=https://example.invalid/pull/1\n' \
+    'done [at=1790200000]: implementation committed\nworking [at=1790200100]: validation started\ndone [at=1790200900]: PR https://example.invalid/pull/1 checks green\n')
+  state="$dir/state"
+
+  finish_stale_round "$dir" "$window" 'idle composer, done 12:47 AM' FM_FAKE_CREW_STATE="$idle" \
+    || fail "a PR awaiting merge had its quiet pane surfaced: $(cat "$dir/watch.out")"
+  [ "$(cat "$state/.stale-$key" 2>/dev/null)" = "$(hash_text 'idle composer, done 12:47 AM')" ] \
+    || fail "the absorbed pane did not advance the stale suppressor"
+  [ ! -e "$state/.stale-since-$key" ] || fail "a PR awaiting merge started a wedge timer"
+
+  # The recap redraw: a new hash on the same finished pane, with nothing new in
+  # the status log. Before the fix every such hash re-alarmed the done line.
+  finish_stale_round "$dir" "$window" 'idle composer, done 12:47 AM | recap: PR ready, waiting on merge' \
+    FM_FAKE_CREW_STATE="$idle" \
+    || fail "a PR awaiting merge re-alarmed on a redraw: $(cat "$dir/watch.out")"
+  grep -F "absorbed stale (finish already on record" "$state/.watch-triage.log" >/dev/null \
+    || fail "the finish-on-record absorb left no triage record"
+
+  # A pipeline still fixing keeps the provably-working path and its wedge timer,
+  # so a finish on record never hides a run that is actually executing, and a
+  # quiet fixing step still escalates as a possible wedge.
+  finish_stale_round "$dir" "$window" 'idle composer | ci fix' \
+    FM_FAKE_CREW_STATE='state: working · source: run-step · ci running · validating (fixing)' FM_STALE_ESCALATE_SECS=1 \
+    || fail "a provably-working pane was surfaced: $(cat "$dir/watch.out")"
+  [ -s "$state/.stale-since-$key" ] || fail "a provably-working pane lost its wedge timer to the finish on record"
+  sleep 1.2
+  finish_stale_round "$dir" "$window" 'idle composer | ci fix' \
+    FM_FAKE_CREW_STATE='state: working · source: run-step · ci running · validating (fixing)' FM_STALE_ESCALATE_SECS=1 \
+    && fail "a quiet fixing step behind a finish on record never escalated"
+  grep -F "stale: $window (idle" "$dir/watch.out" | grep -F 'possible wedge, escalation 1' >/dev/null \
+    || fail "a quiet fixing step did not keep its wedge escalation: $(cat "$dir/watch.out")"
+  ack_stopped_cycle "$state" || fail "could not acknowledge the fixing-step wedge escalation"
+
+  # Control: the same done line from a ship whose PR firstmate has not recorded
+  # is only its implementation report, so the identical redraw still alarms.
+  sed -i.bak '/^pr=/d' "$state/held-pr.meta"
+  finish_stale_round "$dir" "$window" 'idle composer, done 12:47 AM | recap: second redraw' \
+    FM_FAKE_CREW_STATE="$idle" \
+    && fail "a ship with no recorded PR was absorbed as parked awaiting merge"
+  grep -Fx "stale: $window" "$dir/watch.out" >/dev/null \
+    || fail "the no-recorded-PR control did not surface the stale wake"
+  pass "a finish on record stays quiet on a quiet or redrawing pane, while a fixing pipeline and an unrecorded PR still take their usual paths"
+}
+
+# A PR ship parked awaiting merge whose CI monitor re-armed because main
+# advanced: bin/fm-crew-state.sh reads the run working again, only awaiting
+# checks. Before the fix the idle pane was absorbed as provably working and then
+# wedge-escalated every STALE_ESCALATE_SECS until the checks turned green; with
+# its finish on record the monitor's wait takes the long recheck instead.
+test_finished_pr_ship_ci_rearm_defers_wedge() {
+  local dir state window key awaiting waited
+  window="test:fm-rearmed-pr"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  awaiting='state: working · source: run-step · ci running · ci: awaiting checks · status-log superseded by active run · run: 01RUNCIREARM'
+  dir=$(finish_stale_case rearmed-pr "$window" \
+    'kind=ship\nmode=no-mistakes\npr=https://example.invalid/pull/3\n' \
+    'working [at=1790200000]: validation started\ndone [at=1790200900]: PR https://example.invalid/pull/3 checks green\n')
+  state="$dir/state"
+  # The PR has been parked far longer than the long cadence: the recheck must
+  # count from the re-arm, not from the done line.
+  set_mtime "$(( $(date +%s) - 20000 ))" "$state/rearmed-pr.status"
+  finish_stale_reseen "$dir" rearmed-pr
+
+  finish_stale_round "$dir" "$window" 'idle composer, done' \
+    FM_FAKE_CREW_STATE="$awaiting" FM_STALE_ESCALATE_SECS=1 \
+    || fail "a re-armed CI monitor's pane was surfaced: $(cat "$dir/watch.out")"
+  [ -s "$state/.stale-since-$key" ] || fail "the re-armed monitor did not start its idle timer"
+  sleep 1.2
+  finish_stale_round "$dir" "$window" 'idle composer, done' \
+    FM_FAKE_CREW_STATE="$awaiting" FM_STALE_ESCALATE_SECS=1 \
+    || fail "a finished ship whose CI monitor re-armed was wedge-escalated: $(cat "$dir/watch.out")"
+  grep -F "absorbed stale (overridden terminal status) (finished, CI monitor awaiting checks explains the quiet" \
+    "$state/.watch-triage.log" >/dev/null || fail "the CI re-arm deferral left no triage record"
+  [ ! -e "$state/.wedge-escalations-$key" ] || fail "the CI re-arm deferral counted a wedge escalation"
+  [ -s "$state/.stale-since-$key" ] || fail "the CI re-arm deferral did not restart the idle timer"
+  [ -e "$state/.ci-wait-since-$key" ] || fail "the CI re-arm deferral did not record when the CI wait began"
+
+  # Bounded: CI that never settles still resurfaces on the long cadence.
+  sleep 1.2
+  finish_stale_round "$dir" "$window" 'idle composer, done' \
+    FM_FAKE_CREW_STATE="$awaiting" FM_STALE_ESCALATE_SECS=1 FM_PAUSE_RESURFACE_SECS=1 \
+    && fail "a CI monitor awaiting checks past the long cadence never resurfaced"
+  grep -F "stale: $window (idle" "$dir/watch.out" | grep -F 'finished, CI monitor awaiting checks' \
+    | grep -F 'rechecked on a long cadence not a wedge' >/dev/null \
+    || fail "the long-cadence recheck did not name the CI wait: $(cat "$dir/watch.out")"
+  grep -F 'possible wedge' "$dir/watch.out" >/dev/null \
+    && fail "the long-cadence recheck was worded as a wedge: $(cat "$dir/watch.out")"
+  waited=$(sed -n 's/.*, waiting \([0-9][0-9]*\)s - finished, CI monitor awaiting checks.*/\1/p' "$dir/watch.out" | head -1)
+  [ -n "$waited" ] && [ "$waited" -lt 1000 ] \
+    || fail "the CI recheck was aged from the done line, not the re-arm: $(cat "$dir/watch.out")"
+  ack_stopped_cycle "$state" || fail "could not acknowledge the CI recheck"
+
+  # The re-armed checks go green again while the idle pane keeps its hash: the
+  # finish on record is parked with nothing running, so the timer's next
+  # threshold absorbs it as a new hash would, instead of alarming a wedge.
+  sleep 1.2
+  finish_stale_round "$dir" "$window" 'idle composer, done' \
+    FM_FAKE_CREW_STATE='state: done · source: run-step · checks green: PR ready for review (still monitoring for merge/close) · run: 01RUNCIREARM' \
+    FM_STALE_ESCALATE_SECS=1 \
+    || fail "a finished ship whose re-armed checks went green was wedge-escalated: $(cat "$dir/watch.out")"
+  grep -F "absorbed stale (finish already on record, crew parked): $window" "$state/.watch-triage.log" >/dev/null \
+    || fail "the green-again pane was not absorbed as a finish on record"
+  [ ! -e "$state/.stale-since-$key" ] || fail "the green-again pane kept its wedge timer"
+  [ ! -e "$state/.ci-wait-since-$key" ] || fail "the ended CI wait kept its since-marker"
+  [ "$(cat "$state/.stale-done-$key" 2>/dev/null)" = "$(hash_text 'idle composer, done')" ] \
+    || fail "the green-again pane hash was not remembered as absorbed"
+  sleep 1.2
+  finish_stale_round "$dir" "$window" 'idle composer, done' \
+    FM_FAKE_CREW_STATE='state: done · source: run-step · checks green: PR ready for review (still monitoring for merge/close) · run: 01RUNCIREARM' \
+    FM_STALE_ESCALATE_SECS=1 \
+    || fail "the absorbed green-again pane alarmed on a later poll: $(cat "$dir/watch.out")"
+  pass "a finished PR ship whose CI monitor re-armed is rechecked on the long cadence, then absorbed once its checks go green again"
+}
+
+# A finish on record never hides a later run failure or gate: after main
+# advances, the re-armed monitor's checks fail, the fixer works, and the run then
+# fails or parks at a gate. Both the stable pane's wedge threshold and a new
+# pane hash keep alarming, because the current state contradicts the finish.
+test_finished_pr_ship_later_run_failure_still_alarms() {
+  local dir state window key verdict
+  window="test:fm-refailed-pr"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  dir=$(finish_stale_case refailed-pr "$window" \
+    'kind=ship\nmode=no-mistakes\npr=https://example.invalid/pull/5\n' \
+    'working [at=1790200000]: validation started\ndone [at=1790200900]: PR https://example.invalid/pull/5 checks green\n')
+  state="$dir/state"
+
+  finish_stale_round "$dir" "$window" 'idle composer, done' \
+    FM_FAKE_CREW_STATE='state: working · source: run-step · ci running · status-log superseded by active run · run: 01RUNREFAIL' \
+    FM_STALE_ESCALATE_SECS=1 \
+    || fail "a fixing CI monitor's pane was surfaced: $(cat "$dir/watch.out")"
+  sleep 1.2
+  finish_stale_round "$dir" "$window" 'idle composer, done' \
+    FM_FAKE_CREW_STATE='state: failed · source: run-step · run failed · run: 01RUNREFAIL' FM_STALE_ESCALATE_SECS=1 \
+    && fail "a run that failed after the recorded finish was absorbed at the wedge threshold"
+  grep -F 'possible wedge, escalation 1' "$dir/watch.out" >/dev/null \
+    || fail "a run that failed after the recorded finish lost its wedge escalation: $(cat "$dir/watch.out")"
+  [ ! -e "$state/.stale-done-$key" ] || fail "a failed run was remembered as a parked finish"
+  ack_stopped_cycle "$state" || fail "could not acknowledge the failed-run escalation"
+
+  for verdict in 'state: failed · source: run-step · run cancelled · run: 01RUNREFAIL' \
+    'state: parked · source: run-step · parked at ci: 1 finding(s) · ask-user: authority decision · run: 01RUNREFAIL' \
+    'state: unknown · source: run-step · no-mistakes daemon unreachable; last ledger record failed - unverified' \
+    'no verdict'; do
+    finish_stale_round "$dir" "$window" "idle composer, redraw for $verdict" FM_FAKE_CREW_STATE="$verdict" \
+      && fail "a new hash over a finished crew whose run reads '$verdict' was absorbed"
+    grep -Fx "stale: $window" "$dir/watch.out" >/dev/null \
+      || fail "a new hash over a run reading '$verdict' did not surface: $(cat "$dir/watch.out")"
+    ack_stopped_cycle "$state" || fail "could not acknowledge the surfaced '$verdict' pane"
+  done
+  pass "a run that fails, is cancelled, parks, or is unreadable after a recorded finish still alarms"
+}
+
+# A finished pane that never redraws once absorbed (the recap disabled, nothing
+# else ticking) keeps its hash for hours while the no-mistakes CI monitor
+# re-arms, fails, and fixes in the daemon, never in the pane. Before the fix
+# every such poll was inert and never read the crew state again, so a run that
+# failed behind it never alarmed. It is re-read on the long cadence: still
+# parked stays quiet, anything else alarms at once, on both the terminal and
+# the non-terminal path.
+test_absorbed_finish_stable_pane_rechecks_on_long_cadence() {
+  local dir state window key text task meta status idle failed
+  idle='state: done · source: status-log · PR https://example.invalid/pull/6 checks green · run still monitoring PR'
+  failed='state: failed · source: run-step · run failed · run: 01RUNSTABLE'
+  text='idle composer, done'
+  for task in stable-pr stable-scout; do
+    window="test:fm-$task"
+    key=$(printf '%s' "$window" | tr ':/.' '___')
+    case "$task" in
+      stable-pr)
+        meta='kind=ship\nmode=no-mistakes\npr=https://example.invalid/pull/6\n'
+        status='working [at=1790200000]: validation started\ndone [at=1790200900]: PR https://example.invalid/pull/6 checks green\n' ;;
+      stable-scout)
+        meta='kind=scout\n'
+        status='done [at=1790200060]: report written to data/scout/report.md\nnote [at=1790200130]: report linked in the backlog\n' ;;
+    esac
+    dir=$(finish_stale_case "$task" "$window" "$meta" "$status")
+    state="$dir/state"
+
+    finish_stale_round "$dir" "$window" "$text" FM_FAKE_CREW_STATE="$idle" \
+      || fail "$task: a finished pane was surfaced: $(cat "$dir/watch.out")"
+    [ "$(cat "$state/.stale-done-$key" 2>/dev/null)" = "$(hash_text "$text")" ] \
+      || fail "$task: the finished pane hash was not remembered as absorbed"
+
+    # Inside the long cadence the absorbed hash is not re-read.
+    finish_stale_round "$dir" "$window" "$text" FM_FAKE_CREW_STATE="$failed" \
+      || fail "$task: an absorbed pane re-read its crew state inside the long cadence: $(cat "$dir/watch.out")"
+
+    # Past the cadence, a crew still parked on its finish stays quiet and starts
+    # a fresh window.
+    set_mtime "$(( $(date +%s) - 20000 ))" "$state/.stale-done-$key"
+    finish_stale_round "$dir" "$window" "$text" FM_FAKE_CREW_STATE="$idle" \
+      || fail "$task: a still-parked finish alarmed on its recheck: $(cat "$dir/watch.out")"
+    [ $(( $(date +%s) - $(file_mtime "$state/.stale-done-$key") )) -lt 1000 ] \
+      || fail "$task: the still-parked recheck did not restart its window"
+
+    # Past the cadence, a run that failed behind the unchanged pane alarms.
+    set_mtime "$(( $(date +%s) - 20000 ))" "$state/.stale-done-$key"
+    finish_stale_round "$dir" "$window" "$text" FM_FAKE_CREW_STATE="$failed" \
+      && fail "$task: a run that failed behind an unchanged absorbed pane never alarmed"
+    grep -Fx "stale: $window" "$dir/watch.out" >/dev/null \
+      || fail "$task: the failed run behind an absorbed pane did not surface: $(cat "$dir/watch.out")"
+    [ ! -e "$state/.stale-done-$key" ] || fail "$task: a failed run kept its absorbed marker"
+    ack_stopped_cycle "$state" || fail "$task: could not acknowledge the surfaced failed run"
+  done
+  pass "an absorbed finish on an unchanged pane is rechecked on the long cadence and alarms once its run fails"
+}
+
+# The CI-awaiting deferral is for an idle parked pane only. A busy turn past
+# FM_BUSY_TURN_MAX_SECS behind the same recorded finish and re-armed monitor
+# (the crew kept working in that turn, or someone typed into its pane) keeps the
+# unchanged wedge escalation.
+test_finished_pr_ship_ci_rearm_busy_turn_still_escalates() {
+  local dir state fakebin out capture_file window key pid awaiting
+  dir=$(make_case rearmed-busy); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"; window="test:fm-rearmed-busy"
+  awaiting='state: working · source: run-step · ci running · ci: awaiting checks · status-log superseded by active run · run: 01RUNBUSY'
+  printf 'Working...' > "$capture_file"
+  printf 'window=%s\nkind=ship\nharness=pi\nmode=no-mistakes\npr=https://example.invalid/pull/4\n' "$window" > "$state/rearmed-busy.meta"
+  record_pi_busy "$state" rearmed-busy
+  printf 'done [at=1790200900]: PR https://example.invalid/pull/4 checks green\n' > "$state/rearmed-busy.status"
+  printf '%s' "$(seen_sig "$state/rearmed-busy.status")" > "$state/.seen-rearmed-busy_status"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  printf '%s' "$(hash_text "Working...")" > "$state/.hash-$key"
+  printf '1\n' > "$state/.count-$key"
+  touch -t 200001010000 "$state/rearmed-busy.turn-ended"
+  prime_turnend_seen "$state/rearmed-busy.turn-ended"
+
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
+    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_FAKE_CREW_STATE="$awaiting" \
+    FM_BUSY_TURN_MAX_SECS=1 FM_STALE_ESCALATE_SECS=999 FM_POLL=1 FM_SIGNAL_GRACE=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  if ! wait_poll_cycle "$state" "$pid"; then
+    reap "$pid"; fail "priming round for the busy re-armed pane was not absorbed: $(cat "$out")"
+  fi
+  reap "$pid"
+  ack_stopped_cycle "$state" || fail "could not acknowledge the busy re-armed priming stop"
+
+  echo $(( $(date +%s) - 500 )) > "$state/.stale-since-$key"
+  : > "$out"
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
+    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_FAKE_CREW_STATE="$awaiting" \
+    FM_BUSY_TURN_MAX_SECS=1 FM_STALE_ESCALATE_SECS=240 FM_POLL=1 FM_SIGNAL_GRACE=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  wait_for_exit "$pid" 100 || { reap "$pid"; fail "a hung busy turn behind a re-armed CI monitor was deferred: $(cat "$out")"; }
+  grep -F 'possible wedge, escalation 1' "$out" >/dev/null \
+    || fail "a hung busy turn behind a re-armed CI monitor lost its wedge escalation: $(cat "$out")"
+  ack_stopped_cycle "$state" || fail "could not acknowledge the busy re-armed escalation"
+  pass "a hung busy turn behind a recorded finish and a re-armed CI monitor keeps its wedge escalation"
+}
+
+# Enqueue one firstmate steer for <task> through the steering-inbox owner, then
+# acknowledge it the way a worker does, so no re-ring ladder is in play.
+finish_stale_steer() {  # <dir> <task> <text>
+  local rec
+  rec=$(. "$ROOT/bin/fm-task-inbox-lib.sh" && fm_task_inbox_write "$1/state" "$2" "$3") \
+    || fail "could not enqueue the fixture steer"
+  mv "$rec" "${rec%/*}/handled/" || fail "could not acknowledge the fixture steer"
+}
+
+test_finish_on_record_reopened_by_later_steer() {
+  local dir state window idle
+  window="test:fm-steered-pr"
+  idle='state: done · source: status-log · PR https://example.invalid/pull/2 checks green · run still monitoring PR'
+  dir=$(finish_stale_case steered-pr "$window" \
+    'kind=ship\nmode=no-mistakes\npr=https://example.invalid/pull/2\n' \
+    'working [at=1790200000]: validation started\n')
+  state="$dir/state"
+
+  # A steer the crew acted on before it reported its finish leaves that finish on
+  # record, so the parked pane stays quiet.
+  finish_stale_steer "$dir" steered-pr 'address the review comment'
+  sleep 1
+  printf 'done [at=%s]: PR https://example.invalid/pull/2 checks green\n' "$(date +%s)" >> "$state/steered-pr.status"
+  finish_stale_reseen "$dir" steered-pr
+  finish_stale_round "$dir" "$window" 'idle composer, done' FM_FAKE_CREW_STATE="$idle" \
+    || fail "a finish declared after its steer was surfaced: $(cat "$dir/watch.out")"
+
+  # A follow-up steer after the done reopens the task: the brief forbids a bare
+  # working: acknowledgement, so the log still ends on that done while the crew
+  # works and then stalls with nothing running. Before the fix this was absorbed.
+  finish_stale_steer "$dir" steered-pr 'fix the CI lint failure'
+  finish_stale_round "$dir" "$window" 'lint fix half applied, menu open' FM_FAKE_CREW_STATE="$idle" \
+    && fail "a stalled follow-up steer was absorbed as a finish on record"
+  grep -Fx "stale: $window" "$dir/watch.out" >/dev/null \
+    || fail "the stalled follow-up did not surface the stale wake"
+  ack_stopped_cycle "$state" || fail "could not acknowledge the surfaced follow-up"
+
+  # The crew's next finish closes the follow-up, so its parked pane is quiet again.
+  sleep 1
+  printf 'done [at=%s]: CI lint fixed, checks green\n' "$(date +%s)" >> "$state/steered-pr.status"
+  finish_stale_reseen "$dir" steered-pr
+  finish_stale_round "$dir" "$window" 'idle composer, done again' FM_FAKE_CREW_STATE="$idle" \
+    || fail "a finish declared after the follow-up was surfaced: $(cat "$dir/watch.out")"
+  pass "a steer after a recorded finish reopens stale detection until the crew declares a new finish"
+}
+
+test_finished_scout_with_resolved_line_never_wedge_escalates() {
+  local dir state window key text none
+  window="test:fm-done-scout"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  # What bin/fm-crew-state.sh reports for an idle crew whose last line is a
+  # resolved decision: the resolved line is not a state, so no source names one.
+  none='state: unknown · source: none · no current-state source available'
+  text='report written, idle'
+  dir=$(finish_stale_case done-scout "$window" 'kind=scout\n' \
+    'needs-decision [at=1790200000] [key=scope]: pick A or B\ndone [at=1790200060]: report written to data/scout/report.md\nresolved [key=scope] [at=1790200120]: cleared without an answer, the report covers both options\nnote [at=1790200130]: report linked in the backlog\n')
+  state="$dir/state"
+  status_is_captain_relevant "$(last_status_line "$state/done-scout.status")" \
+    && fail "fixture drift: the scout's last line must take the non-terminal path"
+
+  finish_stale_round "$dir" "$window" "$text" FM_FAKE_CREW_STATE="$none" FM_STALE_ESCALATE_SECS=1 \
+    || fail "a finished scout's quiet pane was surfaced: $(cat "$dir/watch.out")"
+  [ "$(cat "$state/.stale-done-$key" 2>/dev/null)" = "$(hash_text "$text")" ] \
+    || fail "the finished scout's pane hash was not remembered as absorbed"
+
+  # The same stable hash across polls with a one-second wedge threshold: before
+  # the fix the timer reset and escalated a possible wedge at every threshold.
+  finish_stale_round "$dir" "$window" "$text" FM_FAKE_CREW_STATE="$none" FM_STALE_ESCALATE_SECS=1 \
+    || fail "a finished scout's stable pane was wedge-escalated: $(cat "$dir/watch.out")"
+  sleep 1.2
+  finish_stale_round "$dir" "$window" "$text" FM_FAKE_CREW_STATE="$none" FM_STALE_ESCALATE_SECS=1 \
+    || fail "a finished scout's stable pane was wedge-escalated after the threshold: $(cat "$dir/watch.out")"
+  [ ! -e "$state/.stale-since-$key" ] || fail "a finished scout's stable pane ran a wedge timer"
+
+  # Control: a new question after the report reopens the scout, so its next quiet
+  # pane surfaces at once and the absorbed hash is forgotten.
+  printf 'needs-decision [at=1790200200] [key=followup]: extend the audit?\n' >> "$state/done-scout.status"
+  finish_stale_reseen "$dir" done-scout
+  finish_stale_round "$dir" "$window" 'asked a follow-up, idle' FM_FAKE_CREW_STATE="$none" \
+    && fail "a scout with a new open question was absorbed as finished"
+  grep -F "stale: $window" "$dir/watch.out" >/dev/null || fail "the reopened scout did not surface"
+  [ ! -e "$state/.stale-done-$key" ] || fail "the absorbed marker outlived a surfaced pane"
+  pass "a finished scout whose last line is a resolved decision is never wedge-escalated, and a new question still surfaces"
+}
+
+# A decision answered the way firstmate answers it: the real fm-send
+# --resolve-key enqueues the answer as an inbox steer and appends its resolved
+# line. The crew then finishes, so that steer precedes its done and leaves the
+# finish on record. A ship or scout done closes every open decision, so a later
+# answer to the same key is refused before anything is enqueued and can never
+# reopen the parked crew.
+test_answered_decision_then_finish_stays_quiet() {
+  local dir state window none rc
+  window="test:fm-answered-scout"
+  none='state: unknown · source: none · no current-state source available'
+  dir=$(finish_stale_case answered-scout "$window" 'kind=scout\n' \
+    'needs-decision [at=1790200000] [key=scope]: pick A or B\n')
+  state="$dir/state"
+  env PATH="$dir/fakebin:$PATH" FM_ROOT_OVERRIDE="$dir" FM_HOME="$dir" FM_SEND_SETTLE=0 \
+    "$ROOT/bin/fm-send.sh" answered-scout --resolve-key scope 'A' >/dev/null 2>&1; rc=$?
+  [ "$rc" -eq 0 ] || fail "fm-send --resolve-key did not deliver the answer (rc=$rc)"
+  [ -e "$state/answered-scout.inbox/001.msg" ] || fail "the answer was not enqueued as an inbox steer"
+  grep -F 'resolved [key=scope]' "$state/answered-scout.status" >/dev/null \
+    || fail "the answer did not append its resolved line"
+  mv "$state/answered-scout.inbox/001.msg" "$state/answered-scout.inbox/handled/"
+  sleep 1
+  printf 'done [at=%s]: report written to data/scout/report.md\n' "$(date +%s)" >> "$state/answered-scout.status"
+  finish_stale_reseen "$dir" answered-scout
+
+  finish_stale_round "$dir" "$window" 'report written, idle' FM_FAKE_CREW_STATE="$none" \
+    || fail "a scout that finished after its answered decision was surfaced: $(cat "$dir/watch.out")"
+
+  env PATH="$dir/fakebin:$PATH" FM_ROOT_OVERRIDE="$dir" FM_HOME="$dir" FM_SEND_SETTLE=0 \
+    "$ROOT/bin/fm-send.sh" answered-scout --resolve-key scope 'B after all' >/dev/null 2>&1; rc=$?
+  [ "$rc" -ne 0 ] || fail "an answer to a decision the finish closed was delivered"
+  [ ! -e "$state/answered-scout.inbox/002.msg" ] || fail "a refused answer still enqueued a steer"
+  finish_stale_round "$dir" "$window" 'report written, idle | recap: report done' FM_FAKE_CREW_STATE="$none" \
+    || fail "a refused answer reopened the finished scout: $(cat "$dir/watch.out")"
+  pass "a decision answered through fm-send before the finish leaves a finished scout quiet"
+}
+
+test_unfinished_crew_with_resolved_line_still_surfaces() {
+  local dir window
+  window="test:fm-resumed"
+  # The decision was answered, but the crew never declared a finish: its quiet
+  # pane is exactly the inconclusive state that must surface.
+  dir=$(finish_stale_case resumed "$window" 'kind=scout\n' \
+    'working [at=1790200000]: auditing\nneeds-decision [at=1790200060] [key=scope]: pick A or B\nresolved [key=scope] [at=1790200120]: answered: A\n')
+  finish_stale_round "$dir" "$window" 'answered, idle' \
+    FM_FAKE_CREW_STATE='state: unknown · source: none · no current-state source available' \
+    && fail "a crew that never declared a finish was absorbed"
+  grep -Fx "stale: $window" "$dir/watch.out" >/dev/null || fail "the unfinished crew did not surface"
+  pass "a crew whose resolved decision followed no finish still surfaces its quiet pane"
+}
+
 # --- non-terminal stale, crew DECLARED a pause: absorbed, re-surfaced on a long
 #     cadence, never wedge-escalated ------------------------------------------
 # The live 2026-07-09/10 case: a crew intentionally held awaiting an upstream tool
@@ -6358,6 +6806,15 @@ test_busy_declared_pause_is_rechecked_not_wedge_escalated
 test_afk_busy_declared_pause_hands_off_plain_stale
 test_afk_busy_declared_pause_ticking_pane_hands_off_once
 test_nonterminal_stale_not_working_surfaced
+test_finish_on_record_redrawing_pane_stays_quiet
+test_finish_on_record_reopened_by_later_steer
+test_finished_pr_ship_ci_rearm_defers_wedge
+test_finished_pr_ship_ci_rearm_busy_turn_still_escalates
+test_finished_pr_ship_later_run_failure_still_alarms
+test_absorbed_finish_stable_pane_rechecks_on_long_cadence
+test_finished_scout_with_resolved_line_never_wedge_escalates
+test_answered_decision_then_finish_stays_quiet
+test_unfinished_crew_with_resolved_line_still_surfaces
 test_nonterminal_stale_paused_absorbed_then_resurfaced
 test_exited_declared_pause_is_bounded_but_live_gate_surfaces
 test_absorbed_replacement_wait_does_not_inherit_the_old_throttle
