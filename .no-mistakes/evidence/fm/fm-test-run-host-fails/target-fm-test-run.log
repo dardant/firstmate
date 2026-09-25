@@ -38,5 +38,5 @@ ok - --max-wall-ms fails an over-budget run and refuses a malformed budget
 ok - jobs scheduler runs proven scripts; failure propagates; non-proven refused
 ok - Herdr CI family-run step times out at 20 min under a 75 min job backstop
 ok - aggregate-json merges lane timing artifacts
-bash tests/fm-test-run.test.sh  100.41s user 53.11s system 74% cpu 3:26.13 total
-EXIT=0
+bash tests/fm-test-run.test.sh  66.81s user 23.45s system 102% cpu 1:28.31 total
+rc=0

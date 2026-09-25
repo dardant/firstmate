@@ -1,0 +1,16 @@
+### Host: ruby=absent, python3 yaml=6.0.1
+--- base tree
+not ok - ruby is required to parse .github/workflows/ci.yml as YAML
+exit=1
+--- target tree
+ok - Herdr CI family-run step times out at 20 min under a 75 min job backstop
+exit=0
+### Adversarial: family-run step loses its timeout-minutes (target tree)
+333d332
+<         timeout-minutes: 20
+family-run step has no timeout-minutes
+not ok - could not parse tests-herdr timeouts from ci.yml
+exit=1
+### Adversarial: host has neither ruby nor an importable python3 yaml module (target tree)
+not ok - parsing .github/workflows/ci.yml as YAML needs ruby or python3 with the yaml module
+exit=1

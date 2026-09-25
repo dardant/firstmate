@@ -1,0 +1,3 @@
+### Mutation: runner no longer records watcher-wake-lock as concurrent-safe (admission regression)
+not ok - --jobs on a proven family must be admitted, got 2: fm-test-run: --jobs 2 refused: tests/fm-supervision-events.test.sh is not in the proven-isolated set (see bin/fm-test-isolation-proof.sh --list) and its family has no recorded concurrent proof. Unproven stateful scripts stay serial. 
+exit=1
