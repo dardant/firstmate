@@ -1,0 +1,7 @@
+## S6 (after, target 679d8835): bash tests/fm-backend-herdr-restore-cwd-e2e.test.sh  [herdr herdr 0.9.0, treehouse v2.3.0]
+ok - real herdr: a ship's pane opens with its root shell in the leased worktree
+ok - real herdr: a restarted server resumes the ship's agent inside its recorded worktree
+env -u NO_MISTAKES_GATE bash tests/fm-backend-herdr-restore-cwd-e2e.test.sh 2  1.22s user 0.47s system 25% cpu 6.743 total
+rc=
+## S6 (before, base f648a321 spawn with the same guard)
+not ok - the task pane's root directory is '<scratch>/project', not the worktree '<scratch>/treehouse/.treehouse/project-4fe241/1/project'; a restart would resume the agent there

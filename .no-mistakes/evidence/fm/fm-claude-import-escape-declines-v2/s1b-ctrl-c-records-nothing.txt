@@ -1,0 +1,4 @@
+## S1b: Ctrl-C twice on the external-imports dialog (claude 2.1.282 (Claude Code))
+dialog visible before: 1
+dialog visible after: 1
+store after: {"hasClaudeMdExternalIncludesApproved":null,"hasClaudeMdExternalIncludesWarningShown":null}

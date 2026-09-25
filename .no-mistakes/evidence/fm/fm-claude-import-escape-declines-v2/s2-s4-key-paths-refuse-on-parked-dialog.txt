@@ -1,0 +1,43 @@
+## S2-S4: key paths into a real Claude 2.1.282 (Claude Code) pane parked on the imports dialog (Herdr herdr 0.9.0 lab fm-lab-dialog-guard-2008314-31985, task dlg1)
+store before: {"hasClaudeMdExternalIncludesApproved":null,"hasClaudeMdExternalIncludesWarningShown":null}   dialog-visible: 1
+
+$ <repo>/bin/fm-send.sh dlg1 --key Escape
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the requested message WILL still be sent.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+error: fm-lab-dialog-guard-2008314-31985:w1:p2 shows a harness launch dialog, and key 'Escape' would answer it (Escape or Enter on Claude's external-imports dialog records a standing decline); nothing was sent. Stop the agent without a key via '<repo>/bin/fm-control.sh dlg1 exit' or '<repo>/bin/fm-control.sh dlg1 relaunch', and leave any dialog's question to the operator
+rc=1
+store: {"hasClaudeMdExternalIncludesApproved":null,"hasClaudeMdExternalIncludesWarningShown":null}   dialog-visible: 1
+
+$ <repo>/bin/fm-send.sh dlg1 --key C-c
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+error: fm-lab-dialog-guard-2008314-31985:w1:p2 shows a harness launch dialog, and key 'C-c' would answer it (Escape or Enter on Claude's external-imports dialog records a standing decline); nothing was sent. Stop the agent without a key via '<repo>/bin/fm-control.sh dlg1 exit' or '<repo>/bin/fm-control.sh dlg1 relaunch', and leave any dialog's question to the operator
+rc=1
+store: {"hasClaudeMdExternalIncludesApproved":null,"hasClaudeMdExternalIncludesWarningShown":null}   dialog-visible: 1
+
+$ <repo>/bin/fm-send.sh dlg1 --key Enter
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+error: fm-lab-dialog-guard-2008314-31985:w1:p2 shows a harness launch dialog, and key 'Enter' would answer it (Escape or Enter on Claude's external-imports dialog records a standing decline); nothing was sent. Stop the agent without a key via '<repo>/bin/fm-control.sh dlg1 exit' or '<repo>/bin/fm-control.sh dlg1 relaunch', and leave any dialog's question to the operator
+rc=1
+store: {"hasClaudeMdExternalIncludesApproved":null,"hasClaudeMdExternalIncludesWarningShown":null}   dialog-visible: 1
+
+$ <repo>/bin/fm-send.sh dlg1 /compact
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+error: fm-lab-dialog-guard-2008314-31985:w1:p2 shows a harness launch dialog, and the typed text's Enter would answer it (Escape or Enter on Claude's external-imports dialog records a standing decline); nothing was sent. Stop the agent without a key via '<repo>/bin/fm-control.sh dlg1 exit' or '<repo>/bin/fm-control.sh dlg1 relaunch', and leave any dialog's question to the operator
+rc=1
+store: {"hasClaudeMdExternalIncludesApproved":null,"hasClaudeMdExternalIncludesWarningShown":null}   dialog-visible: 1
+
+$ <repo>/bin/fm-send.sh dlg1 please continue with the brief
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+fm-send: doorbell skipped (pane is parked on a launch dialog; use '<repo>/bin/fm-control.sh dlg1 exit' or '<repo>/bin/fm-control.sh dlg1 relaunch'); the steer is durably recorded at <lab>/fmhome/state/dlg1.inbox/001.msg and the watcher will re-ring
+rc=0
+store: {"hasClaudeMdExternalIncludesApproved":null,"hasClaudeMdExternalIncludesWarningShown":null}   dialog-visible: 1
+
+$ <repo>/bin/fm-control.sh dlg1 interrupt
+error: task dlg1's pane shows a claude launch dialog, and any key would answer it (Escape on Claude's external-imports dialog records a standing decline); 'interrupt' refuses. Use 'exit' or 'relaunch', which stop a parked agent by signal without answering it, and leave the dialog's question to the operator
+rc=1
+store: {"hasClaudeMdExternalIncludesApproved":null,"hasClaudeMdExternalIncludesWarningShown":null}   dialog-visible: 1

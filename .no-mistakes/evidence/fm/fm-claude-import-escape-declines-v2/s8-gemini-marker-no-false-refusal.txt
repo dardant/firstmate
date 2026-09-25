@@ -1,0 +1,24 @@
+## S8 (adversarial): a non-Gemini task pane whose ordinary output quotes the unpaired 'Enter Gemini API Key' marker
+### pane before
+bin/fm-busy-lib.sh:  Enter Gemini API Key
+docs/runtime-backends.md: marker Enter Gemini API Key
+$ sleep 300; echo SLEEP-INTERRUPTED-rc=$?
+$ fm-send.sh dlg1 --key C-c
+rc=
+### pane after
+bin/fm-busy-lib.sh:  Enter Gemini API Key
+docs/runtime-backends.md: marker Enter Gemini API Key
+$ sleep 300; echo SLEEP-INTERRUPTED-rc=$?
+^C
+$
+
+### rerun with the marker still on screen
+$ fm-send.sh dlg1 --key C-c
+rc=0
+bin/fm-busy-lib.sh:  Enter Gemini API Key
+docs/runtime-backends.md: marker Enter Gemini API Key
+$ sleep 300; echo SLEEP-INTERRUPTED-rc=$?
+^C
+$ sleep 300
+^C
+$

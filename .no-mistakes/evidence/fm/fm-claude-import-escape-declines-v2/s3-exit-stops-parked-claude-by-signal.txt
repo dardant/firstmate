@@ -1,0 +1,16 @@
+## S3: fm-control.sh dlg1 exit on the parked real Claude pane
+claude pids before: [{"pid":2011678,"name":"claude"}]
+$ fm-control.sh dlg1 exit
+stopped dlg1 harness=claude backend=herdr endpoint=fm-lab-dialog-guard-2008314-31985:w1:p2 worktree=<lab>/treehouse/.treehouse/proj-84a29b/1/proj
+rc=0
+store after: {"hasClaudeMdExternalIncludesApproved":null,"hasClaudeMdExternalIncludesWarningShown":null}
+pane foreground after: [{"pid":2011100,"name":"sh"}]
+### pane tail after exit
+  External imports:
+    <lab>/home/AGENTS.md
+  Important: Only use Claude Code with files you trust. Accessing untrusted files may pose security risks
+  https://code.claude.com/docs/en/security
+  ❯ No, disable external imports
+    Yes, allow external imports
+  Enter to confirm · Esc to cancel
+$

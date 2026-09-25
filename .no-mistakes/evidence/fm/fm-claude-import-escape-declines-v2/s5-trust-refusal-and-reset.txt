@@ -1,0 +1,128 @@
+## S5: fm-claude-trust.sh on a project whose entry holds the Escape-recorded decline
+$ fm-claude-trust.sh <worktree> <project>
+error: refusing to pre-register Claude trust: project entry for '<lab>/home/projects/proj' in '<lab>/cfg/.claude.json' already declined external CLAUDE.md imports, and a spawn must not override that consent; Claude Code records the same decline for Escape as for "No", so if nobody chose it, reset it with: /home/dardan/.no-mistakes/worktrees/a2097c65a770/01M3DB31JC01KM5QXM1JVB8ZX8/bin/fm-claude-trust.sh --reset-imports-decline '<lab>/home/projects/proj'
+rc=1
+### store after refusal (worktree entry absent => nothing written)
+{
+  "project": {
+    "hasTrustDialogAccepted": true,
+    "hasClaudeMdExternalIncludesApproved": false,
+    "hasClaudeMdExternalIncludesWarningShown": true,
+    "lastGracefulShutdown": true,
+    "lastVersionBase": "2.1.282",
+    "hasUnseenTeamArtifacts": false,
+    "lastCost": 0,
+    "lastAPIDuration": 0,
+    "lastAPIDurationWithoutRetries": 0,
+    "lastToolDuration": 0,
+    "lastDuration": 17859,
+    "lastStartTime": 1790375821755,
+    "lastLinesAdded": 0,
+    "lastLinesRemoved": 0,
+    "lastTotalInputTokens": 0,
+    "lastTotalOutputTokens": 0,
+    "lastTotalCacheCreationInputTokens": 0,
+    "lastTotalCacheReadInputTokens": 0,
+    "lastTotalWebSearchRequests": 0,
+    "lastFpsAverage": 0.38,
+    "lastFpsLow1Pct": 472.01,
+    "lastModelUsage": {},
+    "lastSessionId": "f1b57d8e-5b54-4de9-9446-e884cf44c7e0",
+    "lastSessionMetrics": {
+      "frame_duration_ms_count": 6,
+      "frame_duration_ms_min": 0.24810799999977462,
+      "frame_duration_ms_max": 2.1186170000000004,
+      "frame_duration_ms_avg": 1.0794643333334715,
+      "frame_duration_ms_p50": 0.9963430000007065,
+      "frame_duration_ms_p95": 1.992746249999918,
+      "frame_duration_ms_p99": 2.093442849999984
+    }
+  },
+  "worktree": null
+}
+
+$ fm-claude-trust.sh --reset-imports-decline <project-subdir>   (adversarial: not a checkout root)
+error: refusing to reset the external-imports decline: '<lab>/home/projects/proj/sub' is not a checkout root (its root is '<lab>/home/projects/proj')
+rc=1
+
+$ fm-claude-trust.sh --reset-imports-decline <project>
+reset: <lab>/home/projects/proj
+rc=0
+{
+  "hasTrustDialogAccepted": true,
+  "lastGracefulShutdown": true,
+  "lastVersionBase": "2.1.282",
+  "hasUnseenTeamArtifacts": false,
+  "lastCost": 0,
+  "lastAPIDuration": 0,
+  "lastAPIDurationWithoutRetries": 0,
+  "lastToolDuration": 0,
+  "lastDuration": 17859,
+  "lastStartTime": 1790375821755,
+  "lastLinesAdded": 0,
+  "lastLinesRemoved": 0,
+  "lastTotalInputTokens": 0,
+  "lastTotalOutputTokens": 0,
+  "lastTotalCacheCreationInputTokens": 0,
+  "lastTotalCacheReadInputTokens": 0,
+  "lastTotalWebSearchRequests": 0,
+  "lastFpsAverage": 0.38,
+  "lastFpsLow1Pct": 472.01,
+  "lastModelUsage": {},
+  "lastSessionId": "f1b57d8e-5b54-4de9-9446-e884cf44c7e0",
+  "lastSessionMetrics": {
+    "frame_duration_ms_count": 6,
+    "frame_duration_ms_min": 0.24810799999977462,
+    "frame_duration_ms_max": 2.1186170000000004,
+    "frame_duration_ms_avg": 1.0794643333334715,
+    "frame_duration_ms_p50": 0.9963430000007065,
+    "frame_duration_ms_p95": 1.992746249999918,
+    "frame_duration_ms_p99": 2.093442849999984
+  }
+}
+
+$ fm-claude-trust.sh --reset-imports-decline <project>   (again, idempotent)
+unchanged: <lab>/home/projects/proj
+rc=0
+
+$ fm-claude-trust.sh <worktree> <project>   (after reset)
+trusted: <lab>/wt1
+trusted (project root): <lab>/home/projects/proj
+rc=0
+{
+  "project": {
+    "hasTrustDialogAccepted": true,
+    "lastGracefulShutdown": true,
+    "lastVersionBase": "2.1.282",
+    "hasUnseenTeamArtifacts": false,
+    "lastCost": 0,
+    "lastAPIDuration": 0,
+    "lastAPIDurationWithoutRetries": 0,
+    "lastToolDuration": 0,
+    "lastDuration": 17859,
+    "lastStartTime": 1790375821755,
+    "lastLinesAdded": 0,
+    "lastLinesRemoved": 0,
+    "lastTotalInputTokens": 0,
+    "lastTotalOutputTokens": 0,
+    "lastTotalCacheCreationInputTokens": 0,
+    "lastTotalCacheReadInputTokens": 0,
+    "lastTotalWebSearchRequests": 0,
+    "lastFpsAverage": 0.38,
+    "lastFpsLow1Pct": 472.01,
+    "lastModelUsage": {},
+    "lastSessionId": "f1b57d8e-5b54-4de9-9446-e884cf44c7e0",
+    "lastSessionMetrics": {
+      "frame_duration_ms_count": 6,
+      "frame_duration_ms_min": 0.24810799999977462,
+      "frame_duration_ms_max": 2.1186170000000004,
+      "frame_duration_ms_avg": 1.0794643333334715,
+      "frame_duration_ms_p50": 0.9963430000007065,
+      "frame_duration_ms_p95": 1.992746249999918,
+      "frame_duration_ms_p99": 2.093442849999984
+    }
+  },
+  "worktree": {
+    "hasTrustDialogAccepted": true
+  }
+}

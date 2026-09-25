@@ -1,0 +1,35 @@
+## S7: same-identity respawn after a real Herdr server restart reuses the recorded leased worktree (Treehouse v2.3.0, Herdr herdr 0.9.0, lab fm-lab-dialog-guard-2008314-31985)
+### step 1: respawn over the stale record into the lab (record's pane is gone)
+spawned dlg1 harness=sh kind=ship mode=no-mistakes yolo=off window=fm-lab-dialog-guard-2008314-31985:w1:p3 worktree=<lab>/treehouse/.treehouse/proj-84a29b/1/proj
+rc=0
+window=fm-lab-dialog-guard-2008314-31985:w1:p3
+worktree=<lab>/treehouse/.treehouse/proj-84a29b/1/proj
+herdr_session=fm-lab-dialog-guard-2008314-31985
+### pool leases
+[{"name":"1","path":"<lab>/treehouse/.treehouse/proj-84a29b/1/proj","leased":true,"lease_holder":"fm-task-dlg1"}]
+### step 2: lab server stopped
+lab server restarted (same session name)
+restored pane w1:p3 foreground (husk: agent did not survive): ["sh"]
+### step 3: fresh fm-spawn.sh dlg1 over the husk record
+spawned dlg1 harness=sh kind=ship mode=no-mistakes yolo=off window=fm-lab-dialog-guard-2008314-31985:w1:p4 worktree=<lab>/treehouse/.treehouse/proj-84a29b/1/proj
+rc=0
+window=fm-lab-dialog-guard-2008314-31985:w1:p4
+worktree=<lab>/treehouse/.treehouse/proj-84a29b/1/proj
+herdr_session=fm-lab-dialog-guard-2008314-31985
+### pool leases after (exactly one lease, same slot, holder fm-task-dlg1)
+[{"name":"1","path":"<lab>/treehouse/.treehouse/proj-84a29b/1/proj","leased":true,"lease_holder":"fm-task-dlg1"}]
+### treehouse slots on disk
+1
+treehouse-state.json
+treehouse-state.lock
+### new pane w1:p4 root cwd
+<lab>/treehouse/.treehouse/proj-84a29b/1/proj
+
+## S7b (adversarial): the recorded worktree's pool lease names another holder
+pane w1:p4 foreground now: ["sh"]
+pool: [{"name":"1","leased":true,"lease_holder":"fm-task-other"}]
+error: task dlg1's record already names worktree '<lab>/treehouse/.treehouse/proj-84a29b/1/proj', which a fresh spawn cannot reuse (Treehouse reports it leased to 'fm-task-other', not 'fm-task-dlg1'); leasing another would orphan it. Use '<repo>/bin/fm-control.sh dlg1 relaunch', which rebinds a replacement onto the recorded worktree
+rc=1
+record unchanged: yes
+slots on disk: 1 treehouse-state.json treehouse-state.lock 
+(pool holder restored for teardown)
