@@ -306,7 +306,9 @@ fm_task_inbox_doorbell_line() {  # <record-path>
 # launch-dialog pre-check, one advisory composer pre-check, then the backend's submit machinery with a minimal retry
 # budget, verdict discarded.
 # Returns 0 rang, 1 skipped because the composer PROVENLY holds pending text
-# (the watcher re-rings later), 2 the backend send failed, 3 skipped because
+# (the watcher re-rings later), 2 the backend send failed or the pane could not
+# be captured for the launch-dialog check (nothing typed; the watcher re-rings
+# and its ladder escalates a persistently uncapturable pane), 3 skipped because
 # the endpoint is positively dead or missing (nothing typed; recovery owns the
 # record), 4 skipped because the pane shows a recognized launch dialog (the
 # watcher re-rings later and escalates; the pane needs a keyless
@@ -317,7 +319,9 @@ fm_task_inbox_doorbell_line() {  # <record-path>
 # so does a pane positively matching a launch dialog signature
 # (bin/fm-busy-lib.sh), because there our Enter would answer the operator's
 # question - on Claude's external-imports dialog it records a decline.
-# `pending-unproven` and `unknown` still ring - the worst outcome is a garbled
+# A pane that cannot be captured cannot rule a launch dialog out, so it is not
+# rung either. On a captured pane with no launch dialog, `pending-unproven` and
+# `unknown` composer verdicts still ring - the worst outcome is a garbled
 # CONSTANT line the worker recovers semantically, while skipping on ambiguous
 # verdicts would starve a harness whose idle screen the classifier cannot
 # positively identify (that classifier is advisory here by design).
@@ -332,8 +336,10 @@ fm_task_inbox_ring() {  # <backend> <target> <record-path> [expected-label]
   # The dialog check runs first: the composer classifier reads a dialog's
   # preselected option row (Claude's "❯ No, disable external imports" under a
   # rule) as pending text, which would mislabel the skip.
-  if tail=$(fm_backend_capture "$backend" "$target" 40 "$label" 2>/dev/null) &&
-    printf '%s' "$tail" | fm_busy_any_launch_prompt_parked; then
+  if ! tail=$(fm_backend_capture "$backend" "$target" 40 "$label" 2>/dev/null); then
+    return 2
+  fi
+  if printf '%s' "$tail" | fm_busy_any_launch_prompt_parked; then
     return 4
   fi
   cstate=$(fm_backend_composer_state "$backend" "$target" "$label" 2>/dev/null) || cstate=unknown

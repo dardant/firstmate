@@ -538,9 +538,13 @@ TARGET_TASK_ID=
 # owner the doorbell and fm-control consult. A pane that cannot be captured
 # cannot rule a dialog out, so it refuses too, exactly as fm-control does.
 fm_send_refuse_launch_dialog() { # <what>
-  local what=$1 id=$T tail recovery
-  [ -z "$TARGET_META" ] || id=$(fm_send_id_from_meta "$TARGET_META")
-  recovery="Stop the agent without a key via '$SCRIPT_DIR/fm-control.sh $id exit' or '$SCRIPT_DIR/fm-control.sh $id relaunch', and leave any dialog's question to the operator"
+  local what=$1 id tail recovery
+  if [ -n "$TARGET_META" ]; then
+    id=$(fm_send_id_from_meta "$TARGET_META")
+    recovery="Stop the agent without a key via '$SCRIPT_DIR/fm-control.sh $id exit' or '$SCRIPT_DIR/fm-control.sh $id relaunch', and leave any dialog's question to the operator"
+  else
+    recovery="$T is not a recorded task, so fm-control cannot stop it; clear any dialog by hand, leaving its question to the operator"
+  fi
   if ! tail=$(fm_backend_capture "$TARGET_BACKEND" "$T" 40 "$EXPECTED_LABEL" 2>/dev/null); then
     echo "error: $T could not be captured, so a harness launch dialog cannot be ruled out, and $what could answer one (Escape or Enter on Claude's external-imports dialog records a standing decline); nothing was sent. Retry once the pane can be read, or: $recovery" >&2
     return 1

@@ -331,7 +331,10 @@ EOF2
     fail "explicit-target text was typed into a parked launch dialog:"$'\n'"$(cat "$log")"
   fi
   assert_contains "$(cat "$err")" "launch dialog" "the explicit-target refusal should name the launch dialog"
-  assert_contains "$(cat "$err")" "relaunch" "the explicit-target refusal should name the relaunch recovery"
+  assert_contains "$(cat "$err")" "not a recorded task" "the explicit-target refusal should say the pane is not a recorded task"
+  if grep -q 'fm-control.sh' "$err"; then
+    fail "the explicit-target refusal named an fm-control recovery that cannot address an unrecorded pane:"$'\n'"$(cat "$err")"
+  fi
 
   : > "$log"
   PATH="$fb:$PATH" FM_HOME="$home" FM_ROOT_OVERRIDE="$home" FM_TMUX_LOG="$log" FM_SEND_SETTLE=0 \

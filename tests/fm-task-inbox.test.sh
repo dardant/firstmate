@@ -93,6 +93,7 @@ case "${1:-}" in
     done
     printf 'fakepane\n'; exit 0 ;;
   capture-pane)
+    [ -z "${FM_FAKE_TMUX_CAPTURE_FAIL:-}" ] || exit 1
     if [ -n "${FM_FAKE_TMUX_CAPTURE:-}" ] && [ -f "$FM_FAKE_TMUX_CAPTURE" ]; then
       cat "$FM_FAKE_TMUX_CAPTURE"
     else
@@ -327,6 +328,28 @@ test_ring_skips_launch_dialog() {
   [ ! -s "$log" ] || fail "a launch dialog was typed into:"$'\n'"$(cat "$log")"
   [ -f "$rec" ] || fail "skipping the ring must leave the durable record in place"
   pass "inbox: the ring never types into a pane parked on a launch dialog"
+}
+
+# A pane that cannot be captured cannot rule a launch dialog out, so the ring
+# must not type into it: it returns the retry code 2, leaving the record for
+# the watcher's re-ring ladder, instead of letting an `unknown` composer
+# verdict ring an Enter that could answer the dialog.
+test_ring_skips_uncapturable_pane() {
+  local dir state rec log rc
+  dir="$TMP_ROOT/ring-nocapture"
+  state="$dir/state"
+  mkdir -p "$state"
+  make_watch_stubs "$dir" >/dev/null
+  rec=$(inbox_lib "$state" fm_task_inbox_write "$state" t1 "please continue")
+  log="$dir/send.log"; : > "$log"
+  rc=0
+  PATH="$dir/fakebin:$PATH" FM_SEND_LOG="$log" FM_FAKE_TMUX_AGENT=claude \
+    FM_FAKE_TMUX_CAPTURE_FAIL=1 \
+    inbox_lib "$state" fm_task_inbox_ring tmux sess:fm-t1 "$rec" fm-t1 || rc=$?
+  [ "$rc" = 2 ] || fail "an uncapturable pane should skip the ring with the retry code 2, got $rc"
+  [ ! -s "$log" ] || fail "an uncapturable pane was typed into:"$'\n'"$(cat "$log")"
+  [ -f "$rec" ] || fail "skipping the ring must leave the durable record in place"
+  pass "inbox: the ring never types into a pane it cannot capture, and asks for a re-ring"
 }
 
 test_idempotent_write_dedups_exact_body() {
@@ -767,6 +790,7 @@ test_doorbell_is_a_shell_noop
 test_doorbell_rejects_terminal_controls
 test_ring_skips_dead_agent
 test_ring_skips_launch_dialog
+test_ring_skips_uncapturable_pane
 test_idempotent_write_dedups_exact_body
 test_idempotent_write_follows_concurrent_ack
 test_handled_mv_dedups_by_sequence
