@@ -46,6 +46,10 @@ HERDR_LAB_SESSION=$("$HERDR_LAB_HELPER" name fm-herdr-restore-cwd) || {
 }
 export HERDR_SESSION="$HERDR_LAB_SESSION" HERDR_LAB_HELPER HERDR_LAB_SESSION
 
+# Keep the Treehouse pool inside the scratch root so teardown removes it with
+# everything else instead of leaving a project pool under ~/.treehouse.
+export TREEHOUSE_ROOT="$TMP_ROOT/treehouse"
+
 FAKEBIN="$TMP_ROOT/fakebin"
 AGENT_LOG="$TMP_ROOT/agent.log"
 PROJECT_DIR="$TMP_ROOT/project"
@@ -65,6 +69,18 @@ cleanup_all() {
   return "$status"
 }
 trap cleanup_all EXIT
+
+# A lab that outlives the test is a failure, not a pass: the EXIT trap alone
+# would discard teardown's status.
+finish_lab() {
+  if ! cleanup_all; then
+    trap - EXIT
+    printf 'not ok - isolated Herdr lab teardown failed or the default fleet session changed\n' >&2
+    exit 1
+  fi
+  trap - EXIT
+  exit 0
+}
 
 # The stand-in agent. Launched by the spawn as `restore-standin`, it reports the
 # same Claude session reference Herdr's integration hook reports, then idles.
@@ -143,7 +159,7 @@ pass "real herdr: a ship's pane opens with its root shell in the leased worktree
 # passed over.
 if ! grep -q '^reported$' "$AGENT_LOG"; then
   echo "# restore phase not exercised: $(herdr --version 2>/dev/null | head -1) rejects pane report-agent-session, so it resumes no agent on restart"
-  exit 0
+  finish_lab
 fi
 
 "$HERDR_LAB_HELPER" stop "$HERDR_LAB_SESSION" >/dev/null || fail "could not stop the lab session"
@@ -168,3 +184,5 @@ case "$RESUME" in
   *) fail "Herdr's resume did not name the reported session: $RESUME" ;;
 esac
 pass "real herdr: a restarted server resumes the ship's agent inside its recorded worktree"
+
+finish_lab

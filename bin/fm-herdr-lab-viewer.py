@@ -79,6 +79,14 @@ def _child(slave, master, session):
 
 
 def _process_start(pid):
+    # Must match fm_herdr_lab_process_start in bin/fm-herdr-lab.sh: /proc stat
+    # field 22 first, since ps lstart drifts with WSL2's boot time.
+    try:
+        with open("/proc/%d/stat" % pid, encoding="utf-8") as handle:
+            fields = handle.read().rsplit(")", 1)[1].split()
+        return "proc-starttime=%s" % fields[19]
+    except (OSError, IndexError):
+        pass
     result = subprocess.run(
         ["ps", "-p", str(pid), "-o", "lstart="],
         check=True,

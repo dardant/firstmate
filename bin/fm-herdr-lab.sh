@@ -199,7 +199,20 @@ fm_herdr_lab_viewer_reason() { # <session>
   printf '%s' "$out" | jq -r '.result.reason // empty' 2>/dev/null
 }
 
+# Must render exactly what bin/fm-herdr-lab-viewer.py records. /proc stat field
+# 22 (starttime, clock ticks since boot) comes first because ps lstart is
+# re-rendered from a boot time that drifts on WSL2, so a live viewer would stop
+# matching its record and teardown would refuse; lstart is the portable fallback.
 fm_herdr_lab_process_start() { # <pid>
+  local stat_line
+  local -a stat_fields
+  if [ -r "/proc/$1/stat" ]; then
+    stat_line=$(cat "/proc/$1/stat" 2>/dev/null) || return 1
+    read -r -a stat_fields <<< "${stat_line##*)}"
+    [ "${#stat_fields[@]}" -ge 20 ] || return 1
+    printf 'proc-starttime=%s' "${stat_fields[19]}"
+    return 0
+  fi
   LC_ALL=C ps -p "$1" -o lstart= 2>/dev/null | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'
 }
 
