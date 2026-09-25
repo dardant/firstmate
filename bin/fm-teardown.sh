@@ -276,6 +276,15 @@
 #     root still exists, so the account's healthy LaunchAgent worker and every
 #     live remote secondmate worker are out of scope. Best effort: a sweep
 #     failure never blocks this teardown.
+#   Fix 4 - tear down leftover Herdr labs. A lab provisioned through
+#     bin/fm-herdr-lab.sh keeps its server running detached from the worker,
+#     so a lab the task never tore down outlives it (observed 2026-09-24: a
+#     test's lab still running after its task ended). This runs first, before
+#     Fix 1, because Fix 2 would otherwise kill only a lab server started from
+#     the worktree and leave its session registered. `fm-herdr-lab.sh
+#     reap-task` owns which labs count as this task's and tears each down
+#     through the helper's guarded path. Best effort: a lab that cannot be torn
+#     down is reported but never blocks this teardown.
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -3446,6 +3455,12 @@ else
   else
     BACKLOG_SKIP_REASON=$TEARDOWN_BACKLOG_SKIP_REASON
   fi
+fi
+
+# Fix 4 (see script header): tear down Herdr labs this task left behind.
+if [ "$KIND" != secondmate ] && [ -n "$WT" ]; then
+  "$SCRIPT_DIR/fm-herdr-lab.sh" reap-task "$ID" "$WT" >&2 \
+    || echo "warning: a Herdr lab session left behind by $ID could not be torn down; see the fm-herdr-lab lines above" >&2
 fi
 
 # Every landed/discard-work refusal above has now passed (or --force skipped

@@ -78,29 +78,34 @@ def _child(slave, master, session):
     os._exit(127)
 
 
-def _process_start(pid):
+# bin/fm-herdr-lab.sh owns the process identity format the stop guard
+# compares, so the record takes its values from that same function.
+IDENTITY_HELPER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fm-herdr-lab.sh")
+
+
+def _process_identity(pid):
     result = subprocess.run(
-        ["ps", "-p", str(pid), "-o", "lstart="],
+        ["bash", "-c", '. "$1" && fm_herdr_lab_process_identity "$2"',
+         "fm-herdr-lab-viewer", IDENTITY_HELPER, str(pid)],
         check=True,
         capture_output=True,
         text=True,
-        env={**os.environ, "LC_ALL": "C"},
     )
     value = result.stdout.strip()
-    if not value:
-        raise RuntimeError("process start time unavailable")
+    if not value or "\n" in value:
+        raise RuntimeError("process identity unavailable")
     return value
 
 
 def _write_pidfile(path, launcher_pid, viewer_pid):
-    launcher_start = _process_start(launcher_pid)
-    viewer_start = _process_start(viewer_pid)
+    launcher_identity = _process_identity(launcher_pid)
+    viewer_identity = _process_identity(viewer_pid)
     temporary = "%s.%d.tmp" % (path, launcher_pid)
     with open(temporary, "w", encoding="utf-8") as handle:
         handle.write("launcher_pid=%d\n" % launcher_pid)
-        handle.write("launcher_start=%s\n" % launcher_start)
+        handle.write("launcher_identity=%s\n" % launcher_identity)
         handle.write("viewer_pid=%d\n" % viewer_pid)
-        handle.write("viewer_start=%s\n" % viewer_start)
+        handle.write("viewer_identity=%s\n" % viewer_identity)
     os.rename(temporary, path)
 
 

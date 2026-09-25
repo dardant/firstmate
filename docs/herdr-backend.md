@@ -341,6 +341,7 @@ An environment-only session selection can silently reach a different running ser
 It provisions only non-default names beginning with `fm-lab-`, appends an explicit `--session` to allowed task commands, refuses caller-supplied session flags and server/session lifecycle subcommands, and performs destructive stop/delete only through its guarded lifecycle actions.
 Immediately before every destructive call it re-queries the named session and refuses empty, missing, literal `default`, or `default:true` identities.
 Its before/after tripwire requires the live default-session snapshot to remain byte-identical.
+A lab server outlives the shell that provisioned it, so a lab provisioned inside a Firstmate task records that task as its owner, and task cleanup tears down any lab the task left behind through the same guarded path.
 
 The helper's header and `--help` own exact commands.
 Tests use thin compatibility wrappers in `tests/herdr-test-safety.sh` and never duplicate the destructive policy.
