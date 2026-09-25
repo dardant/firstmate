@@ -307,22 +307,38 @@ test_herdr_ship_fresh_spawn_reuses_its_leased_record() {
 }
 
 # An aborted respawn never returns the reused worktree: it holds the task's
-# work. When the rollback also removed the record, the warning names it.
+# work. The rollback restores the prior record, so the lease stays named and
+# the next respawn reuses the same worktree rather than leasing another.
 test_herdr_ship_aborted_respawn_keeps_the_reused_lease() {
-  local dir out rc=0 slot
+  local dir out rc=0 slot before
   dir=$(new_case respawn-abort lease10)
   slot=$(cat "$dir/fake/slot")
   write_leased_record "$dir" lease10 "$slot" fm-task-lease10
+  before=$(cat "$dir/home/state/lease10.meta")
   out=$(run_spawn "$dir" lease10 --harness rovo) || rc=$?
   [ "$rc" -ne 0 ] || fail "a rovo respawn that never shows ready must refuse"$'\n'"$out"
+  assert_contains "$out" "rovo did not show a verified ready signal" \
+    "the respawn should abort at rovo's post-publish readiness gate"$'\n'"$out"
   assert_not_contains "$(cat "$dir/fake/treehouse-log")" "get --lease" "the respawn must lease no second worktree"
   assert_not_contains "$(cat "$dir/fake/treehouse-log")" "return --force" \
     "an aborted respawn must not return the task's reused worktree"$'\n'"$out"
   [ -d "$slot" ] || fail "the aborted respawn removed the reused worktree"
-  [ ! -e "$dir/home/state/lease10.meta" ] || fail "the aborted respawn's record should be rolled back"
-  assert_contains "$out" "still leased to fm-task-lease10" "the warning should name the kept lease"
-  assert_contains "$out" "treehouse return --force '$slot'" "the warning should name the manual return"
-  pass "fm-spawn herdr: an aborted respawn keeps the reused worktree's lease"
+  [ "$(cat "$dir/home/state/lease10.meta" 2>/dev/null)" = "$before" ] \
+    || fail "the aborted respawn should restore the prior record"$'\n'"$out"
+  assert_not_contains "$out" "no task record names it" "a restored record must not be reported as orphaned"
+  [ -z "$(find "$dir/home/state" -name '.lease10.meta.*' 2>/dev/null)" ] \
+    || fail "the aborted respawn left a record snapshot behind: $(ls -a "$dir/home/state")"
+
+  rm -f "$dir/fake/pane-closed" "$dir/fake/launched"
+  : > "$dir/fake/treehouse-log"
+  rc=0
+  out=$(run_spawn "$dir" lease10) || rc=$?
+  expect_code 0 "$rc" "a respawn over the restored record should reuse its worktree"$'\n'"$out"
+  assert_not_contains "$(cat "$dir/fake/treehouse-log")" "get --lease" "the next respawn must lease no second worktree"
+  assert_not_contains "$(cat "$dir/fake/treehouse-log")" "return" "the next respawn must not return the reused worktree"
+  [ "$(sed -n 's/^worktree=//p' "$dir/home/state/lease10.meta" | tail -1)" = "$slot" ] \
+    || fail "the next respawn's record should name the same reused worktree"
+  pass "fm-spawn herdr: an aborted respawn restores the prior record, and the next respawn reuses the same worktree"
 }
 
 # A record whose worktree is gone, or is leased to another holder, cannot be

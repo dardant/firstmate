@@ -1109,6 +1109,7 @@ SPAWN_TREEHOUSE_PROJECT_LOCK_HELD=0
 SPAWN_SLOT_CLAIMED=0
 SPAWN_WT_LEASED=0
 SPAWN_WT_REUSED=0
+SPAWN_WT_PRIOR_META=
 SPAWN_WT_LEASE_HOLDER=
 SPAWN_LAUNCH_DELIVERY_STARTED=0
 RELAUNCH_REPLACEMENT_PENDING=0
@@ -1119,14 +1120,22 @@ RELAUNCH_REPLACEMENT_WT=
 CONFIG_INHERIT_LOCK=
 CONFIG_INHERIT_LOCK_HELD=0
 
+# A respawn that reused its recorded worktree restores the prior record it
+# snapshotted, so the lease stays named and a later respawn reuses it again.
 spawn_fresh_commit_rollback() {
-  if fm_backlog_atomic_transition rollback "$STATE/$ID.meta" \
+  if ! fm_backlog_atomic_transition rollback "$STATE/$ID.meta" \
     "$FM_ROOT/bin/fm-busy-event.sh" "$STATE" "$ID" "${BUSY_GEN:-}"; then
-    SPAWN_FRESH_COMMIT_PENDING=0
-    return 0
+    echo "error: $FM_BACKLOG_TRANSITION_ERROR" >&2
+    return 1
   fi
-  echo "error: $FM_BACKLOG_TRANSITION_ERROR" >&2
-  return 1
+  SPAWN_FRESH_COMMIT_PENDING=0
+  if [ -n "$SPAWN_WT_PRIOR_META" ] &&
+    ! fm_backlog_atomic_transition publish "$SPAWN_WT_PRIOR_META" "$STATE/$ID.meta" "task record" "$STATE"; then
+    echo "error: could not restore task $ID's prior record from $SPAWN_WT_PRIOR_META: $FM_BACKLOG_TRANSITION_ERROR" >&2
+    return 1
+  fi
+  SPAWN_WT_PRIOR_META=
+  return 0
 }
 
 # spawn_launched_endpoint_agent_free: whether the launched endpoint provably
@@ -1325,7 +1334,8 @@ spawn_abort_cleanup() {
     spawn_return_leased_worktree || true
   fi
   # A reused worktree holds the task's own work, so an abort never returns it;
-  # when the rollback also removed the record that named it, say so.
+  # the rollback restores the prior record naming it, and this says so when
+  # that restore failed.
   if [ "$SPAWN_WT_REUSED" = 1 ] && [ -n "${WT:-}" ] && ! spawn_record_names_worktree "$WT"; then
     echo "warning: task $ID's worktree $WT is still leased to $SPAWN_WT_LEASE_HOLDER, but no task record names it after this aborted respawn; once its work is saved, return it with: (cd '$PROJ_ABS' && treehouse return --force '$WT')" >&2
   fi
@@ -1359,6 +1369,7 @@ spawn_abort_cleanup() {
     fm_lock_release "$SPAWN_CONTROL_LOCK" || true
   fi
   [ -z "$SPAWN_META_TMP" ] || rm -f "$SPAWN_META_TMP" 2>/dev/null || true
+  [ -z "$SPAWN_WT_PRIOR_META" ] || rm -f "$SPAWN_WT_PRIOR_META" 2>/dev/null || true
   if [ "$CONFIG_INHERIT_LOCK_HELD" = 1 ]; then
     CONFIG_INHERIT_LOCK_HELD=0
     fm_lock_release "$CONFIG_INHERIT_LOCK" || true
@@ -3043,6 +3054,13 @@ spawn_treehouse_lease_worktree() {
         return 1
       fi
       herdr_projection_existing_meta_allows_flat "$meta" || return 1
+      SPAWN_WT_PRIOR_META="$STATE/.$ID.meta.respawn-prior.${BASHPID:-$$}"
+      if ! cp -p "$meta" "$SPAWN_WT_PRIOR_META"; then
+        rm -f "$SPAWN_WT_PRIOR_META"
+        SPAWN_WT_PRIOR_META=
+        echo "error: could not snapshot task $ID's record before reusing its worktree '$recorded'" >&2
+        return 1
+      fi
       WT=$recorded
       SPAWN_WT_REUSED=1
       return 0
