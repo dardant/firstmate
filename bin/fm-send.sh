@@ -771,6 +771,17 @@ if [ "${1:-}" = "--key" ]; then
   esac
   key=$2
   semantic_key=$(fm_send_normalize_key "$key")
+  # Any key answers a harness launch dialog (Escape on Claude's external-imports
+  # dialog records a standing decline), so a pane visibly parked on one refuses
+  # every key, the same signature owner the doorbell and fm-control consult.
+  if [ "$TARGET_BACKEND" != remote ] &&
+    dialog_tail=$(fm_backend_capture "$TARGET_BACKEND" "$T" 40 "$EXPECTED_LABEL" 2>/dev/null) &&
+    printf '%s' "$dialog_tail" | fm_busy_any_launch_prompt_parked; then
+    dialog_id=$T
+    [ -z "$TARGET_META" ] || dialog_id=$(fm_send_id_from_meta "$TARGET_META")
+    echo "error: $T shows a harness launch dialog, and key '$key' would answer it (Escape on Claude's external-imports dialog records a standing decline); nothing was sent. Stop the parked agent without a key via '$SCRIPT_DIR/fm-control.sh $dialog_id exit' or '$SCRIPT_DIR/fm-control.sh $dialog_id relaunch', and leave the dialog's question to the operator" >&2
+    exit 1
+  fi
   if [ "$TARGET_BACKEND" = remote ]; then
     FM_SEND_REMOTE_BUDGET=${FM_SEND_REMOTE_BUDGET:-30}
     case "$FM_SEND_REMOTE_BUDGET" in

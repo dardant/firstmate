@@ -57,6 +57,10 @@ case "${1:-}" in
     printf '%%1\n'
     exit 0 ;;
   capture-pane)
+    if [ -n "${FM_FAKE_TMUX_CAPTURE:-}" ]; then
+      cat "$FM_FAKE_TMUX_CAPTURE"
+      exit 0
+    fi
     printf '╭────╮\n│    │\n╰────╯\n'
     exit 0 ;;
   list-windows)
@@ -231,8 +235,43 @@ test_key_send_exit_status_follows_delivery() {
   pass "fm-send --key: exit status follows delivery, and an undelivered key never reports success"
 }
 
+# Any key answers a harness launch dialog: Escape on Claude Code 2.1.280's
+# external-imports dialog records a standing decline in ~/.claude.json that
+# blocks every later spawn for the project. A --key send to a pane parked on
+# such a dialog must refuse, deliver nothing, and name the keyless recovery.
+test_key_send_refuses_launch_dialog() {
+  local dir fb home err log rc capture key
+  dir="$TMP_ROOT/key-dialog"; mkdir -p "$dir"
+  fb=$(make_stubs "$dir"); home=$(setup_home keydialog); err="$dir/send.err"; log="$dir/tmux.log"; : > "$log"
+  fm_write_meta "$home/state/lane-dlg.meta" "window=sess:fm-lane-dlg" "kind=ship" "harness=claude"
+  capture="$dir/imports-dialog.capture"
+  cat > "$capture" <<'EOF'
+  Allow external CLAUDE.md file imports?
+  This project's CLAUDE.md imports files outside the current working directory. Never allow this for third-party repositories.
+  ❯ No, disable external imports
+    Yes, allow external imports
+  Enter to confirm · Esc to cancel
+EOF
+
+  for key in Escape Enter; do
+    : > "$log"
+    PATH="$fb:$PATH" FM_HOME="$home" FM_ROOT_OVERRIDE="$home" FM_TMUX_LOG="$log" FM_SEND_SETTLE=0 \
+      FM_FAKE_TMUX_CAPTURE="$capture" \
+      "$SEND" lane-dlg --key "$key" >/dev/null 2>"$err"; rc=$?
+    [ "$rc" -ne 0 ] || fail "a --key $key into a parked launch dialog reported success"
+    if grep -q 'send-keys' "$log"; then
+      fail "a --key $key was delivered to a parked launch dialog:"$'\n'"$(cat "$log")"
+    fi
+    assert_contains "$(cat "$err")" "launch dialog" "the refusal should name the launch dialog"
+    assert_contains "$(cat "$err")" "fm-control.sh lane-dlg exit" "the refusal should name the keyless exit recovery"
+    assert_contains "$(cat "$err")" "relaunch" "the refusal should name the relaunch recovery"
+  done
+  pass "fm-send --key: a pane parked on a launch dialog refuses every key and names exit/relaunch"
+}
+
 test_exact_lane_id_send_still_works
 test_key_send_exit_status_follows_delivery
+test_key_send_refuses_launch_dialog
 test_unset_fm_home_fails
 test_unresolvable_target_does_not_tmux_fallback
 test_prefixless_herdr_pane_id_fails
