@@ -50,6 +50,7 @@ The clear is refused before anything is sent when the recorded backend cannot de
 
 No key ever reaches a pane that shows one of the harness's recognized launch dialogs, whatever the busy record says, because a key there answers a question that belongs to the operator: on Claude Code 2.1.280, Escape on the "Allow external CLAUDE.md file imports?" dialog records the same standing decline as choosing "No".
 `interrupt` refuses on such a pane, and so does any verb whose pane cannot be captured, since the dialog cannot then be ruled out.
+`bin/fm-send.sh`'s `--key` path refuses every key on such a pane, naming `exit` and `relaunch` as the recovery.
 The steering inbox's doorbell (`bin/fm-task-inbox-lib.sh`) skips such a pane the same way it skips proven pending composer text, so an unacknowledged steer escalates instead of its Enter answering the dialog.
 `exit`, and therefore `relaunch`, stop a parked agent by sending SIGTERM to the harness processes the backend's process-level view attributes to the endpoint, then require the same gone postcondition; a pane with no attributable harness process refuses.
 A recorded decline makes every later Claude ship or scout spawn for that project refuse, and the refusal names the one reset step, `bin/fm-claude-trust.sh --reset-imports-decline '<project>'`, for the operator to run only when nobody meant to decline.

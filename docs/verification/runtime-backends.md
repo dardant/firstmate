@@ -536,7 +536,7 @@ Each arm then delivered one input and read the project entry back from the store
 Escape therefore records exactly the decline "No" records, a later launch in a declined project reaches the composer with no dialog, and only a signal leaves the question unanswered.
 Two more arms located what raises the dialog: a user-scope `CLAUDE.md` in the config directory importing a sibling file did not, and a project whose parent directory holds a `CLAUDE.md` with `@AGENTS.md` did, listing that parent `AGENTS.md` as the external import - the shape of a primary clone under a firstmate home's `projects/`.
 The same fixture then drove the shipped `bin/fm-control.sh` against a real parked pane: before this change `interrupt` delivered Escape and the store read `false` / `true`, and after it `interrupt` refused, `exit` stopped the agent by signal, and the entry stayed absent / absent.
-`tests/fm-control.test.sh` pins the no-key contract and the signal stop against a stand-in process, and `tests/fm-claude-trust.test.sh` pins the refusal on a recorded decline, which names `--reset-imports-decline`, and that reset.
+`tests/fm-control.test.sh` pins the no-key contract and the signal stop against a stand-in process, `tests/fm-send-strict.test.sh` pins the same refusal for `bin/fm-send.sh --key`, and `tests/fm-claude-trust.test.sh` pins the refusal on a recorded decline, which names `--reset-imports-decline`, and that reset.
 
 ## Launch-prompt backstop signatures
 
@@ -1691,6 +1691,7 @@ ok - real herdr: a restarted server resumes the ship's agent inside its recorded
 
 Against the spawn from before this change the same guard failed at its first assertion, naming the project as the pane's root directory.
 A Herdr release that rejects `pane report-agent-session` runs only that first assertion and prints that the restore phase was not exercised.
+On the 0.7.4 CI pin the guard passes too, but only because it attaches the lab's foreground viewer (`bin/fm-herdr-lab.sh viewer start`) after the restart, as the captain's terminal would be attached: 0.7.4 keeps the session reference and the pane's worktree directory across the restart yet starts restored panes, and so runs the resume, only once a client attaches.
 `tests/fm-spawn-herdr-lease.test.sh` pins the lease-first ordering and the abort-path lease return without Herdr or Treehouse installed: an abort returns a clean leased worktree that no surviving record names, before or after the record is published, releasing its slot claim with it, and keeps one that holds work or whose launched agent is not proven gone; a fresh spawn over a record that already names a worktree refuses before leasing and leaves that record unchanged.
 The projection suite ran again on 2026-09-25 against Herdr 0.9.0, where its restart sections now drive that refusal through the real spawn after a lab `stop` and `provision`, in place of the same-identity reclaim recorded on 2026-07-24 above, which a ship or scout record naming a leased worktree no longer reaches:
 
