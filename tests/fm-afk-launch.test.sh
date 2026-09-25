@@ -65,6 +65,8 @@ enter_posture() {  # <home>
   FM_HOME="$1" FM_STATE_OVERRIDE="$1/state" "$CONTRACT" enter >/dev/null 2>&1
 }
 
+# The two e2e launches below run under a real `codex` ancestor with the
+# suite's FM_TEST_HARNESS seam switched off, so they prove production detection.
 assert_daemon_received_codex() {  # <label> <home>
   local got="" _
   for _ in $(seq 1 100); do
@@ -1305,7 +1307,7 @@ e2e_herdr() {
 
   FM_HOME="$home_tmp" FM_STATE_OVERRIDE="$home_tmp/state" \
     FM_SUPERVISOR_TARGET="$target" FM_SUPERVISOR_BACKEND=herdr FM_AFK_LAUNCH_ENTRY="$RECORDER" \
-    "$CODEX_BIN/codex" "$LAUNCH" start >/dev/null 2>&1
+    FM_TEST_SEAM='' "$CODEX_BIN/codex" "$LAUNCH" start >/dev/null 2>&1
 
   during=$(fm_backend_herdr_cli "$SESSION" pane list --workspace "$cap_ws" 2>/dev/null | jq --arg t "$cap_tab" '[.result.panes[]?|select(.tab_id==$t)]|length')
   ws_during=$(fm_backend_herdr_cli "$SESSION" workspace list 2>/dev/null | jq '[.result.workspaces[]?]|length')
@@ -1347,7 +1349,7 @@ e2e_tmux() {
 
   FM_HOME="$home_tmp" FM_STATE_OVERRIDE="$home_tmp/state" \
     FM_SUPERVISOR_TARGET="$cap_pane" FM_SUPERVISOR_BACKEND=tmux FM_AFK_LAUNCH_ENTRY="$RECORDER" \
-    "$CODEX_BIN/codex" "$LAUNCH" start >/dev/null 2>&1
+    FM_TEST_SEAM='' "$CODEX_BIN/codex" "$LAUNCH" start >/dev/null 2>&1
 
   during=$(tmux list-panes -t "$cap_session" | wc -l | tr -d ' ')
   rec=$(cut -f2 "$home_tmp/state/.afk-daemon-terminal" 2>/dev/null || true)
