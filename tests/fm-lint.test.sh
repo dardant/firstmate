@@ -3,7 +3,7 @@
 #
 # bin/fm-lint.sh is the single owner invoked by CI
 # (.github/workflows/ci.yml) and by the pre-push gate (.no-mistakes.yaml
-# commands.lint). CI runs its two full-rigor canonical partitions; the local
+# commands.lint). CI runs its full-rigor canonical partitions; the local
 # gate uses its context-selected default. Their selection differs deliberately,
 # while this owner keeps analysis flags, configuration, and tool versions from
 # drifting.
@@ -179,34 +179,49 @@ test_list_files_reports_the_shell_inventory() {
 }
 
 test_canonical_partitions_preserve_full_lint() {
-  local tmp fakebin all part selected log flags mode rc option
+  local tmp fakebin all count part selected log flags mode overlap rc option
   tmp=$(fm_test_tmproot fm-lint-partitions)
   fakebin="$tmp/bin"
   mkdir -p "$fakebin"
   all=$(CI=true "$LINT" --list-files | LC_ALL=C sort)
-  : > "$tmp/union"
-  for part in 1of2 2of2; do
-    selected=$(CI=false GITHUB_ACTIONS=false "$LINT" --partition "$part" --list-files) \
-      || fail "partition $part must select full canonical roots even on a local branch"
-    [ -n "$selected" ] || fail "empty lint partition $part"
-    printf '%s\n' "$selected" >> "$tmp/union"
-    [ "$selected" = "$("$LINT" --partition "$part" --list-files)" ] \
-      || fail "partition $part is nondeterministic"
-    log="$tmp/$part.roots"
-    flags="$tmp/$part.flags"
-    mode="$tmp/$part.mode"
-    fm_lint_stub_shellcheck "$fakebin" "$log"
-    PATH="$fakebin:$PATH" FM_TEST_FLAG_LOG="$flags" FM_TEST_MODE_LOG="$mode" \
-      "$LINT" --partition "$part" > "$tmp/$part.out" 2>&1 \
-      || fail "canonical partition $part failed: $(cat "$tmp/$part.out")"
-    [ "$(LC_ALL=C sort "$log")" = "$(printf '%s\n' "$selected" | LC_ALL=C sort)" ] \
-      || fail "partition $part executed a different root set than it listed"
-    [ "$(LC_ALL=C sort -u "$flags")" = "$(printf 'exclude=none\nexternal-sources=yes')" ] \
-      || fail "partition $part weakened source-aware analysis"
-    [ "$(LC_ALL=C sort -u "$mode")" = on ] || fail "partition $part disabled full analysis"
+  for count in 2 4; do
+    : > "$tmp/union"
+    for part in $(seq 1 "$count"); do
+      part="${part}of$count"
+      selected=$(CI=false GITHUB_ACTIONS=false "$LINT" --partition "$part" --list-files) \
+        || fail "partition $part must select full canonical roots even on a local branch"
+      [ -n "$selected" ] || fail "empty lint partition $part"
+      printf '%s\n' "$selected" >> "$tmp/union"
+      [ "$selected" = "$("$LINT" --partition "$part" --list-files)" ] \
+        || fail "partition $part is nondeterministic"
+      log="$tmp/$part.roots"
+      flags="$tmp/$part.flags"
+      mode="$tmp/$part.mode"
+      overlap="$tmp/$part.overlap"
+      mkdir -p "$overlap"
+      fm_lint_stub_shellcheck "$fakebin" "$log"
+      PATH="$fakebin:$PATH" FM_TEST_FLAG_LOG="$flags" FM_TEST_MODE_LOG="$mode" FM_TEST_OVERLAP_DIR="$overlap" \
+        "$LINT" --partition "$part" > "$tmp/$part.out" 2>&1 \
+        || fail "canonical partition $part failed: $(cat "$tmp/$part.out")"
+      [ "$(LC_ALL=C sort "$log")" = "$(printf '%s\n' "$selected" | LC_ALL=C sort)" ] \
+        || fail "partition $part executed a different root set than it listed"
+      [ "$(LC_ALL=C sort -u "$flags")" = "$(printf 'exclude=none\nexternal-sources=yes')" ] \
+        || fail "partition $part weakened source-aware analysis"
+      [ "$(LC_ALL=C sort -u "$mode")" = on ] || fail "partition $part disabled full analysis"
+      [ ! -e "$overlap/overlap" ] || fail "partition $part ran two ShellCheck processes at once by default"
+    done
+    [ "$(LC_ALL=C sort "$tmp/union")" = "$all" ] || fail "$count lint partitions lose or duplicate canonical roots"
   done
-  [ "$(LC_ALL=C sort "$tmp/union")" = "$all" ] || fail "lint partitions lose or duplicate canonical roots"
-  for option in 0of2 3of2 1of3; do
+  # Two concurrent workers remain an explicit opt-in, so the stub's overlap probe
+  # is live rather than vacuously clean.
+  overlap="$tmp/jobs2.overlap"
+  mkdir -p "$overlap"
+  fm_lint_stub_shellcheck "$fakebin" "$tmp/jobs2.roots"
+  PATH="$fakebin:$PATH" FM_TEST_OVERLAP_DIR="$overlap" FM_TEST_OVERLAP_POLLS=100 \
+    "$LINT" --partition 1of2 --jobs 2 > "$tmp/jobs2.out" 2>&1 \
+    || fail "partition with --jobs 2 failed: $(cat "$tmp/jobs2.out")"
+  [ -e "$overlap/overlap" ] || fail "--jobs 2 did not run two partition workers concurrently"
+  for option in 0of2 3of2 1of10 2 1of; do
     rc=0
     "$LINT" --partition "$option" --list-files > "$tmp/refused" 2>&1 || rc=$?
     [ "$rc" = 2 ] || fail "invalid partition $option was not refused"
@@ -217,7 +232,7 @@ test_canonical_partitions_preserve_full_lint() {
   rc=0
   "$LINT" --partition 1of2 bin/fm-lint.sh > "$tmp/refused" 2>&1 || rc=$?
   [ "$rc" = 2 ] || fail "partition accepted an explicit subset"
-  pass "two canonical lint partitions preserve complete source-aware coverage and reject weakened modes"
+  pass "canonical lint partitions preserve complete source-aware coverage, run one ShellCheck at a time by default, and reject weakened modes"
 }
 
 # fm_lint_stub_git <fakebin-dir>: install a git stub for the changed-file mode
@@ -288,6 +303,9 @@ fm_lint_write_diff_file() {
 # FM_TEST_MODE_LOG is set, it records the effective analysis mode, treating
 # ShellCheck's default as full analysis. When FM_TEST_FLAG_LOG is set, it
 # records whether --external-sources was passed and the --exclude value.
+# When FM_TEST_OVERLAP_DIR is set, it marks overlap when another stub invocation
+# already holds a directory lock; the holder keeps it until overlap appears or
+# FM_TEST_OVERLAP_POLLS (default 3) tenth-second polls elapse.
 fm_lint_stub_shellcheck() {
   local fakebin=$1 log=$2
   : > "$log"
@@ -317,6 +335,18 @@ if [ -n "\${FM_TEST_MODE_LOG:-}" ]; then
 fi
 if [ -n "\${FM_TEST_FLAG_LOG:-}" ]; then
   printf 'external-sources=%s\nexclude=%s\n' "\$follow" "\$exclude" >> "\$FM_TEST_FLAG_LOG"
+fi
+if [ -n "\${FM_TEST_OVERLAP_DIR:-}" ]; then
+  if mkdir "\$FM_TEST_OVERLAP_DIR/active" 2>/dev/null; then
+    polls=\${FM_TEST_OVERLAP_POLLS:-3}
+    while [ "\$polls" -gt 0 ] && [ ! -e "\$FM_TEST_OVERLAP_DIR/overlap" ]; do
+      sleep 0.1
+      polls=\$((polls - 1))
+    done
+    rmdir "\$FM_TEST_OVERLAP_DIR/active"
+  else
+    : > "\$FM_TEST_OVERLAP_DIR/overlap"
+  fi
 fi
 [ "\$#" -eq 0 ] || shift
 printf '%s\n' "\$@" >> "$log"

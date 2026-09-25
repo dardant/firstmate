@@ -106,13 +106,14 @@ Portable shards, each portable serial shard, and the Herdr lane upload runner-ge
 
 ## Lint partitions and end-to-end latency
 
-`bin/fm-lint.sh` owns two canonical CI partitions, each running the same full source-aware ShellCheck analysis with two bounded workers, pinned versions, workflow validation, and backend-purity checks.
+`bin/fm-lint.sh` owns the canonical CI partitions, each running the same full source-aware ShellCheck analysis with one ShellCheck process (one shard) at a time, pinned versions, workflow validation, and backend-purity checks.
+A partition's peak memory is therefore the costliest shard's process rather than the sum of concurrent workers, which keeps it inside a 16 GB hosted runner; `bin/fm-lint.sh --help` owns why.
 Its `--list-files` interface exposes partition membership; `tests/fm-lint.test.sh` verifies complete/disjoint executed roots and unchanged analysis flags.
-The workflow uploads each partition's quiet telemetry to distinguish analysis cost, memory use, and host contention.
+The workflow uploads each partition's quiet telemetry to distinguish analysis cost, memory use (`max_worker_rss_kib`), and host contention.
 No fast mode, path skips, reduced checks, or paid runner provisioning is part of this layout.
 
 The performance objective is a complete green run under fifteen minutes including start delay: roughly twelve minutes of longest-path execution, at most two minutes of runner delay, and less than one minute of other overhead.
-The candidate uses fourteen long-lived Linux jobs (nine serial, two parallel, Herdr, two lint), plus short checks and macOS; insufficient shared account capacity can erase the packing gain.
+The candidate uses sixteen long-lived Linux jobs (nine serial, two parallel, Herdr, four lint), plus short checks and macOS; insufficient shared account capacity can erase the packing gain.
 Compare complete before/after runs, preserve cancelled and partial-run evidence, and measure a representative normal-run sample before claiming a P95 improvement.
 The workflow retains per-PR supersession without cancelling main pushes or changing the compliance workflow's event semantics.
 
