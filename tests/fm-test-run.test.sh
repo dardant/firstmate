@@ -1247,14 +1247,24 @@ test_jobs_requires_proven_isolated() {
 # proof is admitted and actually scheduled, so the admission rule is two-sided
 # rather than a blanket refusal that happens to pass its negative cases.
 test_jobs_admits_a_concurrent_safe_family() {
-  local tmp rc external
+  local tmp repo rc external script
   tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-jobs-admit.XXXXXX")
+  repo="$tmp/repo"
+  mkdir -p "$repo/bin" "$repo/tests"
+  cp "$RUNNER" "$repo/bin/fm-test-run.sh"
+  cp "$ROOT/tests/git-config-helpers.sh" "$repo/tests/"
+  chmod +x "$repo/bin/fm-test-run.sh"
   # --list exits before the admission guard, so this has to be a real run for
-  # the assertion to mean anything. Two cheap watcher-wake-lock scripts exercise
-  # admission and the concurrent scheduler for real.
+  # the assertion to mean anything. Stub members of the watcher-wake-lock family
+  # exercise admission and the concurrent scheduler for real without making this
+  # contract depend on whether the real suites pass on the current host.
+  for script in fm-supervision-events.test.sh fm-session-lock-ancestry.test.sh; do
+    printf '#!/usr/bin/env bash\necho "ok - %s fixture"\n' "$script" >"$repo/tests/$script"
+    chmod +x "$repo/tests/$script"
+  done
   set +e
-  "$RUNNER" --jobs 2 \
-    tests/fm-supervision-events.test.sh tests/fm-session-lock-ancestry.test.sh \
+  (cd "$repo" && bin/fm-test-run.sh --jobs 2 \
+    tests/fm-supervision-events.test.sh tests/fm-session-lock-ancestry.test.sh) \
     >"$tmp/out" 2>"$tmp/err"
   rc=$?
   set -e
@@ -1263,7 +1273,7 @@ test_jobs_admits_a_concurrent_safe_family() {
     || fail "the admitted concurrent run did not report both scripts green: $(cat "$tmp/out")"
 
   set +e
-  "$RUNNER" --jobs 5 tests/fm-session-lock-ancestry.test.sh \
+  (cd "$repo" && bin/fm-test-run.sh --jobs 5 tests/fm-session-lock-ancestry.test.sh) \
     >"$tmp/over-cap.out" 2>"$tmp/over-cap.err"
   rc=$?
   set -e
@@ -1273,7 +1283,7 @@ test_jobs_admits_a_concurrent_safe_family() {
   printf '#!/usr/bin/env bash\necho "ok - colliding external fixture"\n' >"$external"
   chmod +x "$external"
   set +e
-  "$RUNNER" --jobs 2 "$external" >"$tmp/external.out" 2>"$tmp/external.err"
+  (cd "$repo" && bin/fm-test-run.sh --jobs 2 "$external") >"$tmp/external.out" 2>"$tmp/external.err"
   rc=$?
   set -e
   [ "$rc" -eq 2 ] \
@@ -1664,22 +1674,37 @@ test_herdr_ci_family_run_has_a_step_timeout() {
   # The required Herdr lane's hang tripwire is the family-run *step* bound, not
   # the 75-minute job cap. Parse the workflow as YAML so nested `with.name`
   # artifact keys cannot masquerade as the step contract.
-  command -v ruby >/dev/null 2>&1 \
-    || fail "ruby is required to parse .github/workflows/ci.yml as YAML"
-  local json job_timeout step_timeout
-  json=$(ruby -ryaml -rjson -e '
-doc = YAML.load_file(ARGV[0])
-job = doc.fetch("jobs").fetch("tests-herdr")
-step = job.fetch("steps").find { |s|
-  s.is_a?(Hash) && s["name"] == "Run real-Herdr family (serial, required)"
-}
-raise "missing family-run step" if step.nil?
-raise "family-run step has no timeout-minutes" unless step.key?("timeout-minutes")
-puts JSON.generate(
-  "job_timeout" => job.fetch("timeout-minutes"),
-  "step_timeout" => step.fetch("timeout-minutes")
-)
+  local workflow json job_timeout step_timeout
+  # Either YAML loader is enough: CI runners ship ruby, and hosts without ruby
+  # commonly have python3's yaml module.
+  if command -v ruby >/dev/null 2>&1; then
+    workflow=$(ruby -ryaml -rjson -e 'puts JSON.generate(YAML.load_file(ARGV[0]))' \
+      "$ROOT/.github/workflows/ci.yml") \
+      || fail "ruby could not parse .github/workflows/ci.yml"
+  elif python3 -c 'import yaml' >/dev/null 2>&1; then
+    workflow=$(python3 -c '
+import json, sys, yaml
+with open(sys.argv[1]) as f:
+    print(json.dumps(yaml.safe_load(f), default=str))
 ' "$ROOT/.github/workflows/ci.yml") \
+      || fail "python3 yaml could not parse .github/workflows/ci.yml"
+  else
+    fail "parsing .github/workflows/ci.yml as YAML needs ruby or python3 with the yaml module"
+  fi
+  json=$(python3 -c '
+import json, sys
+job = json.load(sys.stdin)["jobs"]["tests-herdr"]
+step = next(
+    (s for s in job["steps"]
+     if isinstance(s, dict) and s.get("name") == "Run real-Herdr family (serial, required)"),
+    None,
+)
+if step is None:
+    sys.exit("missing family-run step")
+if "timeout-minutes" not in step:
+    sys.exit("family-run step has no timeout-minutes")
+print(json.dumps({"job_timeout": job["timeout-minutes"], "step_timeout": step["timeout-minutes"]}))
+' <<<"$workflow") \
     || fail "could not parse tests-herdr timeouts from ci.yml"
   job_timeout=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["job_timeout"])' <<<"$json") \
     || fail "could not read job timeout from parsed workflow"
