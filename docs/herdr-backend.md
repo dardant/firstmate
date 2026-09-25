@@ -271,6 +271,11 @@ If the ANSI capture ever fails, the plain fallback declares itself unstyled and 
 A bare shell prompt is never an empty agent composer.
 Away-mode injection proceeds only on an affirmative `empty` result, never on unknown.
 This prevents a dead agent pane from receiving and possibly executing an escalation as shell input.
+A shell prompt themed with an agent glyph, such as a bare `❯`, is caught twice.
+Before the composer is read, `fm_backend_herdr_pane_harness_state` requires both of these to name the primary harness: `agent get` (where that harness's Herdr name is verified) and a process in the pane's foreground group.
+A registration Herdr keeps after its agent exits cannot pass, and neither can a harness suspended under a shell that now owns the terminal.
+The daemon also names its primary harness to the classifier, and for Claude, whose composer is always framed by solid rules, an unframed `❯` row reads `unknown`.
+[Verification](verification/runtime-backends.md#pane-harness-ownership) records the live measurements.
 
 The current operational envelope starts with U+2063 and `FIRSTMATE_OP: `.
 The separate routed-request carrier uses `[fm-from-firstmate]` plus U+2063.
@@ -325,7 +330,7 @@ The pane-independent max-defer alert is configured in [`wedge-alarm.md`](wedge-a
 
 Harnesses with native tracked background execution can run the daemon in their terminal.
 Pi and pi-signed no longer launch the away daemon; their ordinary supervision session continues under the posture record.
-For another harness without native tracked background execution, `bin/fm-afk-launch.sh` creates a dedicated unfocused Herdr workspace, runs the daemon there with an explicit supervisor target and backend, records the exact daemon pane, and closes only that pane on stop.
+For another harness without native tracked background execution, `bin/fm-afk-launch.sh` creates a dedicated unfocused Herdr workspace, runs the daemon there with an explicit supervisor target, backend, and the primary harness detected from the captain's context, records the exact daemon pane, and closes only that pane on stop.
 It never splits the captain's active tab and never uses shell `&`.
 Recovery reconciles only the recorded exact id.
 

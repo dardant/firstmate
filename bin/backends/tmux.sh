@@ -301,6 +301,77 @@ fm_backend_tmux_foreground_argv0s() {  # <target>
       done
 }
 
+# fm_backend_tmux_exact_pane_id: the `%N` id of the pane <target> names, only
+# when tmux proves that pane really belongs to <target>. display-message
+# resolves an absent `session:window` to the active window without an error,
+# while list-panes refuses it, so the id display-message reports must also be
+# one of the panes list-panes returns for the same target.
+fm_backend_tmux_exact_pane_id() {  # <target>
+  local target=$1 id panes
+  id=$(tmux display-message -p -t "$target" '#{pane_id}' 2>/dev/null) || return 1
+  case "$id" in %[0-9]*) ;; *) return 1 ;; esac
+  panes=$(tmux list-panes -t "$target" -F '#{pane_id}' 2>/dev/null) || return 1
+  printf '%s\n' "$panes" | grep -qxF -- "$id" || return 1
+  printf '%s' "$id"
+}
+
+# fm_backend_tmux_pane_harness_state: whether <harness> - and not a shell, or
+# some other program - is what currently owns <target>'s terminal, as one of
+# owned|foreign|unreadable. Only `owned` licenses typing into the pane; see
+# bin/fm-backend.sh's fm_backend_pane_harness_state for the contract.
+#
+# Two foreground-derived surfaces are read, either one naming the harness's
+# family (fm_agent_process_harness_family) enough for `owned`: tmux's own
+# #{pane_current_command}, and every process in the pane tty's foreground
+# process group by kernel name, argv[0], and command line. Both are needed
+# because Claude Code rewrites its process title to its version on macOS, where
+# #{pane_current_command} then says `2.1.220` while the foreground process's
+# install path still says claude (fm_backend_tmux_foreground_comms above).
+# Both are foreground-scoped, so a harness suspended or backgrounded under a
+# shell that now owns the terminal is never `owned`.
+# Every read goes through the exact pane id fm_backend_tmux_exact_pane_id
+# resolves, because tmux answers a display-message for an absent window from
+# the client's active window instead of failing, which could describe (and
+# vouch for) a different pane entirely.
+fm_backend_tmux_pane_harness_state() {  # <target> <harness>
+  local target=$1 want pane current family tty rows pid pgid tpgid comm args argv0
+  want=$(fm_agent_harness_family "${2:-}") || { printf 'foreign'; return 0; }
+  pane=$(fm_backend_tmux_exact_pane_id "$target") || { printf 'unreadable'; return 0; }
+  target=$pane
+  current=$(tmux display-message -p -t "$target" '#{pane_current_command}' 2>/dev/null) \
+    || { printf 'unreadable'; return 0; }
+  if family=$(fm_agent_process_harness_family "$current" '' '') && [ "$family" = "$want" ]; then
+    printf 'owned'
+    return 0
+  fi
+  tty=$(tmux display-message -p -t "$target" '#{pane_tty}' 2>/dev/null) || tty=
+  case "$tty" in
+    /dev/*) ;;
+    *)
+      # With no tty the foreground group cannot be read, so a current command
+      # that does not name the harness is the only evidence there is.
+      if [ -n "$current" ]; then printf 'foreign'; else printf 'unreadable'; fi
+      return 0
+      ;;
+  esac
+  rows=$(LC_ALL=C ps -t "${tty#/dev/}" -o pid=,pgid=,tpgid=,comm= 2>/dev/null) \
+    || { printf 'unreadable'; return 0; }
+  while read -r pid pgid tpgid comm; do
+    [ -n "$comm" ] || continue
+    [ "$pgid" = "$tpgid" ] || continue
+    args=$(LC_ALL=C ps -p "$pid" -o args= 2>/dev/null) || args=
+    args=${args#"${args%%[![:space:]]*}"}
+    argv0=${args%%[[:space:]]*}
+    if family=$(fm_agent_process_harness_family "$comm" "$argv0" "$args") && [ "$family" = "$want" ]; then
+      printf 'owned'
+      return 0
+    fi
+  done <<EOF
+$rows
+EOF
+  printf 'foreign'
+}
+
 # fm_backend_tmux_agent_state: recovery-grade harness-agent state for one
 # recorded target. See bin/fm-backend.sh's fm_backend_agent_state for the
 # shared state vocabulary and docs/tmux-backend.md "Agent liveness probe" for

@@ -104,14 +104,18 @@ The operational prefix travels with the message text; it does not rely on harnes
 
 ### Busy-guard and composer guard
 
-The daemon never injects into an in-use pane. Two checks run before every
+The daemon never injects into an in-use pane. Three checks run before every
 injection, dispatched through `bin/fm-backend.sh` for the supervisor's own
 backend (tmux or herdr; see "Auto-discovered supervisor pane" below):
 
+- **Harness ownership proof** - `inject_msg` first requires `fm_backend_pane_harness_state` to report that the detected primary harness owns the pane's terminal right now, from the foreground process group (plus Herdr's native agent name where it is verified).
+  A rendered glyph cannot prove this: a shell whose prompt theme draws a bare `❯` looks exactly like an idle Claude composer, and a digest typed there runs any command substitution a worker quoted.
+  Any other verdict logs `inject refused: supervisor pane is not owned by the primary harness`, types nothing, and leaves the escalation buffered for the max-defer wedge path below; a submit is also counted as delivered only while the same proof still holds afterwards.
 - **Primary-pane busy guard** - `pane_is_busy` trusts Herdr native `busy` when available, otherwise matches rendered output against only the detected primary harness's signature.
   This narrow delivery guard never classifies a recorded worker task and never uses a global union of vendor patterns.
 - **Composer-state guard** - `inject_msg` reads the full `empty`/`pending`/`pending-unproven`/`unknown` verdict from `fm_backend_composer_state` and injects only when it is affirmatively `empty`.
   Every other or future verdict defers, including an unreadable pane, ambiguous geometry, a blank unidentified row, and a bare shell prompt left after the agent exits.
+  The daemon names its primary harness to the classifier, so for a harness whose composer is always framed (Claude) an unframed agent glyph row reads `unknown` too.
   Each adapter contributes only capture and capability facts to the fleet-wide screen classifier in `bin/fm-composer-lib.sh`, which owns every shape and verdict.
   It preserves proven idle composers as empty but requires a genuine container around shell glyphs; see `docs/herdr-backend.md` "Composer and injection safety" for the operator contract.
   `pane_input_pending` is the tested fail-closed predicate for callers that need to know whether the composer is unsafe: it treats every result except exact `empty` as pending.
@@ -184,7 +188,7 @@ the operational prefix lets firstmate distinguish it from a real captain message
 - **Single-line digest** - embedded newlines are collapsed to a literal
   separator before injection, so submission is unambiguous regardless of
   harness.
-- **Busy and composer guards on the supervisor pane** - before injecting, the daemon runs the detected-primary-harness rendered busy guard and reads `fm_backend_composer_state` directly.
+- **Ownership, busy, and composer guards on the supervisor pane** - before injecting, the daemon proves the detected primary harness owns the pane, runs that harness's rendered busy guard, and reads `fm_backend_composer_state` directly.
   Only `empty` permits injection; `pending` protects half-typed or swallowed input, and `unknown` protects unreadable panes and bare dead-shell prompts.
   Every other result preserves the buffer for retry, so the daemon never merges its digest into the captain's half-typed line or types it into a shell.
 - The active backend passes its capture plus declarative styled, cursor, identity, and row capabilities to the shared screen classifier; all structural recognition and verdict logic remains in `bin/fm-composer-lib.sh`.

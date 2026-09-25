@@ -77,6 +77,7 @@ A blank or otherwise unidentified cursor row is `unknown` and every consumer def
 That identity-gated exception preserves the strict container-proof rule for every other pane, so a modal dialog, a dead shell between stale rules, or a mid-redraw pane is never an injection target.
 The shared classifier accepts a shell glyph as an empty agent composer only inside a bordered container.
 A bare shell prompt is `unknown`, so away-mode escalation is never injected into a dead shell.
+Away-mode injection also requires `fm_backend_tmux_pane_harness_state` to find the primary harness itself in the pane's foreground, through `#{pane_current_command}` or the foreground process group read against an exact pane id, so a shell prompt themed with an agent glyph is refused even where it renders like an idle composer.
 
 Busy state is not read from rendered text on this backend.
 A task's busy, idle, unknown, or dead verdict comes from the semantic busy-state contract owned by `bin/fm-busy-lib.sh`; [architecture](architecture.md#busy-state-is-semantic-per-adapter) owns its boundaries.
