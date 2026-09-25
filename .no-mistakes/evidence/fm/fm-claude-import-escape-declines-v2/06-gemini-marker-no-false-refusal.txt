@@ -1,0 +1,12 @@
+### Non-Gemini (claude-recorded) task t2 whose ordinary output quotes "Enter Gemini API Key"
+bash-5.3$ grep -n 'Enter Gemini API Key' /home/dardan/.no-mistakes/worktrees/a2097c65a770/01M3D55PSRDJ7A7M1HTT2Y4BH3/docs/verification/runtime-backends.md | hea
+d -3; cat -v
+1039:With no resolvable credential the pane wedges on `Enter Gemini API Key` rather than failing.
+$ fm-send.sh t2 --key Escape
+rc=0
+--- pane t2 after (cat -v echoes a delivered Escape as ^[ once a newline follows):
+bash-5.3$ grep -n 'Enter Gemini API Key' /home/dardan/.no-mistakes/worktrees/a2097c65a770/01M3D55PSRDJ7A7M1HTT2Y4BH3/docs/verification/runtime-backends.md | hea
+d -3; cat -v
+1039:With no resolvable credential the pane wedges on `Enter Gemini API Key` rather than failing.
+^[
+^[

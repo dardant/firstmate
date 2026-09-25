@@ -1,0 +1,145 @@
+<!doctype html><meta charset=utf-8><title>Claude imports dialog guards</title><style>body{background:#111;color:#ddd;font:13px 'DejaVu Sans Mono',monospace;margin:20px}pre{background:#1b1b1b;border:1px solid #333;padding:12px;white-space:pre-wrap}h2{color:#8cf;font-size:15px}</style><h2>Real Claude Code 2.1.280 pane (primary clone under a firstmate home's projects/), tmux 160x45</h2><pre>────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Allow external CLAUDE.md file imports?
+  This project&#x27;s CLAUDE.md imports files outside the current working directory. Never allow this for third-party repositories.
+  External imports:
+    /tmp/fmlive.Vs87pj/fmhome/AGENTS.md
+  Important: Only use Claude Code with files you trust. Accessing untrusted files may pose security risks https://code.claude.com/docs/en/security
+  ❯ No, disable external imports
+    Yes, allow external imports
+  Enter to confirm · Esc to cancel</pre><h2>Firstmate guards driven against that pane (store unchanged after each)</h2><pre>$ fm-control.sh t1 interrupt
+error: task t1&#x27;s pane shows a claude launch dialog, and any key would answer it (Escape on Claude&#x27;s external-imports dialog records a standing decline); &#x27;interrupt&#x27; refuses. Use &#x27;exit&#x27; or &#x27;relaunch&#x27;, which stop a parked agent by signal without answering it, and leave the dialog&#x27;s question to the operator
+rc=1
+--- store:
+hasClaudeMdExternalIncludesApproved=undefined hasClaudeMdExternalIncludesWarningShown=undefined
+
+$ fm-send.sh t1 --key Escape
+error: fmses:fm-t1 shows a harness launch dialog, and key &#x27;Escape&#x27; would answer it (Escape or Enter on Claude&#x27;s external-imports dialog records a standing decline); nothing was sent. Stop the agent without a key via &#x27;/home/dardan/.no-mistakes/worktrees/a2097c65a770/01M3D55PSRDJ7A7M1HTT2Y4BH3/bin/fm-control.sh t1 exit&#x27; or &#x27;/home/dardan/.no-mistakes/worktrees/a2097c65a770/01M3D55PSRDJ7A7M1HTT2Y4BH3/bin/fm-control.sh t1 relaunch&#x27;, and leave any dialog&#x27;s question to the operator
+rc=1
+--- store:
+hasClaudeMdExternalIncludesApproved=undefined hasClaudeMdExternalIncludesWarningShown=undefined
+
+$ fm-send.sh t1 --key C-c
+error: fmses:fm-t1 shows a harness launch dialog, and key &#x27;C-c&#x27; would answer it (Escape or Enter on Claude&#x27;s external-imports dialog records a standing decline); nothing was sent. Stop the agent without a key via &#x27;/home/dardan/.no-mistakes/worktrees/a2097c65a770/01M3D55PSRDJ7A7M1HTT2Y4BH3/bin/fm-control.sh t1 exit&#x27; or &#x27;/home/dardan/.no-mistakes/worktrees/a2097c65a770/01M3D55PSRDJ7A7M1HTT2Y4BH3/bin/fm-control.sh t1 relaunch&#x27;, and leave any dialog&#x27;s question to the operator
+rc=1
+--- store:
+hasClaudeMdExternalIncludesApproved=undefined hasClaudeMdExternalIncludesWarningShown=undefined
+
+$ fm-send.sh t1 --key Enter
+error: fmses:fm-t1 shows a harness launch dialog, and key &#x27;Enter&#x27; would answer it (Escape or Enter on Claude&#x27;s external-imports dialog records a standing decline); nothing was sent. Stop the agent without a key via &#x27;/home/dardan/.no-mistakes/worktrees/a2097c65a770/01M3D55PSRDJ7A7M1HTT2Y4BH3/bin/fm-control.sh t1 exit&#x27; or &#x27;/home/dardan/.no-mistakes/worktrees/a2097c65a770/01M3D55PSRDJ7A7M1HTT2Y4BH3/bin/fm-control.sh t1 relaunch&#x27;, and leave any dialog&#x27;s question to the operator
+rc=1
+--- store:
+hasClaudeMdExternalIncludesApproved=undefined hasClaudeMdExternalIncludesWarningShown=undefined
+
+$ fm-send.sh t1 /compact   (typed slash command, direct path)
+error: fmses:fm-t1 shows a harness launch dialog, and the typed text&#x27;s Enter would answer it (Escape or Enter on Claude&#x27;s external-imports dialog records a standing decline); nothing was sent. Stop the agent without a key via &#x27;/home/dardan/.no-mistakes/worktrees/a2097c65a770/01M3D55PSRDJ7A7M1HTT2Y4BH3/bin/fm-control.sh t1 exit&#x27; or &#x27;/home/dardan/.no-mistakes/worktrees/a2097c65a770/01M3D55PSRDJ7A7M1HTT2Y4BH3/bin/fm-control.sh t1 relaunch&#x27;, and leave any dialog&#x27;s question to the operator
+rc=1
+--- store:
+hasClaudeMdExternalIncludesApproved=undefined hasClaudeMdExternalIncludesWarningShown=undefined
+
+$ fm-send.sh t1 &quot;please rebase on main&quot;   (inbox steer + doorbell)
+fm-send: doorbell skipped (pane is parked on a launch dialog; use &#x27;/home/dardan/.no-mistakes/worktrees/a2097c65a770/01M3D55PSRDJ7A7M1HTT2Y4BH3/bin/fm-control.sh t1 exit&#x27; or &#x27;/home/dardan/.no-mistakes/worktrees/a2097c65a770/01M3D55PSRDJ7A7M1HTT2Y4BH3/bin/fm-control.sh t1 relaunch&#x27;); the steer is durably recorded at /tmp/fmlive.Vs87pj/fmhome/state/t1.inbox/001.msg and the watcher will re-ring
+rc=0
+--- store:
+hasClaudeMdExternalIncludesApproved=undefined hasClaudeMdExternalIncludesWarningShown=undefined
+
+$ fm-send.sh fmses:fm-t1 hello   (explicit backend target)
+error: fmses:fm-t1 shows a harness launch dialog, and the typed text&#x27;s Enter would answer it (Escape or Enter on Claude&#x27;s external-imports dialog records a standing decline); nothing was sent. Stop the agent without a key via &#x27;/home/dardan/.no-mistakes/worktrees/a2097c65a770/01M3D55PSRDJ7A7M1HTT2Y4BH3/bin/fm-control.sh t1 exit&#x27; or &#x27;/home/dardan/.no-mistakes/worktrees/a2097c65a770/01M3D55PSRDJ7A7M1HTT2Y4BH3/bin/fm-control.sh t1 relaunch&#x27;, and leave any dialog&#x27;s question to the operator
+rc=1
+--- store:
+hasClaudeMdExternalIncludesApproved=undefined hasClaudeMdExternalIncludesWarningShown=undefined
+
+--- pane after all sends:
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Allow external CLAUDE.md file imports?
+  This project&#x27;s CLAUDE.md imports files outside the current working directory. Never allow this for third-party repositories.
+  External imports:
+    /tmp/fmlive.Vs87pj/fmhome/AGENTS.md
+  Important: Only use Claude Code with files you trust. Accessing untrusted files may pose security risks https://code.claude.com/docs/en/security
+  ❯ No, disable external imports
+    Yes, allow external imports
+  Enter to confirm · Esc to cancel
+</pre><h2>Premise, decline refusal, and reset</h2><pre>### Premise: the old guidance (interrupt = Escape) on the real 2.1.280 imports dialog
+--- store before raw Escape:
+hasClaudeMdExternalIncludesApproved=undefined hasClaudeMdExternalIncludesWarningShown=undefined
+$ tmux send-keys Escape   (raw, bypassing firstmate - what the old interrupt delivered)
+--- store after raw Escape:
+hasClaudeMdExternalIncludesApproved=undefined hasClaudeMdExternalIncludesWarningShown=undefined
+--- pane after raw Escape:
+  Allow external CLAUDE.md file imports?
+  This project&#x27;s CLAUDE.md imports files outside the current working directory. Never allow this for third-party repositories.
+  External imports:
+    /tmp/fmlive.Vs87pj/fmhome/AGENTS.md
+  Important: Only use Claude Code with files you trust. Accessing untrusted files may pose security risks https://code.claude.com/docs/en/security
+  ❯ No, disable external imports
+    Yes, allow external imports
+  Enter to confirm · Esc to cancel
+
+### Recorded decline makes the next Claude spawn refuse (fm-claude-trust.sh worktree mode)
+$ fm-claude-trust.sh &lt;worktree&gt; &lt;project&gt;
+trusted: /tmp/fmlive.Vs87pj/wt-demo
+trusted (project root): /tmp/fmlive.Vs87pj/fmhome/projects/demo
+rc=0
+--- store:
+hasClaudeMdExternalIncludesApproved=undefined hasClaudeMdExternalIncludesWarningShown=undefined
+
+$ fm-claude-trust.sh --reset-imports-decline &lt;project&gt;
+unchanged: /tmp/fmlive.Vs87pj/fmhome/projects/demo
+rc=0
+--- store:
+hasClaudeMdExternalIncludesApproved=undefined hasClaudeMdExternalIncludesWarningShown=undefined
+$ fm-claude-trust.sh --reset-imports-decline &lt;project&gt;   (again, idempotent)
+unchanged: /tmp/fmlive.Vs87pj/fmhome/projects/demo
+rc=0
+
+$ fm-claude-trust.sh &lt;worktree&gt; &lt;project&gt;   (after reset)
+trusted: /tmp/fmlive.Vs87pj/wt-demo
+trusted (project root): /tmp/fmlive.Vs87pj/fmhome/projects/demo
+rc=0
+/tmp/fmlive.Vs87pj/fmhome/projects/demo {&quot;hasTrustDialogAccepted&quot;:true}
+/tmp/fmlive.Vs87pj/wt-demo {&quot;hasTrustDialogAccepted&quot;:true}
+
+### (continued) A second raw Escape, sent 5s after the first, landed on the dialog:
+--- pane after second raw Escape: composer (dialog dismissed)
+⚠ Remote managed settings failed to load (authentication rejected (401)) · no remote policy applied · /status for details
+                                                                                                                        ✔ Update installed · Restart to update
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ Try &quot;how do I log an error?&quot;
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏸ manual mode on · ? for shortcuts · ← for agents
+--- store after second raw Escape:
+hasClaudeMdExternalIncludesApproved=false hasClaudeMdExternalIncludesWarningShown=true
+
+### Recorded decline makes the next Claude spawn refuse (fm-claude-trust.sh worktree mode)
+$ fm-claude-trust.sh &lt;worktree&gt; &lt;project&gt;
+error: refusing to pre-register Claude trust: project entry for &#x27;/tmp/fmlive.Vs87pj/fmhome/projects/demo&#x27; in &#x27;/tmp/fmlive.Vs87pj/cfg/.claude.json&#x27; already declined external CLAUDE.md imports, and a spawn must not override that consent; Claude Code records the same decline for Escape as for &quot;No&quot;, so if nobody chose it, reset it with: bin/fm-claude-trust.sh --reset-imports-decline &#x27;/tmp/fmlive.Vs87pj/fmhome/projects/demo&#x27;
+rc=1
+--- store:
+hasClaudeMdExternalIncludesApproved=false hasClaudeMdExternalIncludesWarningShown=true
+
+$ fm-claude-trust.sh --reset-imports-decline &lt;project&gt;
+reset: /tmp/fmlive.Vs87pj/fmhome/projects/demo
+rc=0
+--- store:
+hasClaudeMdExternalIncludesApproved=undefined hasClaudeMdExternalIncludesWarningShown=undefined
+$ fm-claude-trust.sh --reset-imports-decline &lt;project&gt;   (again, idempotent)
+unchanged: /tmp/fmlive.Vs87pj/fmhome/projects/demo
+rc=0
+
+$ fm-claude-trust.sh &lt;worktree&gt; &lt;project&gt;   (after reset)
+trusted: /tmp/fmlive.Vs87pj/wt-demo
+trusted (project root): /tmp/fmlive.Vs87pj/fmhome/projects/demo
+rc=0
+/tmp/fmlive.Vs87pj/fmhome/projects/demo {&quot;hasTrustDialogAccepted&quot;:true,&quot;lastGracefulShutdown&quot;:false,&quot;lastVersionBase&quot;:&quot;2.1.280&quot;,&quot;hasUnseenTeamArtifacts&quot;:false}
+/tmp/fmlive.Vs87pj/wt-demo {&quot;hasTrustDialogAccepted&quot;:true}
+### After --reset-imports-decline, a new interactive claude in the primary clone asks the question again:
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Allow external CLAUDE.md file imports?
+  This project&#x27;s CLAUDE.md imports files outside the current working directory. Never allow this for third-party repositories.
+  External imports:
+    /tmp/fmlive.Vs87pj/fmhome/AGENTS.md
+  Important: Only use Claude Code with files you trust. Accessing untrusted files may pose security risks https://code.claude.com/docs/en/security
+  ❯ No, disable external imports
+    Yes, allow external imports
+  Enter to confirm · Esc to cancel
+hasClaudeMdExternalIncludesApproved=undefined hasClaudeMdExternalIncludesWarningShown=undefined
+</pre>

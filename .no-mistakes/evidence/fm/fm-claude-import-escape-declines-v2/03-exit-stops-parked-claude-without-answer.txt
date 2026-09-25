@@ -1,0 +1,14 @@
+$ fm-control.sh t1 exit
+stopped t1 harness=claude backend=tmux endpoint=fmses:fm-t1 worktree=/tmp/fmlive.Vs87pj/wt-demo
+rc=0
+--- store:
+hasClaudeMdExternalIncludesApproved=undefined hasClaudeMdExternalIncludesWarningShown=undefined
+--- claude processes for lab config:
+496950 tmux new-session -d -s fmses -n fm-t1 -x 160 -y 45 -c /tmp/fmlive.Vs87pj/fmhome/projects/demo env -i HOME=/home/dardan PATH=/home/dardan/.local/bin:/home/dardan/.nix-profile/bin:/home/dardan/go/bin:/home/dardan/.cargo/bin:/home/dardan/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:/usr/bin:/bin:/usr/sbin:/sbin:/home/dardan/.claude/plugins/cache/compact-adviser/compact-adviser/0.1.4/bin TERM=xterm-256color CLAUDE_CONFIG_DIR=/tmp/fmlive.Vs87pj/cfg ANTHROPIC_API_KEY=sk-ant-api03-xxxxxxxxxxxxxxxxxxxx claude; exec bash --norc --noprofile
+ 496950 tmux new-session -d -s fmses -n fm-t1 -x 160 -y 45 -c /tmp/fmlive.Vs87pj/fmhome/projects/demo env -i HOME=/home/dardan PATH=/home/dardan/.local/bin:/home/dardan/.nix-profile/bin:/home/dardan/go/bin:/home/dardan/.cargo/bin:/home/dardan/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:/usr/bin:/bin:/usr/sbin:/sbin:/home/dardan/.claude/plugins/cache/compact-adviser/compact-adviser/0.1.4/bin TERM=xterm-256color CLAUDE_CONFIG_DIR=/tmp/fmlive.Vs87pj/cfg ANTHROPIC_API_KEY=sk-ant-api03-xxxxxxxxxxxxxxxxxxxx claude; exec bash --norc --noprofile
+--- pane after exit:
+  Important: Only use Claude Code with files you trust. Accessing untrusted files may pose security risks https://code.claude.com/docs/en/security
+  ❯ No, disable external imports
+    Yes, allow external imports
+  Enter to confirm · Esc to cancel
+bash-5.3$

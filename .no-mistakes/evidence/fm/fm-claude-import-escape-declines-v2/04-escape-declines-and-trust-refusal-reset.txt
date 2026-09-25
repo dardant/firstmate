@@ -1,0 +1,84 @@
+### Premise: the old guidance (interrupt = Escape) on the real 2.1.280 imports dialog
+--- store before raw Escape:
+hasClaudeMdExternalIncludesApproved=undefined hasClaudeMdExternalIncludesWarningShown=undefined
+$ tmux send-keys Escape   (raw, bypassing firstmate - what the old interrupt delivered)
+--- store after raw Escape:
+hasClaudeMdExternalIncludesApproved=undefined hasClaudeMdExternalIncludesWarningShown=undefined
+--- pane after raw Escape:
+  Allow external CLAUDE.md file imports?
+  This project's CLAUDE.md imports files outside the current working directory. Never allow this for third-party repositories.
+  External imports:
+    /tmp/fmlive.Vs87pj/fmhome/AGENTS.md
+  Important: Only use Claude Code with files you trust. Accessing untrusted files may pose security risks https://code.claude.com/docs/en/security
+  ❯ No, disable external imports
+    Yes, allow external imports
+  Enter to confirm · Esc to cancel
+
+### Recorded decline makes the next Claude spawn refuse (fm-claude-trust.sh worktree mode)
+$ fm-claude-trust.sh <worktree> <project>
+trusted: /tmp/fmlive.Vs87pj/wt-demo
+trusted (project root): /tmp/fmlive.Vs87pj/fmhome/projects/demo
+rc=0
+--- store:
+hasClaudeMdExternalIncludesApproved=undefined hasClaudeMdExternalIncludesWarningShown=undefined
+
+$ fm-claude-trust.sh --reset-imports-decline <project>
+unchanged: /tmp/fmlive.Vs87pj/fmhome/projects/demo
+rc=0
+--- store:
+hasClaudeMdExternalIncludesApproved=undefined hasClaudeMdExternalIncludesWarningShown=undefined
+$ fm-claude-trust.sh --reset-imports-decline <project>   (again, idempotent)
+unchanged: /tmp/fmlive.Vs87pj/fmhome/projects/demo
+rc=0
+
+$ fm-claude-trust.sh <worktree> <project>   (after reset)
+trusted: /tmp/fmlive.Vs87pj/wt-demo
+trusted (project root): /tmp/fmlive.Vs87pj/fmhome/projects/demo
+rc=0
+/tmp/fmlive.Vs87pj/fmhome/projects/demo {"hasTrustDialogAccepted":true}
+/tmp/fmlive.Vs87pj/wt-demo {"hasTrustDialogAccepted":true}
+
+### (continued) A second raw Escape, sent 5s after the first, landed on the dialog:
+--- pane after second raw Escape: composer (dialog dismissed)
+⚠ Remote managed settings failed to load (authentication rejected (401)) · no remote policy applied · /status for details
+                                                                                                                        ✔ Update installed · Restart to update
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ Try "how do I log an error?"
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏸ manual mode on · ? for shortcuts · ← for agents
+--- store after second raw Escape:
+hasClaudeMdExternalIncludesApproved=false hasClaudeMdExternalIncludesWarningShown=true
+
+### Recorded decline makes the next Claude spawn refuse (fm-claude-trust.sh worktree mode)
+$ fm-claude-trust.sh <worktree> <project>
+error: refusing to pre-register Claude trust: project entry for '/tmp/fmlive.Vs87pj/fmhome/projects/demo' in '/tmp/fmlive.Vs87pj/cfg/.claude.json' already declined external CLAUDE.md imports, and a spawn must not override that consent; Claude Code records the same decline for Escape as for "No", so if nobody chose it, reset it with: bin/fm-claude-trust.sh --reset-imports-decline '/tmp/fmlive.Vs87pj/fmhome/projects/demo'
+rc=1
+--- store:
+hasClaudeMdExternalIncludesApproved=false hasClaudeMdExternalIncludesWarningShown=true
+
+$ fm-claude-trust.sh --reset-imports-decline <project>
+reset: /tmp/fmlive.Vs87pj/fmhome/projects/demo
+rc=0
+--- store:
+hasClaudeMdExternalIncludesApproved=undefined hasClaudeMdExternalIncludesWarningShown=undefined
+$ fm-claude-trust.sh --reset-imports-decline <project>   (again, idempotent)
+unchanged: /tmp/fmlive.Vs87pj/fmhome/projects/demo
+rc=0
+
+$ fm-claude-trust.sh <worktree> <project>   (after reset)
+trusted: /tmp/fmlive.Vs87pj/wt-demo
+trusted (project root): /tmp/fmlive.Vs87pj/fmhome/projects/demo
+rc=0
+/tmp/fmlive.Vs87pj/fmhome/projects/demo {"hasTrustDialogAccepted":true,"lastGracefulShutdown":false,"lastVersionBase":"2.1.280","hasUnseenTeamArtifacts":false}
+/tmp/fmlive.Vs87pj/wt-demo {"hasTrustDialogAccepted":true}
+### After --reset-imports-decline, a new interactive claude in the primary clone asks the question again:
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Allow external CLAUDE.md file imports?
+  This project's CLAUDE.md imports files outside the current working directory. Never allow this for third-party repositories.
+  External imports:
+    /tmp/fmlive.Vs87pj/fmhome/AGENTS.md
+  Important: Only use Claude Code with files you trust. Accessing untrusted files may pose security risks https://code.claude.com/docs/en/security
+  ❯ No, disable external imports
+    Yes, allow external imports
+  Enter to confirm · Esc to cancel
+hasClaudeMdExternalIncludesApproved=undefined hasClaudeMdExternalIncludesWarningShown=undefined

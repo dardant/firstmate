@@ -1,0 +1,13 @@
+### Recorded task t3 whose pane (fmses:fm-t3) cannot be captured
+$ fm-send.sh t3 --key Escape
+error: fmses:fm-t3 could not be captured, so a harness launch dialog cannot be ruled out, and key 'Escape' could answer one (Escape or Enter on Claude's external-imports dialog records a standing decline); nothing was sent. Retry once the pane can be read, or: Stop the agent without a key via '/home/dardan/.no-mistakes/worktrees/a2097c65a770/01M3D55PSRDJ7A7M1HTT2Y4BH3/bin/fm-control.sh t3 exit' or '/home/dardan/.no-mistakes/worktrees/a2097c65a770/01M3D55PSRDJ7A7M1HTT2Y4BH3/bin/fm-control.sh t3 relaunch', and leave any dialog's question to the operator
+rc=1
+$ fm-send.sh t3 /compact
+error: fmses:fm-t3 could not be captured, so a harness launch dialog cannot be ruled out, and the typed text's Enter could answer one (Escape or Enter on Claude's external-imports dialog records a standing decline); nothing was sent. Retry once the pane can be read, or: Stop the agent without a key via '/home/dardan/.no-mistakes/worktrees/a2097c65a770/01M3D55PSRDJ7A7M1HTT2Y4BH3/bin/fm-control.sh t3 exit' or '/home/dardan/.no-mistakes/worktrees/a2097c65a770/01M3D55PSRDJ7A7M1HTT2Y4BH3/bin/fm-control.sh t3 relaunch', and leave any dialog's question to the operator
+rc=1
+$ fm-send.sh t3 "steer"
+fm-send: doorbell not typed because the agent in fmses:fm-t3 has exited; the steer is durably recorded at /tmp/fmlive.Vs87pj/fmhome/state/t3.inbox/001.msg for recovery (stuck-crewmate-recovery), and the watcher will not re-ring a dead pane
+rc=0
+$ fm-control.sh t3 interrupt
+error: no agent is running at task t3's recorded endpoint (state: missing); there is nothing to interrupt
+rc=1

@@ -1,0 +1,64 @@
+$ fm-control.sh t1 interrupt
+error: task t1's pane shows a claude launch dialog, and any key would answer it (Escape on Claude's external-imports dialog records a standing decline); 'interrupt' refuses. Use 'exit' or 'relaunch', which stop a parked agent by signal without answering it, and leave the dialog's question to the operator
+rc=1
+--- store:
+hasClaudeMdExternalIncludesApproved=undefined hasClaudeMdExternalIncludesWarningShown=undefined
+
+$ fm-send.sh t1 --key Escape
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the requested message WILL still be sent.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+error: fmses:fm-t1 shows a harness launch dialog, and key 'Escape' would answer it (Escape or Enter on Claude's external-imports dialog records a standing decline); nothing was sent. Stop the agent without a key via '/home/dardan/.no-mistakes/worktrees/a2097c65a770/01M3D55PSRDJ7A7M1HTT2Y4BH3/bin/fm-control.sh t1 exit' or '/home/dardan/.no-mistakes/worktrees/a2097c65a770/01M3D55PSRDJ7A7M1HTT2Y4BH3/bin/fm-control.sh t1 relaunch', and leave any dialog's question to the operator
+rc=1
+--- store:
+hasClaudeMdExternalIncludesApproved=undefined hasClaudeMdExternalIncludesWarningShown=undefined
+
+$ fm-send.sh t1 --key C-c
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+error: fmses:fm-t1 shows a harness launch dialog, and key 'C-c' would answer it (Escape or Enter on Claude's external-imports dialog records a standing decline); nothing was sent. Stop the agent without a key via '/home/dardan/.no-mistakes/worktrees/a2097c65a770/01M3D55PSRDJ7A7M1HTT2Y4BH3/bin/fm-control.sh t1 exit' or '/home/dardan/.no-mistakes/worktrees/a2097c65a770/01M3D55PSRDJ7A7M1HTT2Y4BH3/bin/fm-control.sh t1 relaunch', and leave any dialog's question to the operator
+rc=1
+--- store:
+hasClaudeMdExternalIncludesApproved=undefined hasClaudeMdExternalIncludesWarningShown=undefined
+
+$ fm-send.sh t1 --key Enter
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+error: fmses:fm-t1 shows a harness launch dialog, and key 'Enter' would answer it (Escape or Enter on Claude's external-imports dialog records a standing decline); nothing was sent. Stop the agent without a key via '/home/dardan/.no-mistakes/worktrees/a2097c65a770/01M3D55PSRDJ7A7M1HTT2Y4BH3/bin/fm-control.sh t1 exit' or '/home/dardan/.no-mistakes/worktrees/a2097c65a770/01M3D55PSRDJ7A7M1HTT2Y4BH3/bin/fm-control.sh t1 relaunch', and leave any dialog's question to the operator
+rc=1
+--- store:
+hasClaudeMdExternalIncludesApproved=undefined hasClaudeMdExternalIncludesWarningShown=undefined
+
+$ fm-send.sh t1 /compact   (typed slash command, direct path)
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+error: fmses:fm-t1 shows a harness launch dialog, and the typed text's Enter would answer it (Escape or Enter on Claude's external-imports dialog records a standing decline); nothing was sent. Stop the agent without a key via '/home/dardan/.no-mistakes/worktrees/a2097c65a770/01M3D55PSRDJ7A7M1HTT2Y4BH3/bin/fm-control.sh t1 exit' or '/home/dardan/.no-mistakes/worktrees/a2097c65a770/01M3D55PSRDJ7A7M1HTT2Y4BH3/bin/fm-control.sh t1 relaunch', and leave any dialog's question to the operator
+rc=1
+--- store:
+hasClaudeMdExternalIncludesApproved=undefined hasClaudeMdExternalIncludesWarningShown=undefined
+
+$ fm-send.sh t1 "please rebase on main"   (inbox steer + doorbell)
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+fm-send: doorbell skipped (pane is parked on a launch dialog; use '/home/dardan/.no-mistakes/worktrees/a2097c65a770/01M3D55PSRDJ7A7M1HTT2Y4BH3/bin/fm-control.sh t1 exit' or '/home/dardan/.no-mistakes/worktrees/a2097c65a770/01M3D55PSRDJ7A7M1HTT2Y4BH3/bin/fm-control.sh t1 relaunch'); the steer is durably recorded at /tmp/fmlive.Vs87pj/fmhome/state/t1.inbox/001.msg and the watcher will re-ring
+rc=0
+--- store:
+hasClaudeMdExternalIncludesApproved=undefined hasClaudeMdExternalIncludesWarningShown=undefined
+
+$ fm-send.sh fmses:fm-t1 hello   (explicit backend target)
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+error: fmses:fm-t1 shows a harness launch dialog, and the typed text's Enter would answer it (Escape or Enter on Claude's external-imports dialog records a standing decline); nothing was sent. Stop the agent without a key via '/home/dardan/.no-mistakes/worktrees/a2097c65a770/01M3D55PSRDJ7A7M1HTT2Y4BH3/bin/fm-control.sh t1 exit' or '/home/dardan/.no-mistakes/worktrees/a2097c65a770/01M3D55PSRDJ7A7M1HTT2Y4BH3/bin/fm-control.sh t1 relaunch', and leave any dialog's question to the operator
+rc=1
+--- store:
+hasClaudeMdExternalIncludesApproved=undefined hasClaudeMdExternalIncludesWarningShown=undefined
+
+--- pane after all sends:
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Allow external CLAUDE.md file imports?
+  This project's CLAUDE.md imports files outside the current working directory. Never allow this for third-party repositories.
+  External imports:
+    /tmp/fmlive.Vs87pj/fmhome/AGENTS.md
+  Important: Only use Claude Code with files you trust. Accessing untrusted files may pose security risks https://code.claude.com/docs/en/security
+  ❯ No, disable external imports
+    Yes, allow external imports
+  Enter to confirm · Esc to cancel

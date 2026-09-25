@@ -1,0 +1,2 @@
+ok - real herdr: a ship's pane opens with its root shell in the leased worktree
+ok - real herdr: a restarted server resumes the ship's agent inside its recorded worktree

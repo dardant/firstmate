@@ -1,0 +1,18 @@
+### Unrecorded pane (fmses:fm-x, no task record) showing the dialog
+  Allow external CLAUDE.md file imports?
+  ❯ No, disable external imports
+    Yes, allow external imports
+  Enter to confirm · Esc to cancel
+bash-5.3$
+$ fm-send.sh fmses:fm-x hello
+error: fmses:fm-x shows a harness launch dialog, and the typed text's Enter would answer it (Escape or Enter on Claude's external-imports dialog records a standing decline); nothing was sent. fmses:fm-x is not a recorded task, so fm-control cannot stop it; clear any dialog by hand, leaving its question to the operator
+rc=1
+$ fm-send.sh fmses:fm-x --key Escape
+error: fmses:fm-x shows a harness launch dialog, and key 'Escape' would answer it (Escape or Enter on Claude's external-imports dialog records a standing decline); nothing was sent. fmses:fm-x is not a recorded task, so fm-control cannot stop it; clear any dialog by hand, leaving its question to the operator
+rc=1
+--- pane fm-x after:
+  Allow external CLAUDE.md file imports?
+  ❯ No, disable external imports
+    Yes, allow external imports
+  Enter to confirm · Esc to cancel
+bash-5.3$

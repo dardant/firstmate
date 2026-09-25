@@ -1,0 +1,13 @@
+fm-send-strict.log:ok - fm-send --key: a pane parked on a launch dialog refuses every key and names exit/relaunch
+fm-send-strict.log:ok - fm-send --key: a pane that cannot be captured refuses every key and names exit/relaunch
+fm-send-strict.log:ok - fm-send typed text: a pane parked on a launch dialog, or uncapturable, refuses and names exit/relaunch
+fm-task-inbox.log:ok - inbox: a steer is written durably and round-trips byte-exact with a self-describing doorbell
+fm-task-inbox.log:ok - inbox: a hostile-path doorbell executes as a no-op in bare shells
+fm-task-inbox.log:ok - inbox: the ring never types into a pane parked on a launch dialog
+fm-task-inbox.log:ok - inbox: the ring never types into a pane it cannot capture, and asks for a re-ring
+fm-task-inbox.log:ok - watcher: a busy pane just waits - the record is durable and no doorbell is typed
+fm-task-inbox.log:ok - watcher: unwritable ladder bookkeeping surfaces a stale wake after the doorbell
+fm-task-inbox.log:ok - watcher: a pane parked on a launch dialog is never rung and escalates once the budget is spent
+fm-send-inbox.log:ok - fm-send inbox: the payload is recorded durably and only the doorbell is typed
+fm-send-inbox.log:ok - fm-send inbox: a parked launch dialog skips the ring and the notice names the dialog
+fm-send-inbox.log:ok - fm-send inbox: a failed doorbell is still a durably sent steer
