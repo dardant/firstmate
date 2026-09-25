@@ -292,10 +292,95 @@ test_key_send_refuses_uncapturable_pane() {
   pass "fm-send --key: a pane that cannot be captured refuses every key and names exit/relaunch"
 }
 
+# Text that skips the inbox (a slash command to a task, or any text to an
+# explicit backend target) is typed and submitted with Enter, and Enter on
+# Claude's external-imports dialog selects the preselected "No" and records
+# the same standing decline as Escape. That path must refuse exactly like
+# --key, including on a pane it cannot capture.
+test_typed_send_refuses_launch_dialog() {
+  local dir fb home err log rc capture
+  dir="$TMP_ROOT/typed-dialog"; mkdir -p "$dir"
+  fb=$(make_stubs "$dir"); home=$(setup_home typeddialog); err="$dir/send.err"; log="$dir/tmux.log"; : > "$log"
+  fm_write_meta "$home/state/lane-tdlg.meta" "window=sess:fm-lane-tdlg" "kind=ship" "harness=claude"
+  capture="$dir/imports-dialog.capture"
+  cat > "$capture" <<'EOF2'
+  Allow external CLAUDE.md file imports?
+  This project's CLAUDE.md imports files outside the current working directory. Never allow this for third-party repositories.
+  ❯ No, disable external imports
+    Yes, allow external imports
+  Enter to confirm · Esc to cancel
+EOF2
+
+  PATH="$fb:$PATH" FM_HOME="$home" FM_ROOT_OVERRIDE="$home" FM_TMUX_LOG="$log" FM_SEND_SETTLE=0 \
+    FM_FAKE_TMUX_CAPTURE="$capture" \
+    "$SEND" lane-tdlg /compact >/dev/null 2>"$err"; rc=$?
+  [ "$rc" -ne 0 ] || fail "a slash command into a parked launch dialog reported success"
+  if grep -q 'send-keys' "$log"; then
+    fail "a slash command was typed into a parked launch dialog:"$'\n'"$(cat "$log")"
+  fi
+  assert_contains "$(cat "$err")" "launch dialog" "the slash-command refusal should name the launch dialog"
+  assert_contains "$(cat "$err")" "fm-control.sh lane-tdlg exit" "the slash-command refusal should name the keyless exit recovery"
+  assert_contains "$(cat "$err")" "fm-control.sh lane-tdlg relaunch" "the slash-command refusal should name the relaunch recovery"
+
+  : > "$log"
+  PATH="$fb:$PATH" FM_HOME="$home" FM_ROOT_OVERRIDE="$home" FM_TMUX_LOG="$log" FM_SEND_SETTLE=0 \
+    FM_FAKE_TMUX_CAPTURE="$capture" \
+    "$SEND" sess:win "hello" >/dev/null 2>"$err"; rc=$?
+  [ "$rc" -ne 0 ] || fail "explicit-target text into a parked launch dialog reported success"
+  if grep -q 'send-keys' "$log"; then
+    fail "explicit-target text was typed into a parked launch dialog:"$'\n'"$(cat "$log")"
+  fi
+  assert_contains "$(cat "$err")" "launch dialog" "the explicit-target refusal should name the launch dialog"
+  assert_contains "$(cat "$err")" "relaunch" "the explicit-target refusal should name the relaunch recovery"
+
+  : > "$log"
+  PATH="$fb:$PATH" FM_HOME="$home" FM_ROOT_OVERRIDE="$home" FM_TMUX_LOG="$log" FM_SEND_SETTLE=0 \
+    FM_FAKE_TMUX_CAPTURE_FAIL=1 \
+    "$SEND" lane-tdlg /compact >/dev/null 2>"$err"; rc=$?
+  [ "$rc" -ne 0 ] || fail "a slash command into an uncapturable pane reported success"
+  if grep -q 'send-keys' "$log"; then
+    fail "a slash command was typed into a pane that could not be captured:"$'\n'"$(cat "$log")"
+  fi
+  assert_contains "$(cat "$err")" "cannot be ruled out" "the uncapturable refusal should say a dialog cannot be ruled out"
+
+  : > "$log"
+  PATH="$fb:$PATH" FM_HOME="$home" FM_ROOT_OVERRIDE="$home" FM_TMUX_LOG="$log" FM_SEND_SETTLE=0 \
+    "$SEND" lane-tdlg /compact >/dev/null 2>"$err"; rc=$?
+  expect_code 0 "$rc" "a slash command to a pane with no launch dialog should still be delivered"
+  assert_contains "$(cat "$log")" "target=sess:fm-lane-tdlg literal=1 arg=/compact" "the slash command should be typed when no dialog shows"
+  pass "fm-send typed text: a pane parked on a launch dialog, or uncapturable, refuses and names exit/relaunch"
+}
+
+# The harness-agnostic dialog check runs against every harness's pane, so a
+# Claude worker whose ordinary output quotes Gemini's unpaired API-key marker
+# (for example a grep over this repo) must not be mistaken for a parked
+# Gemini dialog and lose its interrupt.
+test_key_send_ignores_unpaired_gemini_marker_on_other_pane() {
+  local dir fb home err log rc capture
+  dir="$TMP_ROOT/key-gemini-marker"; mkdir -p "$dir"
+  fb=$(make_stubs "$dir"); home=$(setup_home keygemini); err="$dir/send.err"; log="$dir/tmux.log"; : > "$log"
+  fm_write_meta "$home/state/lane-gm.meta" "window=sess:fm-lane-gm" "kind=ship" "harness=claude"
+  capture="$dir/grep-output.capture"
+  cat > "$capture" <<'EOF2'
+⏺ Bash(grep -rn "Enter Gemini API Key" bin docs)
+  ⎿  bin/fm-busy-lib.sh:  printf '%s' "$buf" | grep -qiE "${FM_BUSY_GEMINI_APIKEY_PROMPT_REGEX:-Enter Gemini API Key}"
+     docs/verification/runtime-backends.md: the credential entry ("Enter Gemini API Key")
+EOF2
+
+  PATH="$fb:$PATH" FM_HOME="$home" FM_ROOT_OVERRIDE="$home" FM_TMUX_LOG="$log" FM_SEND_SETTLE=0 \
+    FM_FAKE_TMUX_CAPTURE="$capture" \
+    "$SEND" lane-gm --key Escape >/dev/null 2>"$err"; rc=$?
+  expect_code 0 "$rc" "an interrupt to a pane merely quoting the Gemini API-key marker should be delivered"
+  assert_contains "$(cat "$log")" "target=sess:fm-lane-gm literal=0 arg=Escape" "the interrupt should reach the pane"
+  pass "fm-send --key: an unpaired Gemini marker in another harness's ordinary output does not refuse"
+}
+
 test_exact_lane_id_send_still_works
 test_key_send_exit_status_follows_delivery
 test_key_send_refuses_launch_dialog
 test_key_send_refuses_uncapturable_pane
+test_typed_send_refuses_launch_dialog
+test_key_send_ignores_unpaired_gemini_marker_on_other_pane
 test_unset_fm_home_fails
 test_unresolvable_target_does_not_tmux_fallback
 test_prefixless_herdr_pane_id_fails
