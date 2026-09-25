@@ -864,6 +864,31 @@ not ok - the launched claude reports transcript saving off (claude 2.1.272 (Clau
 
 Rerun this guard after a Claude Code upgrade; it submits one short prompt on the model named by `FM_CLAUDE_TRANSCRIPT_LIVE_MODEL`.
 
+## Claude session recap
+
+Claude Code's session recap appends a model-written `recap:` line to an idle transcript once the terminal has been blurred for a few minutes after a finished turn.
+On a worker pane nobody returns to, that is a paid model call and a redraw of a finished pane, so the Claude launch in `bin/fm-spawn.sh` sets `CLAUDE_CODE_ENABLE_AWAY_SUMMARY=false` for every worker and secondmate.
+In 2.1.280 the recap gate reads that variable before the `awaySummaryEnabled` settings key, so a false value wins over any settings scope.
+
+Verified on 2026-09-24 with Claude Code 2.1.280 and Herdr 0.9.0 on Linux x86_64 (WSL2), in an isolated lab session from `bin/fm-herdr-lab.sh`.
+Each arm launched an interactive Claude in its own lab pane, opened `/config`, and filtered for `recap`; no prompt was submitted.
+
+```sh
+"$HERDR_LAB_HELPER" run "$LAB" pane run "$PANE" \
+  "env -u CLAUDE_CODE_CHILD_SESSION CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false claude --dangerously-skip-permissions"
+"$HERDR_LAB_HELPER" run "$LAB" pane run "$PANE" \
+  "env -u CLAUDE_CODE_CHILD_SESSION CLAUDE_CODE_ENABLE_AWAY_SUMMARY=false CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false claude --dangerously-skip-permissions"
+```
+
+Observed `/config` row without the variable, then with it:
+
+```text
+    Session recap                              true
+    Session recap                              false
+```
+
+Re-check the row after a Claude Code upgrade; a release that renamed the variable would show `true` again with the launch unchanged.
+
 ## Gemini
 
 The Gemini crewmate adapter was verified on 2026-09-04 with gemini-cli 0.58.0 on Linux, Node v24.20.0, tmux 3.4.

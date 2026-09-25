@@ -784,7 +784,10 @@ nm_effective_ci_step_status() {
 # actual PR #252 run). Reads the ci step's log tail via `axi logs` and scans it
 # for the MOST RECENT recognized marker (the log is append-only/chronological,
 # so the last match is current): green with nothing red after it means CI is
-# green right now, still only waiting on merge/close.
+# green right now, still only waiting on merge/close. Short of green, `pending`
+# means the monitor is only waiting on checks to report (running, not reported
+# yet, or re-armed because the base branch advanced), while `not-ready` means a
+# check failed or the monitor reported issues.
 nm_ci_checks_state() {
   local run_id log_tail marker
   run_id=$(strip_quotes "$(nm_field id)")
@@ -796,7 +799,8 @@ nm_ci_checks_state() {
     | tail -1)
   case "$marker" in
     *"checks passed"*|*"no CI checks reported - still monitoring"*) printf 'green' ;;
-    *"no CI checks reported yet"*|*"checks failed"*|*"issues detected"*|*"CI checks running"*|*"base branch advanced"*"re-arming CI monitor timeout"*) printf 'not-ready' ;;
+    *"no CI checks reported yet"*|*"CI checks running"*|*"base branch advanced"*"re-arming CI monitor timeout"*) printf 'pending' ;;
+    *"checks failed"*|*"issues detected"*) printf 'not-ready' ;;
     *) printf 'unknown' ;;
   esac
 }
@@ -1082,9 +1086,15 @@ if [ "$HAVE_RUN" = 1 ]; then
     elif [ "$CI_STEP_STATUS" = fixing ]; then
       CI_LOG_STATE=not-ready
     fi
-    if [ "$CI_LOG_STATE" != not-ready ]; then
-      emit "done" status-log "$(status_line_note "$LOG_LINE")${SEP}run still monitoring PR"
-    fi
+    case "$CI_LOG_STATE" in
+      not-ready|pending) ;;
+      *) emit "done" status-log "$(status_line_note "$LOG_LINE")${SEP}run still monitoring PR" ;;
+    esac
+  fi
+  # Its own ${SEP} component, like the human-owed gate: the monitor is only
+  # waiting on checks to report, not fixing and not failing.
+  if [ "$RUN_STATE" = working ] && [ "$CI_LOG_STATE" = pending ]; then
+    RUN_DETAIL="$RUN_DETAIL${SEP}$FM_CI_AWAITING_CHECKS"
   fi
 
   # Reconcile the status log. A needs-decision/blocked log line that the run-step

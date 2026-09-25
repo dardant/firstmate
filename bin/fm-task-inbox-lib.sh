@@ -7,7 +7,8 @@
 # the self-describing doorbell line, and the watcher's re-ring ladder policy.
 # bin/fm-send.sh writes and rings locally, the host-local remote steer leg
 # (bin/fm-remote-secondmate-control.sh cmd_send) writes idempotently and rings
-# on the remote host, bin/fm-watch.sh polls and re-rings, and the brief
+# on the remote host, bin/fm-watch.sh polls, re-rings, and reads the newest
+# steer's enqueue time (fm_task_inbox_newest_at), and the brief
 # scaffold (bin/fm-brief.sh) tells the worker how to read and acknowledge;
 # none of them restates the format.
 #
@@ -251,6 +252,35 @@ fm_task_inbox_body() {  # <record-path>
     fi
   done < "$1"
   return 1
+}
+
+# The `at=` enqueue time of <task>'s newest steer, unhandled or already in
+# handled/, or empty when that record carries none. Sequences are allocated in
+# enqueue order, so the highest sequence is the latest steer; the root is scanned
+# before handled/ so a concurrent acknowledgement move is still seen. Fails when
+# the task has never been steered.
+fm_task_inbox_newest_at() {  # <state-dir> <task-id>
+  local dir newest='' newest_n=0 d f n line at=''
+  dir=$(fm_task_inbox_dir "$1" "$2")
+  for d in "$dir" "$dir/handled"; do
+    for f in "$d"/*.msg; do
+      [ -e "$f" ] || continue
+      n=$(fm_task_inbox_seq_of "${f##*/}") || continue
+      if [ -z "$newest" ] || [ "$n" -gt "$newest_n" ]; then
+        newest=$f
+        newest_n=$n
+      fi
+    done
+  done
+  [ -n "$newest" ] || return 1
+  [ -f "$newest" ] || newest="$dir/handled/${newest##*/}"
+  if [ -f "$newest" ]; then
+    while IFS= read -r line; do
+      [ "$line" != -- ] || break
+      case "$line" in at=*) at=${line#at=} ;; esac
+    done < "$newest"
+  fi
+  printf '%s' "$at"
 }
 
 # The constant self-describing doorbell line for the inbox containing a record.

@@ -67,6 +67,12 @@ As defense in depth, `fm_composer_strip_ghost` in `../../../bin/fm-composer-lib.
 `../../../docs/herdr-backend.md` under "Composer and injection safety" owns dark-TRUECOLOR tradeoffs and `../../../docs/verification/runtime-backends.md` owns captures.
 Styled capture stays internal to the boolean detector; `fm-peek` and model-facing captures remain plain, without escapes.
 
+## Session recap
+
+The spawn scopes `CLAUDE_CODE_ENABLE_AWAY_SUMMARY=false` to every Claude worker and secondmate, which turns off the session recap.
+Left on, an idle pane whose terminal is blurred gains a model-written `recap:` line a few minutes after its last turn, a redraw nobody reads that changes a finished pane's content.
+The env var outranks the `awaySummaryEnabled` settings key, and `../../../docs/verification/runtime-backends.md` under "Claude session recap" owns the evidence.
+
 ## Transcript persistence
 
 The spawn drops an inherited `CLAUDE_CODE_CHILD_SESSION` from every Claude launch, because an agent started with that parent-session marker writes no transcript and so cannot be reviewed or resumed.
