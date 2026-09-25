@@ -1,0 +1,41 @@
+## relaunched real Claude, parked on the dialog again
+store: hasClaudeMdExternalIncludesApproved=undefined hasClaudeMdExternalIncludesWarningShown=undefined
+
+## BASELINE (base 7a014b4) fm-control.sh t1 interrupt on the parked dialog
+interrupt-delivered t1 harness=claude backend=tmux verified=agent-alive cancel=unconfirmed
+rc=0
+store: hasClaudeMdExternalIncludesApproved=false hasClaudeMdExternalIncludesWarningShown=true
+
+## BASE fm-claude-trust.sh <worktree> <project> on that declined store
+error: project entry for /tmp/fmlive-r2/home/projects/proj in /tmp/fmlive-r2/cfg/.claude.json already declined external CLAUDE.md imports; refusing to override that consent
+error: refusing to pre-register Claude trust: could not record trust for '/tmp/fmlive-r2/wt-t1' and project '/tmp/fmlive-r2/home/projects/proj' in '/tmp/fmlive-r2/cfg/.claude.json'
+rc=1
+
+## FIXED fm-claude-trust.sh <worktree> <project> on that declined store
+error: refusing to pre-register Claude trust: project entry for '/tmp/fmlive-r2/home/projects/proj' in '/tmp/fmlive-r2/cfg/.claude.json' already declined external CLAUDE.md imports, and a spawn must not override that consent; Claude Code records the same decline for Escape as for "No", so if nobody chose it, reset it with: bin/fm-claude-trust.sh --reset-imports-decline '/tmp/fmlive-r2/home/projects/proj'
+rc=1
+store byte-identical after refusal: yes
+
+## FIXED fm-claude-trust.sh --reset-imports-decline <project>
+reset: /tmp/fmlive-r2/home/projects/proj
+rc=0
+store: hasClaudeMdExternalIncludesApproved=undefined hasClaudeMdExternalIncludesWarningShown=undefined
+## reset again (idempotent)
+unchanged: /tmp/fmlive-r2/home/projects/proj
+rc=0
+
+## FIXED spawn-time registration now proceeds, without manufacturing consent
+trusted: /tmp/fmlive-r2/wt-t1
+trusted (project root): /tmp/fmlive-r2/home/projects/proj
+rc=0
+store: hasClaudeMdExternalIncludesApproved=undefined hasClaudeMdExternalIncludesWarningShown=undefined
+
+## After reset, a fresh real Claude in the primary clone asks the question again:
+(prior step's claude, left alive by the base interrupt, stopped by SIGTERM and relaunched)
+  This project's CLAUDE.md imports files outside the current working directory. Never allow this for third-party repositories.
+  External imports:
+    /tmp/fmlive-r2/home/AGENTS.md
+  Important: Only use Claude Code with files you trust. Accessing untrusted files may pose security risks https://code.claude.com/docs/en/security
+  ❯ No, disable external imports
+    Yes, allow external imports
+  Enter to confirm · Esc to cancel

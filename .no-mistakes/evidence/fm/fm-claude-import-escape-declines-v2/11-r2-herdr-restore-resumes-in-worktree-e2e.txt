@@ -1,0 +1,4 @@
+## herdr herdr 0.9.0: tests/fm-backend-herdr-restore-cwd-e2e.test.sh at 1bf3f30
+ok - real herdr: a ship's pane opens with its root shell in the leased worktree
+ok - real herdr: a restarted server resumes the ship's agent inside its recorded worktree
+exit=0

@@ -1,0 +1,32 @@
+## Store left by the real Escape above (project entry):
+{"hasTrustDialogAccepted":true,"hasClaudeMdExternalIncludesApproved":false,"hasClaudeMdExternalIncludesWarningShown":true,"lastGracefulShutdown":false,"lastVersionBase":"2.1.280","hasUnseenTeamArtifacts":false}
+
+## BASE fm-claude-trust.sh <worktree> <project> on that declined store
+error: project entry for /tmp/fmlive.wwHqK9/home/projects/proj in /tmp/fmlive.wwHqK9/cfg/.claude.json already declined external CLAUDE.md imports; refusing to override that consent
+error: refusing to pre-register Claude trust: could not record trust for '/tmp/fmlive.wwHqK9/wt-t1' and project '/tmp/fmlive.wwHqK9/home/projects/proj' in '/tmp/fmlive.wwHqK9/cfg/.claude.json'
+rc=1
+
+## FIXED fm-claude-trust.sh <worktree> <project> on that declined store
+error: refusing to pre-register Claude trust: project entry for '/tmp/fmlive.wwHqK9/home/projects/proj' in '/tmp/fmlive.wwHqK9/cfg/.claude.json' already declined external CLAUDE.md imports, and a spawn must not override that consent; Claude Code records the same decline for Escape as for "No", so if nobody chose it, reset it with: /home/dardan/.no-mistakes/worktrees/a2097c65a770/01M3CRG2EZD065D527BJFYMT0V/bin/fm-claude-trust.sh --reset-imports-decline '/tmp/fmlive.wwHqK9/home/projects/proj'
+rc=1
+store byte-identical after refusal: yes
+
+## Adversarial: reset pointed at a subdirectory of the checkout
+error: refusing to reset the external-imports decline: '/tmp/fmlive.wwHqK9/home/projects/proj/sub' is not a checkout root (its root is '/tmp/fmlive.wwHqK9/home/projects/proj')
+rc=1
+
+## FIXED fm-claude-trust.sh --reset-imports-decline <project>
+reset: /tmp/fmlive.wwHqK9/home/projects/proj
+rc=0
+project entry now: {"hasTrustDialogAccepted":true,"lastGracefulShutdown":false,"lastVersionBase":"2.1.280","hasUnseenTeamArtifacts":false}
+
+## Reset again is idempotent
+unchanged: /tmp/fmlive.wwHqK9/home/projects/proj
+rc=0
+
+## Spawn-time registration now proceeds (unasked: no consent manufactured)
+trusted: /tmp/fmlive.wwHqK9/wt-t1
+trusted (project root): /tmp/fmlive.wwHqK9/home/projects/proj
+rc=0
+project entry: {"hasTrustDialogAccepted":true,"lastGracefulShutdown":false,"lastVersionBase":"2.1.280","hasUnseenTeamArtifacts":false}
+worktree entry: {"hasTrustDialogAccepted":true}

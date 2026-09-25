@@ -1,0 +1,29 @@
+## FIXED fm-control.sh t1 interrupt (real Claude parked on the imports dialog)
+error: task t1's pane shows a claude launch dialog, and any key would answer it (Escape on Claude's external-imports dialog records a standing decline); 'interrupt' refuses. Use 'exit' or 'relaunch', which stop a parked agent by signal without answering it, and leave the dialog's question to the operator
+rc=1
+pane still on dialog: 1
+store: hasClaudeMdExternalIncludesApproved=undefined hasClaudeMdExternalIncludesWarningShown=undefined
+
+## FIXED fm-send.sh t1 --key Escape
+error: fmses:fm-t1 shows a harness launch dialog, and key 'Escape' would answer it (Escape on Claude's external-imports dialog records a standing decline); nothing was sent. Stop the agent without a key via '/home/dardan/.no-mistakes/worktrees/a2097c65a770/01M3CRG2EZD065D527BJFYMT0V/bin/fm-control.sh t1 exit' or '/home/dardan/.no-mistakes/worktrees/a2097c65a770/01M3CRG2EZD065D527BJFYMT0V/bin/fm-control.sh t1 relaunch', and leave any dialog's question to the operator
+rc=1
+pane still on dialog: 1
+store: hasClaudeMdExternalIncludesApproved=undefined hasClaudeMdExternalIncludesWarningShown=undefined
+
+## FIXED fm-send.sh t1 --key Enter
+error: fmses:fm-t1 shows a harness launch dialog, and key 'Enter' would answer it (Escape on Claude's external-imports dialog records a standing decline); nothing was sent. Stop the agent without a key via '/home/dardan/.no-mistakes/worktrees/a2097c65a770/01M3CRG2EZD065D527BJFYMT0V/bin/fm-control.sh t1 exit' or '/home/dardan/.no-mistakes/worktrees/a2097c65a770/01M3CRG2EZD065D527BJFYMT0V/bin/fm-control.sh t1 relaunch', and leave any dialog's question to the operator
+rc=1
+pane still on dialog: 1
+store: hasClaudeMdExternalIncludesApproved=undefined hasClaudeMdExternalIncludesWarningShown=undefined
+
+## FIXED fm-control.sh t1 exit (keyless stop by signal)
+claude pids under this lab: 
+stopped t1 harness=claude backend=tmux endpoint=fmses:fm-t1 worktree=/tmp/fmlive-r2/home/projects/proj
+rc=0
+lab claude alive after: (none listed = stopped)
+tmux endpoint preserved: fm-t1
+pane now shows:
+    Yes, allow external imports
+  Enter to confirm · Esc to cancel
+bash-5.3$
+store: hasClaudeMdExternalIncludesApproved=undefined hasClaudeMdExternalIncludesWarningShown=undefined

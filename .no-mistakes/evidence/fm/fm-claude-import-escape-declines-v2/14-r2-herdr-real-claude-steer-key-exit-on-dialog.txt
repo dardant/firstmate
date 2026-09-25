@@ -1,0 +1,42 @@
+lab session: fm-lab-r2-doorbell-3983245-26801 (herdr herdr 0.9.0)
+## fm-spawn.sh r1 <proj> claude --backend herdr
+A new version of treehouse is available: v2.3.0 → v3.0.0
+Run "treehouse update" to update
+
+🌳 Setting up worktree...
+🌳 Leased worktree at /tmp/fm-r2-herdr.iDMBzZ/treehouse/.treehouse/proj-b57696/1/proj. Run 'treehouse return /tmp/fm-r2-herdr.iDMBzZ/treehouse/.treehouse/proj-b57696/1/proj' to release it.
+spawned r1 harness=claude kind=ship mode=no-mistakes yolo=off window=fm-lab-r2-doorbell-3983245-26801:w1:p2 worktree=/tmp/fm-r2-herdr.iDMBzZ/treehouse/.treehouse/proj-b57696/1/proj
+spawn rc=0
+recorded worktree=/tmp/fm-r2-herdr.iDMBzZ/treehouse/.treehouse/proj-b57696/1/proj pane=w1:p2
+## pane (via lab helper pane read):
+  repositories.
+  External imports:
+    /tmp/fm-r2-herdr.iDMBzZ/AGENTS.md
+  Important: Only use Claude Code with files you trust. Accessing untrusted files may pose security risks
+  https://code.claude.com/docs/en/security
+  ❯ No, disable external imports
+    Yes, allow external imports
+  Enter to confirm · Esc to cancel
+store(project root): hasClaudeMdExternalIncludesApproved=undefined hasClaudeMdExternalIncludesWarningShown=undefined
+
+## fm-send.sh r1 'please rebase' (Herdr backend)
+fm-send: doorbell skipped (pane is parked on a launch dialog; use '/home/dardan/.no-mistakes/worktrees/a2097c65a770/01M3CRG2EZD065D527BJFYMT0V/bin/fm-control.sh r1 exit' or '/home/dardan/.no-mistakes/worktrees/a2097c65a770/01M3CRG2EZD065D527BJFYMT0V/bin/fm-control.sh r1 relaunch'); the steer is durably recorded at /tmp/fm-r2-herdr.iDMBzZ/home/state/r1.inbox/001.msg and the watcher will re-ring
+rc=0
+inbox: 001.msg handled 
+pane still on dialog: 1
+store(project root): hasClaudeMdExternalIncludesApproved=undefined hasClaudeMdExternalIncludesWarningShown=undefined
+
+## fm-send.sh r1 --key Escape (Herdr backend)
+error: fm-lab-r2-doorbell-3983245-26801:w1:p2 shows a harness launch dialog, and key 'Escape' would answer it (Escape on Claude's external-imports dialog records a standing decline); nothing was sent. Stop the agent without a key via '/home/dardan/.no-mistakes/worktrees/a2097c65a770/01M3CRG2EZD065D527BJFYMT0V/bin/fm-control.sh r1 exit' or '/home/dardan/.no-mistakes/worktrees/a2097c65a770/01M3CRG2EZD065D527BJFYMT0V/bin/fm-control.sh r1 relaunch', and leave any dialog's question to the operator
+rc=1
+pane still on dialog: 1
+store(project root): hasClaudeMdExternalIncludesApproved=undefined hasClaudeMdExternalIncludesWarningShown=undefined
+
+## fm-control.sh r1 exit (Herdr backend)
+stopped r1 harness=claude backend=herdr endpoint=fm-lab-r2-doorbell-3983245-26801:w1:p2 worktree=/tmp/fm-r2-herdr.iDMBzZ/treehouse/.treehouse/proj-b57696/1/proj
+rc=0
+    Yes, allow external imports
+  Enter to confirm · Esc to cancel
+$
+store(project root): hasClaudeMdExternalIncludesApproved=undefined hasClaudeMdExternalIncludesWarningShown=undefined
+lab teardown rc=0

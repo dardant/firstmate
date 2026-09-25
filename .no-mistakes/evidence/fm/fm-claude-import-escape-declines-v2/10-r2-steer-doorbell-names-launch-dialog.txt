@@ -1,0 +1,32 @@
+## Real Claude 2.1.280 (Claude Code) in a shell-wrapped isolated tmux pane (fmses:fm-t1), parked on the imports dialog
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Allow external CLAUDE.md file imports?
+  This project's CLAUDE.md imports files outside the current working directory. Never allow this for third-party repositories.
+  External imports:
+    /tmp/fmlive-r2/home/AGENTS.md
+  Important: Only use Claude Code with files you trust. Accessing untrusted files may pose security risks https://code.claude.com/docs/en/security
+  ❯ No, disable external imports
+    Yes, allow external imports
+  Enter to confirm · Esc to cancel
+store: hasClaudeMdExternalIncludesApproved=undefined hasClaudeMdExternalIncludesWarningShown=undefined
+
+## PRE-FIX (d882ab5) fm-send.sh t1 'please rebase' - the round-1 failure
+fm-send: doorbell skipped (composer visibly holds pending text); the steer is durably recorded at /tmp/fmlive-r2/fmhome/state/t1.inbox/001.msg and the watcher will re-ring
+rc=0
+pane still on dialog: 1
+store: hasClaudeMdExternalIncludesApproved=undefined hasClaudeMdExternalIncludesWarningShown=undefined
+
+## FIXED (1bf3f30) fm-send.sh t1 'please rebase'
+fm-send: doorbell skipped (pane is parked on a launch dialog; use '/home/dardan/.no-mistakes/worktrees/a2097c65a770/01M3CRG2EZD065D527BJFYMT0V/bin/fm-control.sh t1 exit' or '/home/dardan/.no-mistakes/worktrees/a2097c65a770/01M3CRG2EZD065D527BJFYMT0V/bin/fm-control.sh t1 relaunch'); the steer is durably recorded at /tmp/fmlive-r2/fmhome/state/t1.inbox/002.msg and the watcher will re-ring
+rc=0
+pane still on dialog: 1
+store: hasClaudeMdExternalIncludesApproved=undefined hasClaudeMdExternalIncludesWarningShown=undefined
+inbox records:
+001.msg
+002.msg
+handled
+pane (last lines, nothing typed into the dialog):
+  Important: Only use Claude Code with files you trust. Accessing untrusted files may pose security risks https://code.claude.com/docs/en/security
+  ❯ No, disable external imports
+    Yes, allow external imports
+  Enter to confirm · Esc to cancel

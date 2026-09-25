@@ -1,0 +1,34 @@
+## After --reset-imports-decline, a fresh real Claude launch in the primary clone asks again:
+  Allow external CLAUDE.md file imports?
+  External imports:
+    /tmp/fmlive.wwHqK9/home/AGENTS.md
+  ❯ No, disable external imports
+    Yes, allow external imports
+  Enter to confirm · Esc to cancel
+store: hasClaudeMdExternalIncludesApproved=undefined hasClaudeMdExternalIncludesWarningShown=undefined
+
+## FIXED fm-control.sh t1 interrupt (pane parked on the dialog)
+error: task t1's pane shows a claude launch dialog, and any key would answer it (Escape on Claude's external-imports dialog records a standing decline); 'interrupt' refuses. Use 'exit' or 'relaunch', which stop a parked agent by signal without answering it, and leave the dialog's question to the operator
+rc=1
+pane still on dialog: 1
+store: hasClaudeMdExternalIncludesApproved=undefined hasClaudeMdExternalIncludesWarningShown=undefined
+
+## FIXED fm-send.sh t1 --key Escape
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the requested message WILL still be sent.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+error: fmses:fm-t1 shows a harness launch dialog, and key 'Escape' would answer it (Escape on Claude's external-imports dialog records a standing decline); nothing was sent. Stop the agent without a key via '/home/dardan/.no-mistakes/worktrees/a2097c65a770/01M3CRG2EZD065D527BJFYMT0V/bin/fm-control.sh t1 exit' or '/home/dardan/.no-mistakes/worktrees/a2097c65a770/01M3CRG2EZD065D527BJFYMT0V/bin/fm-control.sh t1 relaunch', and leave any dialog's question to the operator
+rc=1
+pane still on dialog: 1
+store: hasClaudeMdExternalIncludesApproved=undefined hasClaudeMdExternalIncludesWarningShown=undefined
+
+## FIXED fm-send.sh t1 --key Enter
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+error: fmses:fm-t1 shows a harness launch dialog, and key 'Enter' would answer it (Escape on Claude's external-imports dialog records a standing decline); nothing was sent. Stop the agent without a key via '/home/dardan/.no-mistakes/worktrees/a2097c65a770/01M3CRG2EZD065D527BJFYMT0V/bin/fm-control.sh t1 exit' or '/home/dardan/.no-mistakes/worktrees/a2097c65a770/01M3CRG2EZD065D527BJFYMT0V/bin/fm-control.sh t1 relaunch', and leave any dialog's question to the operator
+rc=1
+pane still on dialog: 1
+store: hasClaudeMdExternalIncludesApproved=undefined hasClaudeMdExternalIncludesWarningShown=undefined

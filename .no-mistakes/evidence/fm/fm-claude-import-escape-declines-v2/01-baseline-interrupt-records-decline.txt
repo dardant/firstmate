@@ -1,0 +1,18 @@
+## BASELINE (base commit 7a014b4): fm-control.sh t1 interrupt against a real Claude 2.1.280 pane parked on the imports dialog
+$ pane before:
+  Allow external CLAUDE.md file imports?
+  ❯ No, disable external imports
+    Yes, allow external imports
+  Enter to confirm · Esc to cancel
+$ store before: hasClaudeMdExternalIncludesApproved=undefined hasClaudeMdExternalIncludesWarningShown=undefined
+$ base/bin/fm-control.sh t1 interrupt
+interrupt-delivered t1 harness=claude backend=tmux verified=agent-alive cancel=unconfirmed
+rc=0
+$ pane after (last lines):
+  ▝▝ ▝▝    /tmp/fmlive.wwHqK9/home/projects/proj
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏸ manual mode on · ? for shortcuts · ← for agents                                                                                 Not logged in · Run /login
+                                                                                                                                            ◐ medium · /effort
+$ store after: hasClaudeMdExternalIncludesApproved=false hasClaudeMdExternalIncludesWarningShown=true

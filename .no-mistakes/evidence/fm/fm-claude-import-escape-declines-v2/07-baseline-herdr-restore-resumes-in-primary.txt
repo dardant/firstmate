@@ -1,0 +1,3 @@
+## Same restore guard, run against the BASE commit's bin/fm-spawn.sh (lab helper from this change for the viewer)
+not ok - the task pane's root directory is '/tmp/fm-herdr-restore-cwd.np5KLA/project', not the worktree '/tmp/fm-herdr-restore-cwd.np5KLA/treehouse/.treehouse/project-71bf6f/1/project'; a restart would resume the agent there
+exit=1

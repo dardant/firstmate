@@ -1,0 +1,18 @@
+## FIXED fm-send.sh t1 'please rebase' (text steer; doorbell must not type into the dialog)
+fm-send: doorbell skipped (composer visibly holds pending text); the steer is durably recorded at /tmp/fmlive.wwHqK9/fmhome/state/t1.inbox/001.msg and the watcher will re-ring
+rc=
+pane still on dialog: 1
+store: hasClaudeMdExternalIncludesApproved=undefined hasClaudeMdExternalIncludesWarningShown=undefined
+
+## FIXED fm-control.sh t1 exit (keyless stop by SIGTERM)
+claude pid before: 249424 (claude)
+error: task t1's agent was parked on a claude launch dialog and signalled to stop (pids: 249424), but it still reads 'missing' after 15s; no key was sent
+rc=1
+claude pid alive after: no
+tmux endpoint preserved: no server running on /tmp/fmlive.wwHqK9/sock/tmux-1000/default
+worktree preserved: yes
+store: hasClaudeMdExternalIncludesApproved=undefined hasClaudeMdExternalIncludesWarningShown=undefined
+
+## exit again is idempotent
+error: task t1's endpoint fmses:fm-t1 reads 'missing', but tmux absence cannot be proven from a task record: the record does not carry the endpoint's socket identity, and a server-wide window inventory only describes the tmux server this process addresses, so a window absent from it may still be alive on another; exit will not claim an agent stopped at an address it cannot trust, nor send lifecycle input to one
+rc=1

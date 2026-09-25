@@ -1,0 +1,14 @@
+ok - fm-spawn herdr: a ship leases its worktree first and opens its tab inside it
+ok - fm-spawn herdr: a fresh spawn over its own leased record reuses that worktree and leases nothing
+ok - fm-spawn herdr: an aborted respawn restores the prior record, and the next respawn reuses the same worktree
+ok - fm-spawn herdr: a respawn whose backlog commit fails restores the record and keeps its worktree
+ok - fm-spawn herdr: a rollback retried at exit still restores the prior record
+ok - fm-spawn herdr: a failed prior-record restore keeps the snapshot its error names
+ok - fm-spawn herdr: a fresh spawn over a record whose worktree is gone or not its lease refuses before leasing
+ok - fm-spawn herdr: an abort before the task record returns the leased worktree
+ok - fm-spawn herdr: an abort returns a leased worktree that the surviving record does not name
+ok - fm-spawn herdr: an abort after publication returns the slot and releases its claim
+ok - fm-spawn herdr: an abort keeps a leased worktree that holds work and names the manual return
+ok - fm-spawn herdr: an abort after the record was published still returns the leased worktree
+ok - fm-spawn herdr: an abort after launch keeps the lease while its agent is still alive
+ok - fm-spawn herdr: an abort after launch keeps the lease while an unregistered harness still runs

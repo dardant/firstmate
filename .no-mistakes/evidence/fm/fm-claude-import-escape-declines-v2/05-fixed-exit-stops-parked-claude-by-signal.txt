@@ -1,0 +1,25 @@
+## Real Claude 2.1.280 in a shell-wrapped tmux pane (as a fleet pane is), parked on the imports dialog
+  Allow external CLAUDE.md file imports?
+  ❯ No, disable external imports
+  Enter to confirm · Esc to cancel
+live composer verdict on this dialog: pending
+
+## fm-send.sh t1 <steer> doorbell message (expected: 'pane is parked on a launch dialog; use fm-control.sh t1 exit or relaunch')
+fm-send: doorbell skipped (composer visibly holds pending text); the steer is durably recorded at /tmp/fmlive.wwHqK9/fmhome/state/t1.inbox/001.msg and the watcher will re-ring
+
+## FIXED fm-control.sh t1 exit
+claude pid before: 474105 (claude)
+store before: hasClaudeMdExternalIncludesApproved=undefined hasClaudeMdExternalIncludesWarningShown=undefined
+stopped t1 harness=claude backend=tmux endpoint=fmses:fm-t1 worktree=/tmp/fmlive.wwHqK9/wt-t1
+rc=0
+claude pid alive after: no
+tmux endpoint preserved: fm-t1
+pane now shows:
+    Yes, allow external imports
+  Enter to confirm · Esc to cancel
+bash-5.3$
+store after: hasClaudeMdExternalIncludesApproved=undefined hasClaudeMdExternalIncludesWarningShown=undefined
+
+## exit again (idempotent)
+already-stopped t1 harness=claude backend=tmux endpoint=fmses:fm-t1 worktree=/tmp/fmlive.wwHqK9/wt-t1
+rc=0
