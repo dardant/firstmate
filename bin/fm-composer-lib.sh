@@ -121,8 +121,14 @@
 # genuine empty agent composer ONLY inside a bordered container. On a bare row
 # it is a dead-shell prompt and classifies `unknown` (never a safe injection
 # target). The AGENT glyphs `❯` (claude), `›` (codex), `⟩` (U+27E9, muse),
-# and `→` (U+2192, cursor) are a genuine empty agent composer either way.
-# Both glyph sets are declared
+# and `→` (U+2192, cursor) are a genuine empty agent composer either way,
+# with one exception: a caller that knows the pane's harness names it in
+# FM_COMPOSER_HARNESS, and a harness listed in FM_COMPOSER_FRAMED_HARNESSES
+# always draws its composer inside a frame, so for it a bare agent glyph row
+# with no `─` rule directly above and a closing rule below is not its composer.
+# It is a plain shell prompt themed with the same glyph - zsh's pure and
+# starship prompts draw a bare `❯` - and reads `unknown`, exactly like a bare
+# shell glyph. Both glyph sets are declared
 # exactly once below; every decision reaches them through the declarations.
 #
 # GHOST/PLACEHOLDER TEXT (task afk-herdr-false-pending): a harness fills an
@@ -442,13 +448,24 @@ fm_busy_lines_match() {  # [harness]
 }
 
 # The prompt glyphs, each declared exactly once (see THE SAFETY RULE above).
-# AGENT glyphs are a genuine empty agent composer on any row, bordered or bare.
+# AGENT glyphs are a genuine empty agent composer on any row, bordered or bare,
+# except the unframed bare row of a framed harness (FM_COMPOSER_FRAMED_HARNESSES).
 # SHELL glyphs are one only INSIDE a composer container; on a bare row they are
 # a dead-shell prompt and must never read `empty`. Newline-separated and
 # consumed by `read` rather than word splitting, so `$`, `%`, and `#` stay
 # literal and no entry is ever exposed to pathname expansion.
 FM_COMPOSER_AGENT_PROMPT_GLYPHS=$(printf '%s\n' '❯' '›' '⟩' '→')
 FM_COMPOSER_SHELL_PROMPT_GLYPHS=$(printf '%s\n' '>' '$' '%' '#')
+
+# Harnesses whose composer is ALWAYS framed (see THE SAFETY RULE above), one per
+# line, matched against the caller-supplied FM_COMPOSER_HARNESS. Claude 2.x draws
+# its `❯` composer between two solid `─` rules and older Claude inside a box, so
+# for Claude an unframed `❯` row is only ever a themed shell prompt. omp draws a
+# genuinely bare `❯` and codex, muse, and cursor draw bare glyphs, so they are
+# deliberately absent: add a harness only after its live composer is verified
+# framed in every state, because a listed harness that ever draws a bare
+# composer would have its every delivery refused.
+FM_COMPOSER_FRAMED_HARNESSES=$(printf '%s\n' claude)
 
 # The ONE fleet-wide idle-placeholder set: composer text a harness renders in
 # an EMPTY composer that a plain capture cannot tell from typed text. Grok's
@@ -1104,6 +1121,56 @@ _fm_composer_screen_row() {  # <n> <screen>
   printf '%s\n' "$2" | sed -n "$(($1 + 1))p"
 }
 
+# fm_composer_harness_requires_frame: 0 when the caller named the pane's harness
+# in FM_COMPOSER_HARNESS and that harness is listed in
+# FM_COMPOSER_FRAMED_HARNESSES. An unset harness keeps every glyph rule exactly
+# as it was, so callers that do not know the harness are unaffected.
+fm_composer_harness_requires_frame() {
+  local harness=${FM_COMPOSER_HARNESS:-} entry
+  [ -n "$harness" ] || return 1
+  while IFS= read -r entry; do
+    [ -n "$entry" ] || continue
+    [ "$entry" = "$harness" ] && return 0
+  done <<EOF
+$FM_COMPOSER_FRAMED_HARNESSES
+EOF
+  return 1
+}
+
+# _fm_composer_bare_row_framed: 0 when the bare glyph row <glyph-row> of the
+# plain screen sits in a separated frame - a solid `─` rule directly above it
+# and, after only non-blank rows (the composer's own wrapped input), a solid
+# rule below it. A blank row, or the end of the screen, before the closing rule
+# means the glyph row is not framed.
+_fm_composer_bare_row_framed() {  # <plain-screen> <glyph-row>
+  local plain=$1 row=$2 line next
+  [ "$row" -gt 0 ] || return 1
+  line=$(_fm_composer_screen_row "$((row - 1))" "$plain")
+  fm_composer_normalize_trim_var line
+  _fm_composer_pi_separator_row "$line" || return 1
+  next=$((row + 1))
+  while :; do
+    line=$(_fm_composer_screen_row "$next" "$plain")
+    fm_composer_normalize_trim_var line
+    [ -n "$line" ] || return 1
+    _fm_composer_pi_separator_row "$line" && return 0
+    next=$((next + 1))
+  done
+}
+
+# _fm_composer_frame_gate: the framed-harness half of THE SAFETY RULE, applied
+# to a verdict a bare agent-glyph shape produced. It can only move `empty` to
+# `unknown` (the asymmetry above), and only for a framed harness whose glyph row
+# is not framed; every other verdict passes through untouched.
+_fm_composer_frame_gate() {  # <plain-screen> <glyph-row> <verdict>
+  if [ "$3" = empty ] && fm_composer_harness_requires_frame \
+     && ! _fm_composer_bare_row_framed "$1" "$2"; then
+    printf 'unknown'
+  else
+    printf '%s' "$3"
+  fi
+}
+
 # _fm_composer_row_content: extract the classification content of one raw row:
 # ghost-strip when styled, plain otherwise, normalize-trim, and strip one
 # matching pair of side border glyphs.
@@ -1587,7 +1654,7 @@ EOF
 
 fm_composer_classify_screen() {  # <caps> <screen> [cursor_row] [identity]
   local caps=$1 screen=$2 cy=${3:-} identity=${4:-}
-  local styled=0 cursor=0 has_identity=0 kv plain
+  local styled=0 cursor=0 has_identity=0 kv plain verdict
   while IFS= read -r kv; do
     case "$kv" in
       styled=1) styled=1 ;;
@@ -1624,10 +1691,11 @@ EOF
       if [ "$FM_COMPOSER_SCAN_PI_PAIR_FOUND" = 1 ] \
          && [ "$cy" -gt "$FM_COMPOSER_SCAN_PI_OPEN" ] \
          && [ "$cy" -lt "$FM_COMPOSER_SCAN_PI_CLOSE" ]; then
-        _fm_composer_classify_bare_pi_overlap "$screen" "$styled" "$has_identity" "$identity" "$cy"
+        verdict=$(_fm_composer_classify_bare_pi_overlap "$screen" "$styled" "$has_identity" "$identity" "$cy")
       else
-        _fm_composer_classify_bare_row "$screen" "$styled" "$cy"
+        verdict=$(_fm_composer_classify_bare_row "$screen" "$styled" "$cy")
       fi
+      _fm_composer_frame_gate "$plain" "$cy" "$verdict"
       return 0
     fi
     # A bare composer's WRAP region: long typed input wraps below the glyph
@@ -1639,7 +1707,8 @@ EOF
     # and earns its retry.
     if [ "$FM_COMPOSER_SCAN_BARE_ROW" -ge 0 ] && [ "$cy" -gt "$FM_COMPOSER_SCAN_BARE_ROW" ] \
        && _fm_composer_wrap_region_ok "$plain" "$FM_COMPOSER_SCAN_BARE_ROW" "$cy"; then
-      _fm_composer_classify_bare_wrap "$screen" "$styled" "$FM_COMPOSER_SCAN_BARE_ROW" "$cy"
+      _fm_composer_frame_gate "$plain" "$FM_COMPOSER_SCAN_BARE_ROW" \
+        "$(_fm_composer_classify_bare_wrap "$screen" "$styled" "$FM_COMPOSER_SCAN_BARE_ROW" "$cy")"
       return 0
     fi
     if [ "$FM_COMPOSER_SCAN_PI_PAIR_FOUND" = 1 ] \
@@ -1674,16 +1743,17 @@ EOF
       ;;
     bare)
       if [ "$FM_COMPOSER_SELECTED_LAST" -gt "$FM_COMPOSER_SELECTED_FIRST" ]; then
-        _fm_composer_classify_bare_wrap "$screen" "$styled" \
-          "$FM_COMPOSER_SELECTED_FIRST" "$FM_COMPOSER_SELECTED_LAST"
+        verdict=$(_fm_composer_classify_bare_wrap "$screen" "$styled" \
+          "$FM_COMPOSER_SELECTED_FIRST" "$FM_COMPOSER_SELECTED_LAST")
       elif [ "$FM_COMPOSER_SCAN_PI_PAIR_FOUND" = 1 ] \
          && [ "$FM_COMPOSER_SELECTED_FIRST" -gt "$FM_COMPOSER_SCAN_PI_OPEN" ] \
          && [ "$FM_COMPOSER_SELECTED_FIRST" -lt "$FM_COMPOSER_SCAN_PI_CLOSE" ]; then
-        _fm_composer_classify_bare_pi_overlap "$screen" "$styled" "$has_identity" "$identity" \
-          "$FM_COMPOSER_SELECTED_FIRST"
+        verdict=$(_fm_composer_classify_bare_pi_overlap "$screen" "$styled" "$has_identity" "$identity" \
+          "$FM_COMPOSER_SELECTED_FIRST")
       else
-        _fm_composer_classify_bare_row "$screen" "$styled" "$FM_COMPOSER_SELECTED_FIRST"
+        verdict=$(_fm_composer_classify_bare_row "$screen" "$styled" "$FM_COMPOSER_SELECTED_FIRST")
       fi
+      _fm_composer_frame_gate "$plain" "$FM_COMPOSER_SELECTED_FIRST" "$verdict"
       ;;
     leftbar)
       _fm_composer_classify_leftbar "$screen" "$styled" \

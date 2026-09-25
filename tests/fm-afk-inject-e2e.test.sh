@@ -15,6 +15,16 @@
 #     A captain-relevant status must deliver exactly ONE sentinel-prefixed,
 #     single-line digest with no duplicate or spurious user submission.
 #
+#   Scenario D (primary exited to a shell): the supervisor pane is a plain
+#     interactive shell whose prompt is a bare `❯`, and the escalation quotes a
+#     `$(touch <file>)` command substitution. The daemon must refuse to type,
+#     the file must never exist, and the escalation must stay buffered.
+#
+# The supervisor fixture runs as a process named `claude` and draws Claude's
+# framed composer, because the daemon types only into a pane whose foreground
+# process is its detected primary harness (FM_DAEMON_PRIMARY_HARNESS=claude
+# here, pinned so the result never depends on what launched the suite).
+#
 # Isolation: all test tmux runs on a dedicated socket (tmux -L afk-e2e-<pid>).
 # A tmux shim first on PATH redirects the daemon's bare `tmux` calls to the
 # private socket. The daemon points at a throwaway state dir (FM_STATE_OVERRIDE)
@@ -71,9 +81,18 @@ LOG_FILE="$STATE_DIR/submitted.log"
 # Source the daemon to get FM_INJECT_MARK, afk_enter, afk_exit.
 # shellcheck source=/dev/null
 . "$DAEMON"
+FM_DAEMON_PRIMARY_HARNESS=claude
+export FM_DAEMON_PRIMARY_HARNESS
 
-# Private tmux server with a supervisor session.
-"$REAL_TMUX" -L "$SOCKET" new-session -d -s supervisor -x 200 -y 50
+# The fixture's process identity: bash under the name `claude`. A symlink, not a
+# copy, so the kernel records the link name as the executable (a copied
+# platform binary fails code signing on macOS arm64).
+mkdir -p "$STATE_DIR/bin"
+ln -s "$(command -v bash)" "$STATE_DIR/bin/claude"
+
+# Private tmux server with a supervisor session. The pane is wide enough that a
+# batched digest never wraps across the composer's closing rule.
+"$REAL_TMUX" -L "$SOCKET" new-session -d -s supervisor -x 1000 -y 50
 SUPERVISOR_PANE=$("$REAL_TMUX" -L "$SOCKET" display-message -p -t supervisor '#{pane_id}')
 
 # Supervisor pane loop: a small deterministic composer that logs each submitted
@@ -93,15 +112,22 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 _buf=
-# The drawn composer row carries a real agent prompt glyph, matching the
-# production supervisor pane this daemon injects into: under the strict
-# container-proof rule (captain decision blank-row-injection-posture) a bare
-# unidentified row is never a safe injection target, so the fixture must
-# render the shape the classifier positively proves - "❯ " when idle,
-# "❯ <buffer>" while input is pending. The glyph is rendering only; it never
-# enters the buffer, so submitted-content assertions are unchanged.
+RULE='────────────────────────────────────────'
+# The drawn composer is Claude's framed shape, matching the production
+# supervisor pane this daemon injects into: under the strict container-proof
+# rule (captain decision blank-row-injection-posture) a bare unidentified row is
+# never a safe injection target, and for a Claude primary a bare, unframed `❯`
+# is a themed shell prompt, so the fixture renders the shape the classifier
+# positively proves - a `❯` row between two solid rules, "❯ " when idle and
+# "❯ <buffer>" while input is pending, with the cursor left on that row. The
+# glyph is rendering only; it never enters the buffer, so submitted-content
+# assertions are unchanged.
 redraw() {
-  printf '\r\033[K\xe2\x9d\xaf %s' "$_buf"
+  printf '\r\033[K\xe2\x9d\xaf %s\0337\n\r\033[K%s\0338' "$_buf" "$RULE"
+}
+frame() {
+  printf '%s\n' "$RULE"
+  redraw
 }
 submit_line() {
   local _line=$_buf _c _hex
@@ -113,11 +139,11 @@ submit_line() {
   _hex=$(printf '%s' "$_line" | od -An -tx1 | tr -d ' \n')
   printf '%s\t%s\t%s\n' "$_hex" "$_line" "$_c" >> "$LOG"
   _buf=
-  printf '\r\033[K\n'
-  redraw
+  printf '\n\n'
+  frame
 }
 
-redraw
+frame
 while IFS= read -r -n 1 _ch; do
   if [ -z "$_ch" ]; then
     submit_line
@@ -134,7 +160,7 @@ chmod +x "$LOOP_SCRIPT"
 
 # Start the loop in the supervisor pane.
 "$REAL_TMUX" -L "$SOCKET" send-keys -t "$SUPERVISOR_PANE" \
-  "bash '$LOOP_SCRIPT' '$LOG_FILE'" Enter
+  "exec '$STATE_DIR/bin/claude' '$LOOP_SCRIPT' '$LOG_FILE'" Enter
 sleep 1  # let the loop start and settle
 
 # tmux shim: redirects bare `tmux` to the private socket. Optionally swallows
@@ -162,10 +188,10 @@ chmod +x "$TMUX_SHIM_DIR/tmux"
 # detection). The pane is an inert shell - it just needs to exist.
 "$REAL_TMUX" -L "$SOCKET" new-window -d -n fm-fake-c1 -t supervisor
 
-start_daemon() {
+start_daemon() {  # [supervisor-pane]
   PATH="$TMUX_SHIM_DIR:$PATH" \
   FM_STATE_OVERRIDE="$STATE_DIR" \
-  FM_SUPERVISOR_TARGET="$SUPERVISOR_PANE" \
+  FM_SUPERVISOR_TARGET="${1:-$SUPERVISOR_PANE}" \
   FM_SUPERVISOR_BACKEND=tmux \
   FM_ESCALATE_BATCH_SECS=0 \
   FM_HOUSEKEEPING_TICK=1 \
@@ -421,8 +447,75 @@ test_scenario_c() {
   pass "Scenario C: a normal captain status injects exactly one clean single-line sentinel digest"
 }
 
+# --- Scenario D: the primary exited to a plain shell ------------------------
+# The report's lab proof, portable: a real interactive shell with a bare `❯`
+# prompt looks like an idle empty composer to every rendered guard, and the
+# shell would run any command substitution a worker quoted. Only the process
+# ownership proof can refuse it.
+
+SHELL_PANE=
+start_bare_prompt_shell() {
+  local rc="$STATE_DIR/zdot"
+  mkdir -p "$rc"
+  if command -v zsh >/dev/null 2>&1; then
+    printf '%s\n' "PROMPT='❯ '" 'RPROMPT=' > "$rc/.zshrc"
+    SHELL_PANE=$("$REAL_TMUX" -L "$SOCKET" new-window -d -P -F '#{pane_id}' -n bare-shell -t supervisor \
+      -- env ZDOTDIR="$rc" zsh -i)
+  else
+    SHELL_PANE=$("$REAL_TMUX" -L "$SOCKET" new-window -d -P -F '#{pane_id}' -n bare-shell -t supervisor \
+      -- env PS1='❯ ' bash --norc --noprofile -i)
+  fi
+  local i=0
+  while [ "$i" -lt 50 ]; do
+    case "$("$REAL_TMUX" -L "$SOCKET" capture-pane -p -t "$SHELL_PANE" 2>/dev/null)" in
+      *'❯'*) return 0 ;;
+    esac
+    sleep 0.1
+    i=$((i + 1))
+  done
+  fail "Scenario D: the bare-prompt shell never drew its prompt"
+}
+
+test_scenario_d() {
+  local proof="$STATE_DIR/shell-exec-proof" rc=0
+  reset_state
+  rm -f "$proof"
+  start_bare_prompt_shell
+  # Non-vacuity: every rendered guard reads this shell as a safe, idle, empty
+  # composer when the harness is not named, which is exactly how the digest
+  # used to be typed into it.
+  [ "$(PATH="$TMUX_SHIM_DIR:$PATH" FM_COMPOSER_HARNESS='' fm_tmux_composer_state "$SHELL_PANE")" = empty ] \
+    || fail "Scenario D: the bare-prompt shell no longer looks like an empty composer, so this case proves nothing"
+  if PATH="$TMUX_SHIM_DIR:$PATH" pane_is_busy "$SHELL_PANE" tmux; then
+    fail "Scenario D: the idle shell reads busy, so the busy guard would hide the ownership refusal"
+  fi
+  afk_enter "$STATE_DIR"
+  # The worker text ends in `;`, which closes the command zsh would parse from
+  # the digest's head, so the flush suffix becomes a separate subshell and the
+  # command substitution really runs if the digest is ever typed and submitted
+  # (verified against the pre-fix daemon, which created the file).
+  escalate_add "$STATE_DIR" "needs-decision: worker quoted \$(touch $proof) in its status line;"
+  PATH="$TMUX_SHIM_DIR:$PATH" LOG="$STATE_DIR/.supervise-daemon.log" FM_SUPERVISOR_BACKEND=tmux \
+    FM_SUPERVISOR_TARGET="$SHELL_PANE" FM_INJECT_CONFIRM_SLEEP=0.3 FM_INJECT_CONFIRM_RETRIES=5 \
+    escalate_flush "$STATE_DIR" || rc=$?
+  sleep 1
+  [ ! -e "$proof" ] || fail "Scenario D: the shell executed a command substitution from the digest"
+  [ "$rc" -ne 0 ] || fail "Scenario D: the flush reported a delivery into a plain shell"
+  [ -s "$STATE_DIR/.subsuper-escalations" ] \
+    || fail "Scenario D: the refused escalation was not kept for the wedge path"
+  grep -F 'inject refused: supervisor pane is not owned by the primary harness (harness=claude owner=foreign)' \
+    "$STATE_DIR/.supervise-daemon.log" >/dev/null \
+    || fail "Scenario D: the refusal was not logged: $(tail -5 "$STATE_DIR/.supervise-daemon.log" 2>/dev/null)"
+  if "$REAL_TMUX" -L "$SOCKET" capture-pane -p -t "$SHELL_PANE" | grep -F 'Supervisor escalate' >/dev/null; then
+    fail "Scenario D: digest text reached the shell pane"
+  fi
+  afk_exit "$STATE_DIR"
+  pass "Scenario D: a bare-❯ shell in the supervisor pane is refused; nothing is typed or executed and the escalation stays buffered"
+}
+
 test_scenario_a
 test_scenario_b
 test_scenario_c
+test_scenario_d
 
 echo "all e2e injection tests passed"

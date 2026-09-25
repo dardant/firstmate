@@ -633,7 +633,11 @@ mark_escalated_seen() {  # <state> <captured-endpoint-file>
 #
 # Resolved lazily and memoized: harness detection walks process ancestry, which
 # is too heavy to pay on every source of this library (the unit tests and the
-# launcher source it purely for its pure functions).
+# launcher source it purely for its pure functions). A daemon that
+# bin/fm-afk-launch.sh starts in its own detached terminal has no harness
+# ancestor, so the launcher detects the harness in the captain's context and
+# passes it in FM_DAEMON_PRIMARY_HARNESS; an undetectable harness stays
+# `unknown`, which the ownership proof refuses rather than guessing.
 fm_daemon_primary_harness() {
   if [ -z "${FM_DAEMON_PRIMARY_HARNESS:-}" ]; then
     FM_DAEMON_PRIMARY_HARNESS=$("$FM_DAEMON_DIR/fm-harness.sh" 2>/dev/null || printf 'unknown')
@@ -659,7 +663,22 @@ pane_is_busy() {  # <target> [backend]
 # directly and applies the same positive-proof boundary.
 pane_input_pending() {  # <target> [backend]
   local target=$1 backend=${2:-tmux}
-  [ "$(fm_backend_composer_state "$backend" "$target" 2>/dev/null)" != empty ]
+  [ "$(FM_COMPOSER_HARNESS=$(fm_daemon_primary_harness) \
+    fm_backend_composer_state "$backend" "$target" 2>/dev/null)" != empty ]
+}
+
+# supervisor_pane_owned: 0 only when the detected primary harness provably owns
+# the supervisor pane's terminal right now (bin/fm-backend.sh's
+# fm_backend_pane_harness_state). Every other verdict is logged with <phase>
+# and refuses: the digest carries worker-quoted status text, and a shell that
+# received it would execute any command substitution inside it.
+supervisor_pane_owned() {  # <target> <backend> <phase>
+  local target=$1 backend=$2 phase=$3 harness owner
+  harness=$(fm_daemon_primary_harness)
+  owner=$(fm_backend_pane_harness_state "$backend" "$target" "$harness" 2>/dev/null)
+  [ "$owner" = owned ] && return 0
+  log "inject $phase: supervisor pane is not owned by the primary harness (harness=$harness owner=${owner:-unreadable}); a shell or other program would receive the digest"
+  return 1
 }
 
 task_window_backend() {  # <window> <state>
@@ -1225,8 +1244,9 @@ window_for_task() {  # <task-key> [state]
 # --- injection --------------------------------------------------------------
 # inject_msg: send one escalation digest to the supervisor pane.
 # Returns 0 on successful inject (or empty buffer), non-zero if the pane is
-# gone, the supervisor is busy, afk is inactive, or the verified submit cannot
-# be confirmed after bounded retries. On non-zero the caller preserves
+# gone or not owned by the primary harness, the supervisor is busy, afk is
+# inactive, or the verified submit cannot be confirmed after bounded retries.
+# On non-zero the caller preserves
 # the buffer so the escalation survives for the next cycle or the catch-up flush.
 #
 # Submit model:
@@ -1242,8 +1262,14 @@ window_for_task() {  # <task-key> [state]
 #     after dim/faint ghost text and borders are ignored (a human's half-typed
 #     line, or a previous injection's unsent text), defer entirely - injecting
 #     would merge with the human's text.
+#   - OWNERSHIP PROOF before typing and again before confirming: the detected
+#     primary harness must own the pane's terminal (supervisor_pane_owned). A
+#     rendered prompt glyph cannot prove it - a shell themed with the agent's
+#     glyph looks exactly like an empty composer - so a primary that exited or
+#     crashed to its login shell is refused, and a shell prompt reappearing
+#     after Enter is never taken as a submitted turn.
 inject_msg() {  # <message> [state]
-  local msg=$1 state target backend retries sleep_s verdict composer encoded
+  local msg=$1 state target backend retries sleep_s verdict composer encoded harness
   state="${2:-$(_state_root)}"
   # (1) Presence-gate: inject ONLY when afk is active. When afk is off, the
   # daemon self-handles and stays quiet; firstmate drives the normal always-on
@@ -1264,7 +1290,10 @@ inject_msg() {  # <message> [state]
   # discovery), matching this function's pre-existing default assumption.
   backend="${FM_SUPERVISOR_BACKEND:-tmux}"
   fm_backend_target_exists "$backend" "$target" || return 1
-  # (3) Busy-guard: never inject into an in-use supervisor pane.
+  # (3) Ownership: the primary harness, not a shell, must hold the terminal.
+  supervisor_pane_owned "$target" "$backend" refused || return 1
+  harness=$(fm_daemon_primary_harness)
+  # (4) Busy-guard: never inject into an in-use supervisor pane.
   if pane_is_busy "$target" "$backend"; then
     log "inject deferred: supervisor pane busy (agent mid-turn)"
     return 1
@@ -1277,13 +1306,15 @@ inject_msg() {  # <message> [state]
   #      exited to its login shell) or an unreadable pane. Neither is a safe
   #      target - typing the escalation into a shell could execute it - so defer
   #      on anything that is not affirmatively 'empty'. A deferred escalation
-  #      stays buffered for the next cycle or the catch-up flush.
-  composer=$(fm_backend_composer_state "$backend" "$target" 2>/dev/null)
+  #      stays buffered for the next cycle or the catch-up flush. The primary
+  #      harness is named to the classifier so a framed harness's unframed
+  #      glyph row (a themed shell prompt) reads unknown, never empty.
+  composer=$(FM_COMPOSER_HARNESS=$harness fm_backend_composer_state "$backend" "$target" 2>/dev/null)
   if [ "$composer" != empty ]; then
     log "inject deferred: supervisor composer not confirmed-empty (state=${composer:-unknown}: pending input, dead-shell prompt, or unreadable pane)"
     return 1
   fi
-  # (4) Type the digest ONCE, then submit with Enter (retry Enter only, never
+  # (5) Type the digest ONCE, then submit with Enter (retry Enter only, never
   # retype) via the shared submit primitive. Success = the backend confirms
   # submit. An unconfirmed/unknown pane does NOT count as delivered, so the
   # buffer is preserved (strict) rather than cleared.
@@ -1292,8 +1323,12 @@ inject_msg() {  # <message> [state]
   # re-export of fm_tmux_submit_core - byte-identical to calling it directly.
   retries=${FM_INJECT_CONFIRM_RETRIES:-$INJECT_CONFIRM_RETRIES_DEFAULT}
   sleep_s=${FM_INJECT_CONFIRM_SLEEP:-$INJECT_CONFIRM_SLEEP_DEFAULT}
-  verdict=$(fm_backend_send_text_submit "$backend" "$target" "$msg" "$retries" "$sleep_s" "$sleep_s")
+  verdict=$(FM_COMPOSER_HARNESS=$harness \
+    fm_backend_send_text_submit "$backend" "$target" "$msg" "$retries" "$sleep_s" "$sleep_s")
   if [ "$verdict" = empty ]; then
+    # A confirmation is only a delivered turn while the harness still owns the
+    # pane: a cleared prompt in a pane the harness has left is a shell.
+    supervisor_pane_owned "$target" "$backend" unconfirmed || return 1
     return 0  # Backend confirmed the submit.
   fi
   log "inject failed: submit unconfirmed after $retries retries (verdict=$verdict, text may be in composer)"

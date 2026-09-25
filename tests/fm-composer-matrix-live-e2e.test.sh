@@ -8,7 +8,11 @@
 # REAL harnesses: a stub can only confirm the assumption already written into
 # the stub. This guard launches every INSTALLED verified harness idle in an
 # isolated tmux server and requires the real fm_tmux_composer_state to reach
-# `empty`, failing loudly with the harness name and version. It also proves:
+# `empty` with the harness named to the classifier (FM_COMPOSER_HARNESS, the
+# read the away-mode injector makes, so a framed harness's live composer must
+# still prove its frame), and requires the away-mode injector's ownership proof
+# (fm_backend_pane_harness_state) to read that harness as owning its pane,
+# failing loudly with the harness name and version. It also proves:
 #   - the strict blank-row posture live: a plain shell pane with a blank
 #     cursor row must classify unknown and defer injection;
 #   - the zellij false-positive regression live (when zellij is installed): a
@@ -70,6 +74,9 @@ chmod +x "$SHIM_DIR/tmux"
 PATH="$SHIM_DIR:$PATH"
 # shellcheck source=/dev/null
 . "$ROOT/bin/fm-tmux-lib.sh"
+# shellcheck source=/dev/null
+. "$ROOT/bin/fm-backend.sh"
+fm_backend_source tmux || fail "fm_backend_source tmux failed"
 
 tmux -L "$SOCKET" new-session -d -s "$SESSION" -x 220 -y 50 -c "$ROOT"
 
@@ -84,7 +91,7 @@ check_harness_idle_empty() {  # <name> <launch-cmd...>
   tmux -L "$SOCKET" new-window -d -t "$SESSION:" -n "$win" -c "$ROOT" -- "$@" \
     || fail "$name ($version): could not launch in the isolated tmux server"
   while [ "$i" -lt "$budget" ]; do
-    verdict=$(fm_tmux_composer_state "$SESSION:$win")
+    verdict=$(FM_COMPOSER_HARNESS=$name fm_tmux_composer_state "$SESSION:$win")
     [ "$verdict" = empty ] && break
     i=$((i + 1))
     # A fresh harness may park on a vendor update-available modal (observed
@@ -115,9 +122,32 @@ check_harness_idle_empty() {  # <name> <launch-cmd...>
   else
     CHECKED=$((CHECKED + 1))
     pass "$name ($version): real idle composer classifies empty"
+    check_harness_owns_pane "$name" "$version" "$SESSION:$win"
     check_harness_idle_cursorless "$name" "$version" "$SESSION:$win"
   fi
   tmux -L "$SOCKET" kill-window -t "$SESSION:$win" 2>/dev/null || true
+}
+
+# The away-mode injector types only into a pane its primary harness owns, from
+# process identity alone. A primary harness whose live process the family
+# matcher cannot name would have every digest refused, so each installed
+# primary-capable harness must read `owned` on its own idle pane.
+check_harness_owns_pane() {  # <name> <version> <target>
+  local name=$1 version=$2 target=$3 owner
+  fm_agent_harness_family "$name" >/dev/null || {
+    note "$name is not a primary harness; ownership not checked"
+    return 0
+  }
+  owner=$(fm_backend_pane_harness_state tmux "$target" "$name")
+  if [ "$owner" = owned ]; then
+    CHECKED=$((CHECKED + 1))
+    pass "$name ($version): its live process owns its pane for the away-mode injector"
+  else
+    FAILED=1
+    printf 'not ok - %s (%s): the ownership proof read %s (current command %s, foreground [%s]); every away-mode digest would be refused\n' \
+      "$name" "$version" "${owner:-unreadable}" "$(fm_backend_tmux_current_command "$target")" \
+      "$(fm_backend_tmux_foreground_argv0s "$target" | tr '\n' ' ')" >&2
+  fi
 }
 
 # The same proven-idle pane read the way every cursorless backend reads it

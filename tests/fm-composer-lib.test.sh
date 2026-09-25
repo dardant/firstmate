@@ -10,7 +10,9 @@
 #   2. The SAME shell glyph INSIDE a bordered composer box is the harness's own
 #      prompt and still reads `empty` (existing behavior preserved).
 #   3. The AGENT prompt glyphs `❯` (claude), `›` (codex), `⟩` (muse), and `→`
-#      (cursor) are a genuine empty agent composer either way, bordered or bare.
+#      (cursor) are a genuine empty agent composer either way, bordered or bare,
+#      unless the caller names a harness whose composer is always framed: then
+#      an unframed agent glyph row is a themed shell prompt and reads `unknown`.
 #   4. Real unsubmitted text reads `pending`; a known idle placeholder reads
 #      `empty`.
 set -u
@@ -187,6 +189,38 @@ test_matrix_claude_bare_nbsp_row() {
   # the styled=0 degradation defers instead of fabricating pending.
   assert_screen "claude typed on plain backends" unknown "$CAPS_PLAIN" "$typed"
   pass "matrix: claude's ❯+NBSP row reads empty on every profile in both locales (#1988)"
+}
+
+test_matrix_framed_harness_bare_glyph_is_a_shell_prompt() {
+  # Security (away-mode digest typed into a bare shell): zsh's pure and
+  # starship prompts draw a bare `❯`, the same glyph Claude uses. Claude always
+  # frames its composer between two rules, so once the caller names Claude, an
+  # unframed `❯` row is a themed shell prompt and must never read empty on any
+  # capture profile. Unnamed callers and bare-glyph harnesses keep the old rule.
+  local framed shell stale wrapped boxed omp
+  framed=$'transcript line\n────────────────────────\n❯'"$NBSP"$'\n────────────────────────\n  bypass permissions'
+  shell=$'Last login: today on ttys001\n~/projects/firstmate main\n❯ '
+  # Claude's last frame left on screen above the shell it exited to.
+  stale=$'────────────────────────\n❯'"$NBSP"$'\n────────────────────────\n  bypass permissions\n\n~/projects/firstmate main\n❯ '
+  wrapped=$'────────────────────────\n❯ a long draft that wraps\nonto a second row\n────────────────────────'
+  boxed=$'╭────────────────────────╮\n│ ❯                      │\n╰────────────────────────╯'
+  omp=$'π · main · 12%/200K\n\n❯ '
+  FM_COMPOSER_HARNESS=claude assert_screen "claude-named bare ❯ shell prompt on tmux" unknown "$CAPS_TMUX" "$shell" 2
+  FM_COMPOSER_HARNESS=claude assert_screen "claude-named bare ❯ shell prompt on herdr" unknown "$CAPS_STYLED" "$shell" '' probe-absent
+  FM_COMPOSER_HARNESS=claude assert_screen "claude-named bare ❯ shell prompt on zellij" unknown "$CAPS_STYLED_NOID" "$shell"
+  FM_COMPOSER_HARNESS=claude assert_screen "claude-named bare ❯ shell prompt on cmux/orca" unknown "$CAPS_PLAIN" "$shell"
+  FM_COMPOSER_HARNESS=claude assert_screen "claude-named shell below a stale Claude frame (tmux)" unknown "$CAPS_TMUX" "$stale" 6
+  FM_COMPOSER_HARNESS=claude assert_screen "claude-named shell below a stale Claude frame (herdr)" unknown "$CAPS_STYLED" "$stale" '' probe-absent
+  FM_COMPOSER_HARNESS=claude assert_screen "claude-named framed composer on tmux" empty "$CAPS_TMUX" "$framed" 2 probe-absent
+  FM_COMPOSER_HARNESS=claude assert_screen "claude-named framed composer on herdr" empty "$CAPS_STYLED" "$framed" '' $'claude\tidle'
+  FM_COMPOSER_HARNESS=claude assert_screen "claude-named framed composer on cmux/orca" empty "$CAPS_PLAIN" "$framed"
+  FM_COMPOSER_HARNESS=claude assert_screen "claude-named framed wrapped draft" pending "$CAPS_TMUX" "$wrapped" 2 probe-absent
+  FM_COMPOSER_HARNESS=claude assert_screen "claude-named boxed composer" empty "$CAPS_TMUX" "$boxed" 1
+  # The divergence that keeps this case honest: the very same shell screen
+  # reads empty when no harness is named, and for omp, whose composer is bare.
+  assert_screen "unnamed bare ❯" empty "$CAPS_TMUX" "$shell" 2
+  FM_COMPOSER_HARNESS=omp assert_screen "omp's genuinely bare ❯" empty "$CAPS_STYLED" "$omp"
+  pass "matrix: a framed harness's unframed agent glyph reads unknown; frames, boxes, and bare-glyph harnesses are unchanged"
 }
 
 test_matrix_claude_arrow_statusline_footer() {
@@ -974,3 +1008,4 @@ test_queued_enter_verdict_does_not_convert_other_states() {
 test_queued_enter_verdict_busy_pending_is_empty
 test_queued_enter_verdict_idle_pending_stays_pending
 test_queued_enter_verdict_does_not_convert_other_states
+test_matrix_framed_harness_bare_glyph_is_a_shell_prompt
