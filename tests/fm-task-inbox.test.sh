@@ -86,7 +86,7 @@ case "${1:-}" in
   display-message)
     for a in "$@"; do
       case "$a" in
-        *cursor_y*) printf '1\n'; exit 0 ;;
+        *cursor_y*) printf '%s\n' "${FM_FAKE_TMUX_CURSOR_Y:-1}"; exit 0 ;;
         *pane_current_command*) [ -z "${FM_FAKE_TMUX_AGENT:-}" ] || { printf '%s\n' "$FM_FAKE_TMUX_AGENT"; exit 0; } ;;
         *pane_tty*) [ -z "${FM_FAKE_TMUX_AGENT:-}" ] || { printf '\n'; exit 0; } ;;
       esac
@@ -287,19 +287,28 @@ test_ring_skips_dead_agent() {
 }
 
 # The dialog Claude Code 2.1.280 renders when a project CLAUDE.md imports a
-# file outside the launch directory; Enter there selects the preselected "No"
+# file outside the launch directory, rule line included: the composer
+# classifier reads the "❯ No" row under that rule as pending text, so the ring
+# must recognize the dialog first. Enter there selects the preselected "No"
 # and records a standing decline (docs/verification/runtime-backends.md
 # "Claude external-imports dialog answers").
 imports_dialog_capture() {  # <dir>
   cat > "$1/imports-dialog.capture" <<'EOF'
+────────────────────────────────────────────────────────────────────────────────
   Allow external CLAUDE.md file imports?
   This project's CLAUDE.md imports files outside the current working directory. Never allow this for third-party repositories.
+
+  External imports:
+    /home/operator/AGENTS.md
+
   ❯ No, disable external imports
     Yes, allow external imports
   Enter to confirm · Esc to cancel
 EOF
   printf '%s\n' "$1/imports-dialog.capture"
 }
+# The real pane's cursor sits on the "❯ No" row of that capture.
+IMPORTS_DIALOG_CURSOR_Y=7
 
 test_ring_skips_launch_dialog() {
   local dir state rec log rc
@@ -312,6 +321,7 @@ test_ring_skips_launch_dialog() {
   rc=0
   PATH="$dir/fakebin:$PATH" FM_SEND_LOG="$log" FM_FAKE_TMUX_AGENT=claude \
     FM_FAKE_TMUX_CAPTURE="$(imports_dialog_capture "$dir")" \
+    FM_FAKE_TMUX_CURSOR_Y="$IMPORTS_DIALOG_CURSOR_Y" \
     inbox_lib "$state" fm_task_inbox_ring tmux sess:fm-t1 "$rec" fm-t1 || rc=$?
   [ "$rc" = 4 ] || fail "a pane parked on a launch dialog should skip the ring with its own code 4, got $rc"
   [ ! -s "$log" ] || fail "a launch dialog was typed into:"$'\n'"$(cat "$log")"
@@ -689,6 +699,7 @@ test_watcher_escalates_launch_dialog_without_ringing() {
   age_path "$rec"
   watch_bg "$state" "$dir/fakebin" "$out" \
     FM_SEND_LOG="$log" FM_FAKE_TMUX_CAPTURE="$(imports_dialog_capture "$dir")" \
+    FM_FAKE_TMUX_CURSOR_Y="$IMPORTS_DIALOG_CURSOR_Y" \
     FM_TASK_INBOX_RING_MAX=2
   pid=$!
   wait_watcher_gone "$pid" \

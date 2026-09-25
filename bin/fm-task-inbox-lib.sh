@@ -272,8 +272,8 @@ fm_task_inbox_doorbell_line() {  # <record-path>
     "$quoted" "$quoted"
 }
 
-# Ring the doorbell, best-effort: one endpoint-liveness pre-check, one advisory
-# composer pre-check, then the backend's submit machinery with a minimal retry
+# Ring the doorbell, best-effort: one endpoint-liveness pre-check, one
+# launch-dialog pre-check, one advisory composer pre-check, then the backend's submit machinery with a minimal retry
 # budget, verdict discarded.
 # Returns 0 rang, 1 skipped because the composer PROVENLY holds pending text
 # (the watcher re-rings later), 2 the backend send failed, 3 skipped because
@@ -299,14 +299,17 @@ fm_task_inbox_ring() {  # <backend> <target> <record-path> [expected-label]
   if ! line=$(fm_task_inbox_doorbell_line "$rec"); then
     return 2
   fi
-  cstate=$(fm_backend_composer_state "$backend" "$target" "$label" 2>/dev/null) || cstate=unknown
-  case "$cstate" in
-    pending) return 1 ;;
-  esac
+  # The dialog check runs first: the composer classifier reads a dialog's
+  # preselected option row (Claude's "❯ No, disable external imports" under a
+  # rule) as pending text, which would mislabel the skip.
   if tail=$(fm_backend_capture "$backend" "$target" 40 "$label" 2>/dev/null) &&
     printf '%s' "$tail" | fm_busy_any_launch_prompt_parked; then
     return 4
   fi
+  cstate=$(fm_backend_composer_state "$backend" "$target" "$label" 2>/dev/null) || cstate=unknown
+  case "$cstate" in
+    pending) return 1 ;;
+  esac
   # Accepted residual race: terminal input and Enter are separate delivery
   # steps, so an agent exiting after the liveness check could leave a bare
   # shell only a suffix; the `: ` prefix protects complete lines only. Do not

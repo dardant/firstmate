@@ -67,14 +67,19 @@ case "${1:-}" in
     fi
     exit 0 ;;
   display-message)
-    for a in "$@"; do case "$a" in *cursor_y*) printf '1\n'; exit 0 ;; esac; done
+    for a in "$@"; do case "$a" in *cursor_y*) printf '%s\n' "${FM_FAKE_TMUX_CURSOR_Y:-1}"; exit 0 ;; esac; done
     printf 'fakepane\n'; exit 0 ;;
   capture-pane)
     if [ "${FM_FAKE_TMUX_COMPOSER:-}" = pending ]; then
       printf '╭──────────────╮\n│ leftover txt │\n╰──────────────╯\n'
     elif [ "${FM_FAKE_TMUX_COMPOSER:-}" = imports-dialog ]; then
+      # Claude Code 2.1.280's real layout: a rule above the question, and the
+      # cursor (FM_FAKE_TMUX_CURSOR_Y=7) on the "❯ No" row, which the composer
+      # classifier alone reads as pending text.
+      printf '────────────────────────────────────────────────────────────────────────────────\n'
       printf '  Allow external CLAUDE.md file imports?\n'
       printf "  This project's CLAUDE.md imports files outside the current working directory. Never allow this for third-party repositories.\n"
+      printf '\n  External imports:\n    /home/operator/AGENTS.md\n\n'
       printf '  ❯ No, disable external imports\n    Yes, allow external imports\n  Enter to confirm · Esc to cancel\n'
     else
       printf '╭────╮\n│    │\n╰────╯\n'
@@ -198,7 +203,7 @@ test_launch_dialog_skip_names_the_dialog() {
   local dir err rc
   dir=$(setup_case dialogskip)
   err="$dir/send.err"
-  run_send "$dir" "$err" FM_FAKE_TMUX_COMPOSER=imports-dialog -- t1 "steer past a parked dialog"
+  run_send "$dir" "$err" FM_FAKE_TMUX_COMPOSER=imports-dialog FM_FAKE_TMUX_CURSOR_Y=7 -- t1 "steer past a parked dialog"
   rc=$?
   expect_code 0 "$rc" "a skipped ring is still a sent steer"
   [ -f "$dir/home/state/t1.inbox/001.msg" ] || fail "the steer was not recorded"
