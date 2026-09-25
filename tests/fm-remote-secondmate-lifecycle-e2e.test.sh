@@ -1142,10 +1142,11 @@ FM_STATE_OVERRIDE="$WATCH_STATE" FM_SECONDMATE_LIVENESS_SECS=1 FM_POLL=1 \
   remote_env "$ROOT/bin/fm-watch.sh" \
   > "$TMP_ROOT/watch-liveness.out" 2> "$TMP_ROOT/watch-liveness.err" &
 watch_pid=$!
-watch_wait=0
-while kill -0 "$watch_pid" 2>/dev/null && [ "$watch_wait" -lt 1500 ]; do
+# A hang bound, not a speed assertion: the relaunch runs a whole remote spawn,
+# which a loaded host can stretch well past a fixed iteration count.
+watch_deadline=$((SECONDS + ${FM_TEST_MARKER_WAIT_SECS:-180}))
+while kill -0 "$watch_pid" 2>/dev/null && [ "$SECONDS" -lt "$watch_deadline" ]; do
   sleep 0.02
-  watch_wait=$((watch_wait + 1))
 done
 if kill -0 "$watch_pid" 2>/dev/null; then
   kill "$watch_pid" 2>/dev/null || true
@@ -1357,13 +1358,9 @@ liveness_lock="$PARENT/state/.secondmate-liveness-ios.lock"
 ( STATE="$PARENT/state" exec bash -c '. "$1" && fm_lock_acquire_wait "$2" && touch "$3" && exec sleep 120' \
     _ "$ROOT/bin/fm-wake-lib.sh" "$liveness_lock" "$TMP_ROOT/liveness.entered" ) &
 liveness_holder_pid=$!
-liveness_wait=0
-while [ ! -f "$TMP_ROOT/liveness.entered" ]; do
-  kill -0 "$liveness_holder_pid" 2>/dev/null || fail "liveness lock holder exited before acquiring the lock"
-  liveness_wait=$((liveness_wait + 1))
-  [ "$liveness_wait" -le 250 ] || fail "liveness lock holder never acquired the lock"
-  sleep 0.02
-done
+fm_wait_for_marker "$TMP_ROOT/liveness.entered" "$liveness_holder_pid" \
+  "liveness lock holder exited before acquiring the lock" \
+  "liveness lock holder never acquired the lock"
 liveness_owner=$liveness_holder_pid
 [ "$(cat "$liveness_lock/pid" 2>/dev/null)" = "$liveness_owner" ] \
   || fail "liveness lock holder did not own its acquired lock"

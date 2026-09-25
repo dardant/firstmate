@@ -376,7 +376,7 @@ test_sweep_respawns_confirmed_dead_secondmate() {
 }
 
 test_sweep_skips_mate_whose_liveness_lock_is_held() {
-  local w fb tmuxfb log out holder i=0
+  local w fb tmuxfb log out holder
   w=$(new_world sweep-lock-held)
   add_sm_home "$w" sm1 firstmate:fm-sm1
   fb=$(make_toolchain "$w"); tmuxfb=$(make_liveness_tmux "$w")
@@ -388,11 +388,9 @@ test_sweep_skips_mate_whose_liveness_lock_is_held() {
       '. "$1" && fm_lock_acquire_wait "$2" && sleep 30' \
       _ "$ROOT/bin/fm-wake-lib.sh" "$w/home/state/.secondmate-liveness-sm1.lock" ) &
   holder=$!
-  while [ ! -d "$w/home/state/.secondmate-liveness-sm1.lock" ] && [ "$i" -lt 100 ]; do
-    sleep 0.05
-    i=$((i + 1))
-  done
-  [ -d "$w/home/state/.secondmate-liveness-sm1.lock" ] || fail "the fixture never acquired the liveness lock"
+  fm_wait_for_marker "$w/home/state/.secondmate-liveness-sm1.lock" "$holder" \
+    "the fixture exited before acquiring the liveness lock" \
+    "the fixture never acquired the liveness lock"
 
   out=$(run_bootstrap "$tmuxfb:$fb" "$w/home" zsh "$log")
 
