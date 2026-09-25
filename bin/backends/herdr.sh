@@ -3268,27 +3268,33 @@ fm_backend_herdr_queued_enter_busy() {  # <target> <allow-rendered>
   fi
 }
 
-# fm_backend_herdr_proof_lines: how many tail rows the pre-Enter payload proof
-# captures. A literal payload wraps, and a tail-only capture of a complete
-# wrap would look like the truncation this proof exists to refuse. A `/`- or
-# `$`-prefixed payload opens a completion popup below the composer (the slash/$
-# hazard at fm_backend_herdr_send_text_submit), and live Claude 2.1.280 renders
-# about twenty popup rows there, which pushes the composer out of a short tail,
-# so that payload reads the whole bounded window. The bound stays inside the
-# selected composer extraction; it is not a whole-pane search.
-fm_backend_herdr_proof_lines() {  # <text>
+# fm_backend_herdr_payload_rows: the tail rows a literal payload can occupy
+# once it wraps, bounded to the capture window. A tail-only capture of a
+# complete wrap would look like the truncation the pre-Enter proof refuses.
+fm_backend_herdr_payload_rows() {  # <text>
   local text=$1 lines
   lines=$(( (${#text} / 40) + 8 ))
   if [ "$lines" -lt "$FM_COMPOSER_CAPTURE_LINES" ]; then
     lines=$FM_COMPOSER_CAPTURE_LINES
   fi
-  case "$text" in
-    /*|\$*) lines=200 ;;
-  esac
   if [ "$lines" -gt 200 ]; then
     lines=200
   fi
   printf '%s' "$lines"
+}
+
+# fm_backend_herdr_proof_lines: how many tail rows the pre-Enter payload proof
+# captures: the payload's own wrapped rows, except that a `/`- or `$`-prefixed
+# payload opens a completion popup below the composer (the slash/$ hazard at
+# fm_backend_herdr_send_text_submit), and live Claude 2.1.280 renders about
+# twenty popup rows there, which pushes the composer out of a short tail, so
+# that payload reads the whole bounded window. The bound stays inside the
+# selected composer extraction; it is not a whole-pane search.
+fm_backend_herdr_proof_lines() {  # <text>
+  case "$1" in
+    /*|\$*) printf '200' ;;
+    *) fm_backend_herdr_payload_rows "$1" ;;
+  esac
 }
 
 # fm_backend_herdr_composer_content: the selected composer's visible text.
@@ -3340,11 +3346,12 @@ fm_backend_herdr_composer_payload_shown() {  # <text> <after>
 # as delete-to-line-start, repeated across lines of a multiline draft; Ctrl+C
 # is not used because it interrupts a running turn. Live Claude deletes one
 # wrapped screen row per press, so a single-line leftover can need several
-# presses. The press count is bounded by the rows the proof capture covers.
-# 0 only when the composer is verified empty again.
+# presses. The press count is bounded by the rows the payload itself wraps
+# to, not by the popup-sized proof window. 0 only when the composer is
+# verified empty again.
 fm_backend_herdr_composer_clear() {  # <target> <text>
   local target=$1 text=$2 presses i=0
-  presses=$(fm_backend_herdr_proof_lines "$text")
+  presses=$(fm_backend_herdr_payload_rows "$text")
   while [ "$i" -lt "$presses" ]; do
     fm_backend_herdr_send_key "$target" C-u || return 1
     i=$((i + 1))

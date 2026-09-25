@@ -2502,11 +2502,10 @@ crew_gate_awaits_human_decision() {  # <id> -> <run-id> on stdout
 }
 
 # The one spelling of the verdict component that says a working run is only its
-# no-mistakes CI monitor waiting on checks to report: running, not reported yet,
-# or re-armed because the base branch advanced. bin/fm-crew-state.sh mints it
-# (nm_ci_checks_state owns the derivation from the ci step's log) and never for a
-# fixing step or a failed check; crew_finish_verdict_class below is its only
-# consumer.
+# no-mistakes CI monitor waiting on checks to report: running or not reported
+# yet. bin/fm-crew-state.sh mints it (nm_ci_checks_state owns the derivation
+# from the ci step's log) and never for a fixing step or a failed check;
+# crew_finish_verdict_class below is its only consumer.
 FM_CI_AWAITING_CHECKS='ci: awaiting checks'
 
 # What crew <id>'s authoritative current state says about a finish the watcher

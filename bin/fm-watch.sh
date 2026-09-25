@@ -1469,11 +1469,11 @@ wedge_dead_record() {  # <window> <since-file> <triage-label> <idle-age> <pane-h
 # though it read provably working when the timer started. One crew-state read
 # (crew_finish_verdict_class) decides:
 #   - awaiting-checks: its only activity is the no-mistakes CI monitor waiting on
-#     checks, typically re-armed because the base branch advanced. The escalation
-#     is deferred as a wait aged from .ci-wait-since-<key>, written when this CI
-#     wait is first deferred and dropped when it ends, so the PAUSE_RESURFACE_SECS
-#     recheck counts from the re-arm rather than from the done line, and CI that
-#     never settles still resurfaces;
+#     checks that are running or not reported yet. The escalation is deferred
+#     as a wait aged from .ci-wait-since-<key>, written when this CI wait is
+#     first deferred and dropped when it ends, so the PAUSE_RESURFACE_SECS
+#     recheck counts from when the CI wait began rather than from the done
+#     line, and CI that never settles still resurfaces;
 #   - finished: the checks went green again, so the pane is absorbed exactly as a
 #     new hash would be (absorb_done_stale) and its wedge timer is dropped;
 #   - anything else (a fixing step, a failed, cancelled, parked, or unreadable

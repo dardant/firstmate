@@ -5024,6 +5024,26 @@ test_send_text_submit_slash_command_proof_reads_past_the_completion_popup() {
   pass "fm_backend_herdr_send_text_submit: a slash command is proven and submitted when Claude's completion popup pushes the composer out of a short tail"
 }
 
+# The popup-sized proof window is only for reading a slash command; the Ctrl+U
+# clear after a refused slash proof stays bounded by the payload's own rows.
+test_send_text_submit_refused_slash_command_clear_is_bounded_by_its_rows() {
+  local dir log resp fb out enter_count cap n
+  dir="$TMP_ROOT/submit-slash-stuck"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
+  herdr_submit_claude_prefix "$resp" /exit
+  cap=20
+  for ((n = 4; n <= 4 + 2 * 200; n += 2)); do
+    printf '  \xe2\x9d\xaf xit\n' > "$resp/$n.out"
+  done
+  fb=$(make_herdr_fakebin "$dir")
+  out=$( PATH="$fb:$PATH" FAKE_HERDR_LOG="$log" FAKE_HERDR_RESPONSES="$resp" FM_BACKEND_HERDR_SUBMIT_POLLS=1 \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_send_text_submit default:w1:p2 /exit 3 0.01 0.01' "$ROOT" )
+  [ "$out" = unknown ] || fail "a refused /exit that stays in the composer must not claim nothing was typed, got '$out'"
+  enter_count=$(grep -c $'\x1f''pane'$'\x1f''send-keys'$'\x1f''w1:p2'$'\x1f''enter' "$log")
+  [ "$enter_count" -eq 0 ] || fail "a refused /exit must not be submitted, sent $enter_count Enter(s)"
+  [ "$(herdr_ctrl_u_count "$log")" -eq "$cap" ] || fail "a one-row /exit leftover should get a bounded $cap Ctrl+U presses, sent $(herdr_ctrl_u_count "$log")"
+  pass "fm_backend_herdr_send_text_submit: a refused slash command's clear is bounded by its own rows, not the popup-sized proof window"
+}
+
 # A non-Claude harness keeps the unproven type-then-Enter path: its composer
 # is never read before Enter, so a harness-specific placeholder or an
 # unselectable composer cannot turn a landed send into send-failed.
@@ -5855,6 +5875,7 @@ test_send_text_submit_multiline_paste_placeholder_submits_the_long_payload
 test_send_text_submit_refuses_placeholder_followed_by_a_literal_remainder
 test_send_text_submit_three_paste_placeholders_submit_the_long_payload
 test_send_text_submit_slash_command_proof_reads_past_the_completion_popup
+test_send_text_submit_refused_slash_command_clear_is_bounded_by_its_rows
 test_send_text_submit_non_claude_skips_the_payload_proof
 test_dispatch_routes_herdr_backend
 test_dispatch_busy_state_unknown_for_tmux
