@@ -1412,12 +1412,12 @@ test_escalate_batches_into_one_digest() {
   state="$dir/state"
   fakebin="$dir/fakebin"
   sent="$dir/sent.log"; : > "$sent"
-  capture="$dir/pane.txt"; printf '\342\235\257 \n' > "$capture"  # a proven-empty bare claude composer: STRICT injection needs positive proof
+  capture="$dir/pane.txt"; claude_idle_composer > "$capture"
   escalate_add "$state" "event A: done: PR 1"
   escalate_add "$state" "event B: done: PR 2"
   afk_enter "$state"
   PATH="$fakebin:$PATH" FM_FAKE_TMUX_PANE_ALIVE=1 FM_FAKE_TMUX_SENT="$sent" \
-    FM_FAKE_TMUX_CAPTURE="$capture" FM_ESCALATE_BATCH_SECS=0 escalate_flush "$state" \
+    FM_FAKE_TMUX_CAPTURE="$capture" FM_FAKE_TMUX_CURSOR_Y=1 FM_ESCALATE_BATCH_SECS=0 escalate_flush "$state" \
     || fail "escalate_flush failed"
   grep -F 'FIRSTMATE_OP: v1 away-supervisor: ' "$sent" >/dev/null \
     || fail "batch digest lacks the exact current away-supervisor kind"
@@ -1438,13 +1438,13 @@ test_escalate_batch_age_uses_first_append() {
   state="$dir/state"
   fakebin="$dir/fakebin"
   sent="$dir/sent.log"; : > "$sent"
-  capture="$dir/pane.txt"; printf '\342\235\257 \n' > "$capture"  # a proven-empty bare claude composer: STRICT injection needs positive proof
+  capture="$dir/pane.txt"; claude_idle_composer > "$capture"
   escalate_add "$state" "event A: done: PR 1"
   escalate_add "$state" "event B: done: PR 2"
   echo $(( $(date +%s) - 100 )) > "$state/.subsuper-escalations.since"
   afk_enter "$state"
   PATH="$fakebin:$PATH" FM_FAKE_TMUX_PANE_ALIVE=1 FM_FAKE_TMUX_SENT="$sent" \
-    FM_FAKE_TMUX_CAPTURE="$capture" FM_ESCALATE_BATCH_SECS=90 FM_HOUSEKEEPING_TICK=0 \
+    FM_FAKE_TMUX_CAPTURE="$capture" FM_FAKE_TMUX_CURSOR_Y=1 FM_ESCALATE_BATCH_SECS=90 FM_HOUSEKEEPING_TICK=0 \
     housekeeping "$state"
   grep -F 'event A: done: PR 1 | event B: done: PR 2' "$sent" >/dev/null \
     || fail "backdated batch did not flush as a joined digest (max-delay measured from last append)"
@@ -1671,11 +1671,11 @@ test_afk_absent_daemon_does_not_inject() {
   state="$dir/state"
   fakebin="$dir/fakebin"
   sent="$dir/sent.log"; : > "$sent"
-  capture="$dir/pane.txt"; printf '\342\235\257 \n' > "$capture"  # a proven-empty bare claude composer: STRICT injection needs positive proof
+  capture="$dir/pane.txt"; claude_idle_composer > "$capture"
   escalate_add "$state" "done: PR 1"
   # afk flag deliberately NOT set
   if PATH="$fakebin:$PATH" FM_FAKE_TMUX_PANE_ALIVE=1 FM_FAKE_TMUX_SENT="$sent" \
-    FM_FAKE_TMUX_CAPTURE="$capture" FM_ESCALATE_BATCH_SECS=0 escalate_flush "$state"; then
+    FM_FAKE_TMUX_CAPTURE="$capture" FM_FAKE_TMUX_CURSOR_Y=1 FM_ESCALATE_BATCH_SECS=0 escalate_flush "$state"; then
     fail "escalate_flush succeeded while afk inactive"
   fi
   [ -s "$sent" ] && fail "daemon injected while afk inactive"
@@ -1829,14 +1829,26 @@ test_pane_input_pending_requires_proven_empty_prompt() {
       pane_input_pending "fakepane" \
       || fail "bare shell prompt '$prompt' should defer as unknown"
   done
+  # A Claude primary's composer is always framed, so a bare agent glyph row in
+  # its pane is a themed shell prompt (zsh's pure and starship draw a bare ❯).
   for prompt in '❯' '›'; do
     printf 'output\noutput\n%s \n' "$prompt" > "$capture"
-    if PATH="$fakebin:$PATH" FM_FAKE_TMUX_CAPTURE="$capture" FM_FAKE_TMUX_CURSOR_Y=2 \
-      pane_input_pending "fakepane"; then
-      fail "proven empty agent prompt '$prompt' should not defer"
-    fi
+    PATH="$fakebin:$PATH" FM_FAKE_TMUX_CAPTURE="$capture" FM_FAKE_TMUX_CURSOR_Y=2 \
+      pane_input_pending "fakepane" \
+      || fail "bare agent glyph '$prompt' in a Claude primary's pane should defer as unknown"
   done
-  pass "pane_input_pending: only proven empty agent prompts pass"
+  claude_idle_composer > "$capture"
+  if PATH="$fakebin:$PATH" FM_FAKE_TMUX_CAPTURE="$capture" FM_FAKE_TMUX_CURSOR_Y=1 \
+    pane_input_pending "fakepane"; then
+    fail "a proven empty framed Claude composer should not defer"
+  fi
+  # A harness that genuinely draws a bare composer keeps its bare glyph proof.
+  printf 'output\noutput\n› \n' > "$capture"
+  if PATH="$fakebin:$PATH" FM_FAKE_TMUX_CAPTURE="$capture" FM_FAKE_TMUX_CURSOR_Y=2 \
+    FM_DAEMON_PRIMARY_HARNESS=codex pane_input_pending "fakepane"; then
+    fail "a proven empty bare codex composer should not defer"
+  fi
+  pass "pane_input_pending: only proven empty agent composers of the primary's own shape pass"
 }
 
 # The safety fix at the tmux classifier (task fm-composer-shellglyph-safety): a
@@ -2679,6 +2691,7 @@ test_inject_msg_herdr_busy_guard_defers() {
   afk_enter "$state"
   (
     fm_backend_target_exists() { [ "$1" = herdr ] && [ "$2" = "default:w1:p2" ] || fail "unexpected target_exists args: $1 $2"; return 0; }
+    fm_backend_pane_harness_state() { printf 'owned'; }
     pane_is_busy() { return 0; }
     fm_backend_composer_state() { fail "composer_state should not be consulted once the busy-guard already deferred"; }
     fm_backend_send_text_submit() { fail "send_text_submit should not run when the busy-guard defers"; }
@@ -2696,6 +2709,7 @@ test_inject_msg_herdr_composer_guard_defers() {
   afk_enter "$state"
   (
     fm_backend_target_exists() { return 0; }
+    fm_backend_pane_harness_state() { printf 'owned'; }
     pane_is_busy() { return 1; }
     fm_backend_composer_state() { [ "$1" = herdr ] && [ "$2" = "default:w1:p2" ] || fail "unexpected composer_state args: $1 $2"; printf 'pending'; }
     fm_backend_send_text_submit() { fail "send_text_submit should not run when the composer-guard defers"; }
@@ -2729,6 +2743,7 @@ test_inject_msg_herdr_submits_through_backend_dispatch() {
   afk_enter "$state"
   (
     fm_backend_target_exists() { return 0; }
+    fm_backend_pane_harness_state() { printf 'owned'; }
     pane_is_busy() { return 1; }
     fm_backend_composer_state() { printf 'empty'; }
     fm_backend_send_text_submit() {
@@ -2754,6 +2769,7 @@ test_inject_msg_defers_on_dead_shell_unknown() {
   afk_enter "$state"
   (
     fm_backend_target_exists() { return 0; }
+    fm_backend_pane_harness_state() { printf 'owned'; }
     pane_is_busy() { return 1; }
     fm_backend_composer_state() { printf 'unknown'; }
     fm_backend_send_text_submit() { fail "send_text_submit must NOT run when the composer is a dead shell (unknown)"; }
@@ -2764,6 +2780,113 @@ test_inject_msg_defers_on_dead_shell_unknown() {
   pass "inject_msg: defers on a dead-shell/unreadable composer (unknown), never typing the escalation into a shell"
 }
 
+# Security (away-mode digest into a bare shell): a zsh prompt themed with a bare
+# `❯` looks exactly like an idle Claude composer, so the rendered guards cannot
+# tell a crashed primary's login shell from the primary itself. inject_msg must
+# prove the detected primary harness owns the pane before anything else runs,
+# and must never count a submit as confirmed once that proof is gone.
+test_inject_msg_refuses_pane_not_owned_by_primary_harness() {
+  local dir state stub_owner
+  dir=$(make_supercase inject-unowned)
+  state="$dir/state"
+  afk_enter "$state"
+  for stub_owner in foreign unreadable ''; do
+    (
+      LOG="$dir/daemon.log"; : > "$LOG"
+      fm_backend_target_exists() { return 0; }
+      fm_backend_pane_harness_state() {
+        [ "$1" = herdr ] && [ "$2" = "default:w1:p2" ] && [ "$3" = claude ] \
+          || fail "unexpected pane_harness_state args: $*"
+        printf '%s' "$stub_owner"
+      }
+      pane_is_busy() { fail "the busy guard must not run on a pane the primary harness does not own"; }
+      fm_backend_composer_state() { fail "the composer guard must not run on a pane the primary harness does not own"; }
+      fm_backend_send_text_submit() { fail "nothing may be typed into a pane the primary harness does not own"; }
+      if FM_SUPERVISOR_BACKEND=herdr FM_SUPERVISOR_TARGET="default:w1:p2" inject_msg "hello" "$state"; then
+        fail "inject_msg must refuse a pane whose owner verdict is '${stub_owner:-<empty>}'"
+      fi
+      grep -F "inject refused: supervisor pane is not owned by the primary harness (harness=claude owner=${stub_owner:-unreadable})" "$LOG" >/dev/null \
+        || fail "the refusal was not logged with the harness and owner verdict: $(cat "$LOG")"
+    ) || fail "unowned-pane inject_msg subshell failed (owner=${stub_owner:-<empty>})"
+  done
+  pass "inject_msg: refuses, before any guard or keystroke, a pane the primary harness does not provably own"
+}
+
+test_inject_msg_never_confirms_after_the_harness_leaves_the_pane() {
+  local dir state
+  dir=$(make_supercase inject-owner-lost)
+  state="$dir/state"
+  afk_enter "$state"
+  (
+    LOG="$dir/daemon.log"; : > "$LOG"
+    fm_backend_target_exists() { return 0; }
+    fm_backend_pane_harness_state() {
+      if [ -e "$dir/typed" ]; then printf 'foreign'; else printf 'owned'; fi
+    }
+    pane_is_busy() { return 1; }
+    fm_backend_composer_state() { printf 'empty'; }
+    fm_backend_send_text_submit() { : > "$dir/typed"; printf 'empty'; }
+    if FM_SUPERVISOR_BACKEND=herdr FM_SUPERVISOR_TARGET="default:w1:p2" inject_msg "hello" "$state"; then
+      fail "a cleared prompt in a pane the harness has left must not confirm the submit"
+    fi
+    grep -F 'inject unconfirmed: supervisor pane is not owned by the primary harness' "$LOG" >/dev/null \
+      || fail "the lost-ownership confirmation was not logged: $(cat "$LOG")"
+  ) || fail "lost-ownership inject_msg subshell failed"
+  pass "inject_msg: a submit is only confirmed while the primary harness still owns the pane"
+}
+
+test_inject_msg_names_the_primary_harness_to_the_composer_classifier() {
+  local dir state
+  dir=$(make_supercase inject-composer-harness)
+  state="$dir/state"
+  afk_enter "$state"
+  (
+    fm_backend_target_exists() { return 0; }
+    fm_backend_pane_harness_state() { printf 'owned'; }
+    pane_is_busy() { return 1; }
+    fm_backend_composer_state() {
+      [ "${FM_COMPOSER_HARNESS:-}" = claude ] || fail "composer guard ran without the primary harness named"
+      printf 'empty'
+    }
+    fm_backend_send_text_submit() {
+      [ "${FM_COMPOSER_HARNESS:-}" = claude ] || fail "submit confirmation ran without the primary harness named"
+      printf 'empty'
+    }
+    FM_SUPERVISOR_BACKEND=herdr FM_SUPERVISOR_TARGET="default:w1:p2" inject_msg "hello" "$state" \
+      || fail "an owned pane with a proven empty composer should inject"
+  ) || fail "composer-harness inject_msg subshell failed"
+  pass "inject_msg: the composer guard and submit confirmation classify with the primary harness named"
+}
+
+# The same refusal through the real tmux adapter and classifier: a pane whose
+# foreground command is zsh and whose screen ends in a bare `❯` prompt.
+test_escalate_flush_refuses_a_bare_shell_prompt_pane() {
+  local dir state fakebin sent capture
+  dir=$(make_supercase flush-bare-shell)
+  state="$dir/state"
+  fakebin="$dir/fakebin"
+  sent="$dir/sent.log"; : > "$sent"
+  capture="$dir/pane.txt"; printf 'Last login: today
+â¯ 
+' > "$capture"
+  escalate_add "$state" "needs-decision: worker quoted \$(touch $dir/shell-exec-proof) in its status;"
+  afk_enter "$state"
+  if PATH="$fakebin:$PATH" FM_FAKE_TMUX_SENT="$sent" FM_FAKE_TMUX_CAPTURE="$capture" \
+    FM_FAKE_TMUX_CURSOR_Y=1 FM_FAKE_TMUX_CURRENT_COMMAND=zsh FM_ESCALATE_BATCH_SECS=0 \
+    escalate_flush "$state"; then
+    fail "escalate_flush must not deliver into a zsh pane"
+  fi
+  [ ! -s "$sent" ] || fail "keystrokes reached a zsh pane: $(cat "$sent")"
+  [ ! -e "$dir/shell-exec-proof" ] || fail "the quoted command substitution ran"
+  [ -s "$state/.subsuper-escalations" ] || fail "the refused escalation was not kept for the wedge path"
+  # Even if the foreground read were fooled, a bare unframed ❯ is not Claude's
+  # composer: the classifier alone must also refuse it.
+  [ "$(PATH="$fakebin:$PATH" FM_FAKE_TMUX_CAPTURE="$capture" FM_FAKE_TMUX_CURSOR_Y=1 \
+    FM_COMPOSER_HARNESS=claude fm_tmux_composer_state fakepane)" = unknown ] \
+    || fail "a bare unframed ❯ must read unknown for a Claude primary"
+  pass "escalate_flush: a zsh pane with a bare ❯ prompt is refused, typed nothing, and keeps the escalation"
+}
+
 test_inject_msg_defers_on_unrecognized_composer_state() {
   local dir state
   dir=$(make_supercase inject-future-composer-state)
@@ -2771,6 +2894,7 @@ test_inject_msg_defers_on_unrecognized_composer_state() {
   afk_enter "$state"
   (
     fm_backend_target_exists() { return 0; }
+    fm_backend_pane_harness_state() { printf 'owned'; }
     pane_is_busy() { return 1; }
     fm_backend_composer_state() { printf 'future-state'; }
     fm_backend_send_text_submit() { fail "send_text_submit must not run for an unrecognized composer state"; }
@@ -2907,3 +3031,7 @@ test_inject_msg_herdr_pane_gone_defers
 test_inject_msg_herdr_submits_through_backend_dispatch
 test_inject_msg_defers_on_dead_shell_unknown
 test_inject_msg_defers_on_unrecognized_composer_state
+test_inject_msg_refuses_pane_not_owned_by_primary_harness
+test_inject_msg_never_confirms_after_the_harness_leaves_the_pane
+test_inject_msg_names_the_primary_harness_to_the_composer_classifier
+test_escalate_flush_refuses_a_bare_shell_prompt_pane

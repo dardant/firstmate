@@ -1728,6 +1728,52 @@ ok - real herdr 0.9.0 + pi 0.85.1: the registration left behind by a quit pi rea
 `tests/fm-crew-state.test.sh` pins the recovery classifier: a stale registration over a shell-only pane reports agent gone rather than alive or unreachable, and a stale `working` record never reports the pane working.
 A stale-registration pane is never a husk: create, reclaim, presentation recovery, and session cleanup keep refusing it, and only recovery reuses it.
 
+### Pane harness ownership
+
+Measured 2026-09-25 on Linux x86_64 (WSL2) against Herdr 0.9.0, Claude Code 2.1.280, codex-cli 0.154.0, and zsh 5.9.2 in an isolated `fm-lab-` session driven only through `bin/fm-herdr-lab.sh run`.
+The session's panes ran the operator's default zsh, whose prompt theme draws a bare `❯`.
+
+The probe read, for one pane, `agent get`, `fm_backend_herdr_pane_process_state`, `fm_backend_pane_harness_state herdr <target> claude`, and `fm_backend_composer_state` with and without `FM_COMPOSER_HARNESS=claude`:
+
+```text
+idle claude            agent=[claude/idle] procstate=agent owner=owned   composer_claude=empty   composer_unnamed=empty
+plain zsh, bare ❯      agent=[]            procstate=shell owner=foreign composer_claude=unknown composer_unnamed=empty
+claude suspended (^Z)  agent=[]            procstate=agent owner=foreign composer_claude=unknown composer_unnamed=empty
+claude after /exit     agent=[]            procstate=shell owner=foreign composer_claude=unknown composer_unnamed=empty
+codex trust prompt     agent get -> "agent":"codex"; owner for codex=owned, for claude=foreign
+```
+
+Three vendor facts the fix rests on:
+
+- A plain shell pane answers `agent get` with error code `agent_not_found` on stderr, which reads as proof of absence (`foreign`), not as an unreadable pane.
+- A Claude suspended with `^Z` leaves `fm_backend_herdr_pane_process_state` at `agent`, because the harness is still a descendant of the pane shell, while the shell owns the terminal; only the foreground-group read refuses that pane.
+- Idle Claude 2.1.280 draws its `❯` row between two full-width solid `─` rules, so the framed-harness rule in `bin/fm-composer-lib.sh` keeps it `empty`, while its trust dialog's `❯ No, exit` row reads `pending`.
+
+The old daemon code typed the digest into the plain zsh pane and recorded the delivery as confirmed, clearing its buffer.
+zsh ran the worker-quoted command substitution: the digest's head fails as `zsh: no matches found: (1 event(s)):`, and a worker text ending in `;` lets the flush suffix parse as its own subshell.
+The fixed code refused all three shell cases with `inject refused: supervisor pane is not owned by the primary harness (harness=claude owner=foreign)` and kept the escalation, and it delivered and confirmed a digest into the idle Claude pane, which answered it.
+
+`tests/fm-afk-inject-e2e.test.sh` Scenario D reproduces the shell case portably on a private tmux server with a real zsh, and fails against the pre-fix daemon because the proof file is created.
+`tests/fm-tmux-agent-liveness.test.sh` pins the tmux verdict with real processes, and `tests/fm-backend-herdr.test.sh` and `tests/fm-daemon.test.sh` pin the Herdr verdict and the injector's refusal order.
+The live guard that refreshes the per-harness half runs every installed harness idle with no prompt submitted, and fails naming the harness and version when its ownership or named composer read breaks:
+
+```sh
+FM_COMPOSER_MATRIX_LIVE=1 tests/fm-composer-matrix-live-e2e.test.sh
+```
+
+Observed 2026-09-25 (muse stopped at its workspace-trust dialog for the checkout under test, a trust failure the guard reports rather than an ownership one):
+
+```text
+ok - claude (2.1.280 (Claude Code)): real idle composer classifies empty
+ok - claude (2.1.280 (Claude Code)): its live process owns its pane for the away-mode injector
+ok - codex (codex-cli 0.154.0): real idle composer classifies empty
+ok - codex (codex-cli 0.154.0): its live process owns its pane for the away-mode injector
+ok - opencode (1.18.30): real idle composer classifies empty
+ok - opencode (1.18.30): its live process owns its pane for the away-mode injector
+```
+
+Herdr's native agent name is required to match only for the families whose name is measured here or under "Stale agent registration" (`claude`, `codex`, `pi`); every other primary harness rests on the foreground process proof alone.
+
 ### Away-mode transport
 
 The away daemon is no longer launched on Pi; the away posture there is the record `bin/fm-afk-contract.sh` owns.
