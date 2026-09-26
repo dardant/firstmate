@@ -15,7 +15,10 @@
 # shared 3-retry default. These tests pin that behavior hermetically (stubbed
 # tmux + sleep, no real agent): the fake tmux renders the busy footer only
 # from the BUSY_AT-th plain pane capture, so the number of logged 0.4s waits
-# stands in for wall-clock latency and each case is deterministic:
+# stands in for wall-clock latency and each case is deterministic. Only
+# captures after the first send-keys count, since a pane cannot go busy before
+# its input arrives, so pre-send reads (such as the launch-dialog guard) never
+# shift the arithmetic:
 #   1. agy target, busy footer at the 5th poll (short-steer latency): the send
 #      exits 0 (confirmed idle-to-busy), and the sleep log shows the poll
 #      reaching that read.
@@ -40,9 +43,9 @@ TMP_ROOT=$(fm_test_tmproot fm-send-agy-confirm)
 # records every requested duration (one per line) into FM_SLEEP_LOG instead of
 # sleeping. The styled capture (-e) always shows agy's idle bare-`>` composer
 # (verdict `unknown`); the plain capture - the one fm_pane_busy_state polls -
-# shows the idle screen until its BUSY_AT-th call and the verified `esc to
-# cancel` busy row from then on. The BUSY_AT threshold is read from the
-# per-case dir so cases are independent.
+# shows the idle screen until its BUSY_AT-th call after the first send-keys and
+# the verified `esc to cancel` busy row from then on. The BUSY_AT threshold is
+# read from the per-case dir so cases are independent.
 make_stubs() {  # <dir> <busy-at> -> echoes fakebin dir
   local dir=$1 busy_at=$2 fb="$1/fakebin"
   mkdir -p "$fb"
@@ -50,8 +53,9 @@ make_stubs() {  # <dir> <busy-at> -> echoes fakebin dir
 #!/usr/bin/env bash
 set -u
 cnt_file="$dir/plain.count"
+sent_file="$dir/sent"
 case "\${1:-}" in
-  send-keys) exit 0 ;;
+  send-keys) : > "\$sent_file"; exit 0 ;;
   display-message)
     for a in "\$@"; do
       case "\$a" in
@@ -64,6 +68,10 @@ case "\${1:-}" in
     styled=0
     for a in "\$@"; do [ "\$a" = -e ] && styled=1; done
     if [ "\$styled" = 1 ]; then
+      printf '> \n? for shortcuts\n'
+      exit 0
+    fi
+    if [ ! -e "\$sent_file" ]; then
       printf '> \n? for shortcuts\n'
       exit 0
     fi
@@ -113,11 +121,11 @@ run_send() {  # <harness> <busy-at> [env=val ...]
   )
 }
 
-# agy, default budget, busy footer renders at the 5th poll (the 6th plain
-# capture): the raised default (20 retries) must reach that read and exit 0.
-# Under the old shared default (3 retries) this exact shape exited 1
+# agy, default budget, busy footer renders at the 5th poll (the 5th post-send
+# plain capture): the raised default (20 retries) must reach that read and exit
+# 0. Under the old shared default (3 retries) this exact shape exited 1
 # "verdict=unknown" - the regression this suite pins.
-out=$(run_send agy 6)
+out=$(run_send agy 5)
 expect_code 0 "$(printf '%s' "$out" | sed -n 's/^rc //p')" \
   "agy typed send with late busy footer confirms idle-to-busy and exits 0"
 grep -q 'not submitted' "$TMP_ROOT"/*/err 2>/dev/null && \
@@ -133,7 +141,7 @@ pass "agy typed send: sleep log shows the confirm poll running to the late busy 
 # agy with an explicit FM_SEND_RETRIES=3: the operator knob wins over the agy
 # default, the budget expires before the late footer, and the loud refusal
 # boundary is preserved.
-out=$(run_send agy 6 'FM_SEND_RETRIES=3')
+out=$(run_send agy 5 'FM_SEND_RETRIES=3')
 expect_code 1 "$(printf '%s' "$out" | sed -n 's/^rc //p')" \
   "agy typed send honors an explicit FM_SEND_RETRIES=3"
 grep -q 'verdict=unknown' "$TMP_ROOT"/*/err || fail "agy typed send FM_SEND_RETRIES=3: expected verdict=unknown refusal"
@@ -150,7 +158,7 @@ pass "agy typed send: never-rendering busy footer still refuses with verdict=unk
 # agy, busy footer renders only at the 15th poll: the live long-brief case.
 # The default budget must still reach that read and exit 0; under the shared
 # 3-retry default this shape refused for a message that landed.
-out=$(run_send agy 16)
+out=$(run_send agy 15)
 expect_code 0 "$(printf '%s' "$out" | sed -n 's/^rc //p')" \
   "agy typed send with long-brief late busy footer confirms and exits 0"
 pass "agy typed send: long-brief render (15th poll) still confirms idle-to-busy"
@@ -158,7 +166,7 @@ pass "agy typed send: long-brief render (15th poll) still confirms idle-to-busy"
 # claude on the identical late-busy pane: the shared 3-retry default is
 # untouched, so the same latency still refuses - the raised budget is
 # agy-scoped, not a global slowdown.
-out=$(run_send claude 6)
+out=$(run_send claude 5)
 expect_code 1 "$(printf '%s' "$out" | sed -n 's/^rc //p')" \
   "claude typed send keeps the shared 3-retry default"
 grep -q 'verdict=unknown' "$TMP_ROOT"/*/err || fail "claude typed send: expected verdict=unknown refusal"

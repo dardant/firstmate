@@ -10,11 +10,21 @@
 #
 # Usage: fm-claude-trust.sh <worktree> <project>
 #        fm-claude-trust.sh --secondmate-home <home> <id>
+#        fm-claude-trust.sh --reset-imports-decline <project>
 #   <worktree>  the isolated task worktree this spawn launches into
 #   <project>   the primary checkout that worktree belongs to
 #   <home>      the seeded secondmate home this spawn launches into
 #   <id>        the secondmate id that home must already be marked for
-# Prints one line naming what it registered; refuses loudly on anything else.
+# Prints one line naming what it registered; refuses loudly on anything else,
+# including a project entry that records a decline of external CLAUDE.md
+# imports, whose refusal names the one reset command.
+#
+# --reset-imports-decline is the operator's undo for a decline recorded by
+# mistake, never a spawn step: it removes the two external-imports flags from
+# <project>'s canonical entry only when they hold exactly the decline pair, so
+# the next interactive Claude session in that checkout asks the question
+# again. It grants nothing, prints `reset: <path>` or `unchanged: <path>`, and
+# shares every scope and store check below.
 #
 # WHY THIS EXISTS. Claude Code gates a folder it has never seen behind an
 # interactive workspace-trust dialog, and --dangerously-skip-permissions does
@@ -27,15 +37,18 @@
 # and must not try - pressing Enter would select exit. The agent wedges before
 # it ever reads the brief. Registering the trust before launch is the only
 # control that reaches an interactive pane. The same reasoning covers Claude
-# Code's separate "Allow external CLAUDE.md file imports?" dialog, which
-# `--setting-sources project,local` (firstmate PR 10's minimal worker tool
-# surface) stopped suppressing: it renders whenever a loaded CLAUDE.md chain
-# reaches outside the project tree - which every crewmate's does, through the
-# captain's own `~/.claude/CLAUDE.md` importing `~/.claude/RTK.md` - and it is
-# gated the same fail-closed way as trust: cursor on "No, disable", no arrow
-# navigation from firstmate's steering plane. Only worktree mode reaches this
-# second dialog's flags: a secondmate home has no separate "project" entry to
-# carry consent forward from, so its registration stays trust-only.
+# Code's separate "Allow external CLAUDE.md file imports?" dialog: it renders
+# when a project-scope CLAUDE.md - the launch directory's own or an ancestor
+# directory's - imports a file outside the launch directory, and it is gated
+# the same way as trust: cursor on "No, disable", no arrow navigation from
+# firstmate's steering plane. Verified on Claude Code 2.1.280: an import in
+# the user-scope CLAUDE.md under the config directory does not raise it, a
+# linked task worktree outside the fleet home normally has nothing that does,
+# and a primary clone under a firstmate home's projects/ always does, because
+# the home's own CLAUDE.md imports its AGENTS.md from a parent directory. Only
+# worktree mode reaches this second dialog's flags: a secondmate home has no
+# separate "project" entry to carry consent forward from, so its registration
+# stays trust-only.
 #
 # TWO PROJECT-CONFIG ENTRIES IN WORKTREE MODE, NOT ONE. Registering both flags
 # on the worktree entry alone (the original trust-only design) leaves the
@@ -66,16 +79,20 @@
 # human already made there. If the project entry already carries
 # hasClaudeMdExternalIncludesApproved===false WITH
 # hasClaudeMdExternalIncludesWarningShown===true - the pair Claude Code writes
-# on an explicit "No, disable" answer - the whole registration refuses
-# rather than flipping it, because doing so would grant every future
+# on a "No, disable" answer, and equally on Escape, which on 2.1.280 records
+# the same decline rather than dismissing the dialog - the whole registration
+# refuses rather than flipping it, because doing so would grant every future
 # interactive session in that checkout silent external-file inclusion the
 # human declined, permanently and without being asked. The worktree entry is
-# left unwritten too: the spawn wedges on the dialog, which is the honest
-# outcome given a standing decline, not registered trust with a stripped
-# consent record. Approved===false with WarningShown false or absent is NOT
-# that decision: Claude Code's default project entry carries both flags as
-# false before the dialog was ever shown, so that pair means "never asked" and
-# is treated like an absent flag - trust registered, no import consent.
+# left unwritten too, so the spawn stops loudly instead of launching a worker
+# that silently lacks the imports its CLAUDE.md asks for. Because the stored
+# pair cannot say whether a person chose it or a stray Escape did, the
+# refusal names the --reset-imports-decline command, which returns the entry
+# to "never asked" for the operator to answer again. Approved===false with
+# WarningShown false or absent is NOT that decision: Claude Code's default
+# project entry carries both flags as false before the dialog was ever shown,
+# so that pair means "never asked" and is treated like an absent flag - trust
+# registered, no import consent.
 #
 # THE SCOPE TEST IS THE SAFETY PROPERTY, and it is STRUCTURAL rather than a
 # path policy. Each mode has its own, because the two directories have entirely
@@ -174,6 +191,7 @@ unset CDPATH \
 usage() {
   echo "usage: fm-claude-trust.sh <worktree> <project>" >&2
   echo "       fm-claude-trust.sh --secondmate-home <home> <id>" >&2
+  echo "       fm-claude-trust.sh --reset-imports-decline <project>" >&2
   exit 2
 }
 
@@ -189,6 +207,14 @@ case "${1:-}" in
     PROJ_ARG=
     SCOPE_NOUN="secondmate home"
     ;;
+  --reset-imports-decline)
+    [ "$#" -eq 2 ] || usage
+    MODE=reset
+    TARGET_ARG=$2
+    SUB_ID=
+    PROJ_ARG=$2
+    SCOPE_NOUN="project checkout"
+    ;;
   '' | -h | --help)
     usage
     ;;
@@ -202,7 +228,14 @@ case "${1:-}" in
     ;;
 esac
 
-refuse() { echo "error: refusing to pre-register Claude trust: $1" >&2; exit 1; }
+refuse() {
+  if [ "$MODE" = reset ]; then
+    echo "error: refusing to reset the external-imports decline: $1" >&2
+  else
+    echo "error: refusing to pre-register Claude trust: $1" >&2
+  fi
+  exit 1
+}
 
 real_dir() { (cd -P -- "$1" 2>/dev/null && pwd -P); }
 
@@ -221,7 +254,7 @@ common_dir_of() {
 
 TARGET_REAL=$(real_dir "$TARGET_ARG") || true
 [ -n "$TARGET_REAL" ] || refuse "$SCOPE_NOUN '$TARGET_ARG' is not an accessible directory"
-if [ "$MODE" = worktree ]; then
+if [ "$MODE" != secondmate-home ]; then
   PROJ_REAL=$(real_dir "$PROJ_ARG") || true
   [ -n "$PROJ_REAL" ] || refuse "project '$PROJ_ARG' is not an accessible directory"
 fi
@@ -270,11 +303,20 @@ if [ "$MODE" = worktree ]; then
   WT_COMMON=$(common_dir_of "$TARGET_REAL") || true
   [ -n "$WT_COMMON" ] || refuse "'$TARGET_REAL' has no resolvable git common directory"
   [ "$WT_GIT_DIR" != "$WT_COMMON" ] || refuse "'$TARGET_REAL' is a primary checkout, not an isolated worktree"
+fi
 
+if [ "$MODE" != secondmate-home ]; then
   PROJ_COMMON=$(common_dir_of "$PROJ_REAL") || true
   [ -n "$PROJ_COMMON" ] || refuse "project '$PROJ_REAL' is not inside a git repository"
-  [ "$WT_COMMON" = "$PROJ_COMMON" ] || refuse "'$TARGET_REAL' is not a worktree of project '$PROJ_REAL'"
-
+  if [ "$MODE" = worktree ]; then
+    [ "$WT_COMMON" = "$PROJ_COMMON" ] || refuse "'$TARGET_REAL' is not a worktree of project '$PROJ_REAL'"
+  else
+    # An operator types this path, so a subdirectory must not silently name a
+    # project entry Claude Code never reads.
+    PROJ_TOP=$(git -C "$PROJ_REAL" rev-parse --show-toplevel 2>/dev/null) || true
+    [ -z "$PROJ_TOP" ] || PROJ_TOP=$(real_dir "$PROJ_TOP") || true
+    [ "$PROJ_TOP" = "$PROJ_REAL" ] || refuse "'$PROJ_REAL' is not a checkout root (its root is '${PROJ_TOP:-unresolvable}')"
+  fi
   # The external-imports flags must land on the primary checkout - its own git
   # dir equals the common dir - because that is exactly the path Claude Code's
   # own git-root canonicalization collapses every linked worktree to. When
@@ -303,7 +345,9 @@ if [ "$MODE" = worktree ]; then
     [ -n "$CANON_GIT_DIR" ] && [ "$CANON_GIT_DIR" = "$PROJ_COMMON" ] \
       || refuse "project '$PROJ_REAL' is a linked worktree whose primary checkout could not be resolved"
   fi
-else
+fi
+
+if [ "$MODE" = secondmate-home ]; then
   # The seed evidence, in the order that names the most useful reason first: the
   # marker decides whether this is a secondmate home at all, the id decides
   # whose, and the instance files and operational directories decide whether it
@@ -408,17 +452,25 @@ fi
 # are left untouched on both entries: writing them to the worktree entry alone
 # would be a pure no-op (the imports check never reads it) that only obscures
 # the real state, so trust still registers normally but the import dialog is
-# left exactly as undecided as it already was - the worker wedges on it, the
-# same honest outcome as an explicit decline, rather than a spawn spending
-# consent the human was never asked for.
+# left exactly as undecided as it already was - the worker meets the dialog,
+# rather than a spawn spending consent the human was never asked for.
+#
+# The node program prints one word on success: `carried` when standing import
+# consent was refreshed, `unasked` when trust registered with no import
+# decision on record, `declined` when it wrote nothing because the project
+# entry records a decline, and in reset mode `reset` or `unchanged`.
 TRUST_FLAG='hasTrustDialogAccepted'
 IMPORT_FLAGS='["hasClaudeMdExternalIncludesApproved","hasClaudeMdExternalIncludesWarningShown"]'
-if [ "$MODE" = worktree ]; then
-  WRITE_ARGS=("$STORE" "$MODE" "$TARGET_REAL" "$PROJ_CANON" "$TRUST_FLAG" "$IMPORT_FLAGS")
-else
-  WRITE_ARGS=("$STORE" "$MODE" "$TARGET_REAL" "" "$TRUST_FLAG" "$IMPORT_FLAGS")
-fi
-if ! node - "${WRITE_ARGS[@]}" <<'NODE'
+case "$MODE" in
+  worktree) WRITE_ARGS=("$STORE" "$MODE" "$TARGET_REAL" "$PROJ_CANON" "$TRUST_FLAG" "$IMPORT_FLAGS") ;;
+  reset) WRITE_ARGS=("$STORE" "$MODE" "$PROJ_CANON" "$PROJ_CANON" "$TRUST_FLAG" "$IMPORT_FLAGS") ;;
+  *) WRITE_ARGS=("$STORE" "$MODE" "$TARGET_REAL" "" "$TRUST_FLAG" "$IMPORT_FLAGS") ;;
+esac
+# A function rather than the heredoc inline in $(...): stock macOS Bash 3.2
+# scans a heredoc inside command substitution for quotes, so an apostrophe in
+# the program text breaks the parse.
+write_store() {
+  node - "$@" <<'NODE'
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
@@ -448,13 +500,11 @@ const flagsLanded = (projects, key, flags) =>
 // throwaway worktree, so a spawn must never silently reverse a decision the
 // human already recorded there. hasClaudeMdExternalIncludesApproved===false
 // together with hasClaudeMdExternalIncludesWarningShown===true is exactly that
-// decision (the dialog's "No, disable" answer writes that pair; Claude Code's
-// default project entry carries Approved===false with WarningShown===false,
-// which means never asked, not declined); flipping it to true would grant every future
-// interactive session in that checkout silent external-file inclusion the
-// human declined. Refuse the whole registration instead of overriding it -
-// the worktree entry is not written either, so the spawn wedges on the
-// dialog rather than the human's consent being spent without being asked.
+// decision (the dialog's "No, disable" answer and Escape both write that pair;
+// Claude Code's default project entry carries Approved===false with
+// WarningShown===false, which means never asked, not declined). A worktree
+// registration refuses without writing anything, so the store comes back
+// unchanged; only the operator's explicit reset mode removes it.
 const declinedExternalImports = (projects, key) =>
   projects?.[key]?.hasClaudeMdExternalIncludesApproved === false &&
   projects?.[key]?.hasClaudeMdExternalIncludesWarningShown === true;
@@ -482,21 +532,28 @@ const attempt = () => {
     throw new Error(`${store} has a non-object "projects" value`);
   }
   let keys;
-  if (mode === "worktree") {
-    if (declinedExternalImports(projects, project)) {
-      throw new Error(
-        `project entry for ${project} in ${store} already declined external CLAUDE.md imports; refusing to override that consent`,
-      );
-    }
+  let outcome;
+  let landed;
+  if (mode === "reset") {
+    if (!declinedExternalImports(projects, project)) return "unchanged";
+    for (const flag of importFlags) delete projects[project][flag];
+    landed = (back) => importFlags.every((flag) => back.projects?.[project]?.[flag] === undefined);
+    outcome = "reset";
+  } else if (mode === "worktree") {
+    if (declinedExternalImports(projects, project)) return "declined";
     const carryImportConsent = approvedExternalImports(projects, project);
     const targetFlags = carryImportConsent ? [trustFlag, ...importFlags] : [trustFlag];
     const projectFlags = carryImportConsent ? [trustFlag, ...importFlags] : [trustFlag];
     setFlags(projects, target, targetFlags);
     setFlags(projects, project, projectFlags);
     keys = [[target, targetFlags], [project, projectFlags]];
+    landed = (back) => keys.every(([key, flags]) => flagsLanded(back.projects, key, flags));
+    outcome = carryImportConsent ? "carried" : "unasked";
   } else {
     setFlags(projects, target, [trustFlag]);
     keys = [[target, [trustFlag]]];
+    landed = (back) => keys.every(([key, flags]) => flagsLanded(back.projects, key, flags));
+    outcome = "trusted";
   }
   // Unpredictable name plus an exclusive create: the config directory may be
   // writable by another local account, and a predictable path could be
@@ -519,13 +576,15 @@ const attempt = () => {
     if (!renamed) fs.rmSync(tmp, { force: true });
   }
   const back = JSON.parse(fs.readFileSync(store, "utf8"));
-  const landed = keys.every(([key, flags]) => flagsLanded(back.projects, key, flags));
-  return landed ? "recorded" : "dropped";
+  return landed(back) ? outcome : "dropped";
 };
 try {
   for (let i = 0; i < 3; i += 1) {
     const result = attempt();
-    if (result === "recorded") process.exit(0);
+    if (result !== "moved" && result !== "dropped") {
+      process.stdout.write(result);
+      process.exit(0);
+    }
     if (result === "moved" && i >= 1) {
       console.error(`error: ${store} was modified while trust was being recorded; refusing to overwrite it`);
       process.exit(1);
@@ -535,17 +594,27 @@ try {
   console.error(`error: ${err.message}`);
   process.exit(1);
 }
-console.error(`error: ${store} did not retain trust for ${target}${project ? ` and ${project}` : ""} after 3 attempts`);
+console.error(`error: ${store} did not retain the change for ${target}${project && project !== target ? ` and ${project}` : ""} after 3 attempts`);
 process.exit(1);
 NODE
-then
-  if [ "$MODE" = worktree ]; then
-    refuse "could not record trust for '$TARGET_REAL' and project '$PROJ_CANON' in '$STORE'"
-  else
-    refuse "could not record trust for '$TARGET_REAL' in '$STORE'"
-  fi
+}
+if ! WRITE_RESULT=$(write_store "${WRITE_ARGS[@]}"); then
+  case "$MODE" in
+    worktree) refuse "could not record trust for '$TARGET_REAL' and project '$PROJ_CANON' in '$STORE'" ;;
+    reset) refuse "could not remove the decline for project '$PROJ_CANON' in '$STORE'" ;;
+    *) refuse "could not record trust for '$TARGET_REAL' in '$STORE'" ;;
+  esac
 fi
 
+case "$MODE" in
+  reset)
+    echo "$WRITE_RESULT: $PROJ_CANON"
+    exit 0
+    ;;
+esac
+if [ "$WRITE_RESULT" = declined ]; then
+  refuse "project entry for '$PROJ_CANON' in '$STORE' already declined external CLAUDE.md imports, and a spawn must not override that consent; Claude Code records the same decline for Escape as for \"No\", so if nobody chose it, reset it with: $0 --reset-imports-decline '$PROJ_CANON'"
+fi
 echo "trusted: $TARGET_REAL"
 if [ "$MODE" = worktree ]; then
   echo "trusted (project root): $PROJ_CANON"

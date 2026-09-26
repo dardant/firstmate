@@ -2103,8 +2103,8 @@ fm_backend_herdr_explicit_close_pane_confirmed() {  # <session> <pane_id>
 #   shell      - every foreground process is a recognized shell AND no
 #                descendant of the pane shell is a verified harness: positive
 #                proof the pane is shell-only. The descendant walk is what makes
-#                this safe for the crew shape, where a nested `treehouse get`
-#                shell sits under the pane's top shell.
+#                this safe for the shape the interactive `treehouse get` leaves,
+#                where its nested shell sits under the pane's top shell.
 #   other      - the foreground group holds something that is neither: a tool
 #                the agent is running in its own process group, a pager, a
 #                stranger's process. Not a shell-only pane. An idle shell
@@ -2137,6 +2137,41 @@ fm_backend_herdr_pane_process_state() {  # <session> <pane_id>
     sleep 0.1
   done
   printf '%s' "$verdict"
+}
+
+# fm_backend_herdr_agent_pids: the pids of the verified harness processes in
+# <target>'s foreground, one per line, read from the same `pane process-info`
+# view and shared classifier the liveness proof above uses. Prints nothing
+# when the view is unreadable or holds no harness.
+fm_backend_herdr_agent_pids() {  # <target>
+  local info count i pid name argv0 args
+  fm_backend_herdr_parse_target "$1" || return 0
+  info=$(fm_backend_herdr_cli "$FM_BACKEND_HERDR_SESSION" pane process-info --pane "$FM_BACKEND_HERDR_PANE" 2>/dev/null) \
+    || return 0
+  printf '%s' "$info" | jq -e --arg pane "$FM_BACKEND_HERDR_PANE" '
+    .result.type == "pane_process_info"
+    and .result.process_info.pane_id == $pane
+  ' >/dev/null 2>&1 || return 0
+  count=$(printf '%s' "$info" | jq -er \
+    '.result.process_info.foreground_processes | select(type == "array") | length' 2>/dev/null) \
+    || return 0
+  i=0
+  while [ "$i" -lt "$count" ]; do
+    pid=$(printf '%s' "$info" | jq -r --argjson i "$i" \
+      '.result.process_info.foreground_processes[$i].pid | select(type == "number" and . > 1) | floor' 2>/dev/null)
+    name=$(printf '%s' "$info" | jq -r --argjson i "$i" \
+      '.result.process_info.foreground_processes[$i].name // empty' 2>/dev/null)
+    argv0=$(printf '%s' "$info" | jq -r --argjson i "$i" '
+      .result.process_info.foreground_processes[$i] as $p
+      | (($p.argv // [])[0]) // $p.argv0 // empty' 2>/dev/null)
+    args=$(printf '%s' "$info" | jq -r --argjson i "$i" '
+      .result.process_info.foreground_processes[$i] as $p
+      | $p.cmdline // (($p.argv // []) | join(" ")) // empty' 2>/dev/null)
+    if [ -n "$pid" ] && [ "$(fm_agent_process_classify "$name" "$argv0" "$args" "$pid")" = agent ]; then
+      printf '%s\n' "$pid"
+    fi
+    i=$((i + 1))
+  done
 }
 
 # fm_backend_herdr_foreground_process_rows: the foreground processes of one
@@ -2252,17 +2287,19 @@ EOF
 #                 produces (verified empirically: `session stop` + fresh `herdr
 #                 server` restart leaves the pane alive, agent_status "unknown",
 #                 agent get -> agent_not_found - docs/herdr-backend.md "ID
-#                 stability across a server restart"), and what a future
-#                 `resume_agents_on_restore = false` restore would produce too
-#                 (a plain shell, never an agent).
+#                 stability across a server restart"), and what a restore
+#                 with `resume_agents_on_restore = false`, or of a pane whose
+#                 agent reported no session reference, produces (a plain
+#                 shell, never an agent).
 #   stale-agent - `agent get` reports a registered agent_status (working, idle,
 #                 done, or blocked) but fm_backend_herdr_pane_process_state
 #                 proves the pane is shell-only: the registered agent's process
 #                 has exited and Herdr kept its registration (issue #4115;
 #                 Herdr does not release a Pi registration on TUI shutdown when
-#                 a nested shell sits under the pane's top shell, the crew
-#                 shape). This is the explicit agent-free reason: the pane is
-#                 recoverable, and the record it carries is not evidence of a
+#                 a nested shell sits under the pane's top shell, the shape
+#                 the interactive `treehouse get` leaves). This is the
+#                 explicit agent-free reason: the pane is recoverable, and
+#                 the record it carries is not evidence of a
 #                 running agent. No registered status outranks the process
 #                 view, because a killed mid-turn agent leaves `working`
 #                 behind just as a quit one leaves `idle`.
@@ -2429,11 +2466,12 @@ fm_backend_herdr_agent_alive() {  # <target>
 # A same-labeled tab already existing no longer means an automatic refusal:
 # herdr persists and restores its whole session layout (workspaces/tabs/
 # panes) across a server restart, including a reboot, and a restored fm-<id>
-# task tab comes back a HUSK - a dead pane, or (today, and unconditionally
-# once a future `resume_agents_on_restore = false` config ships) a plain
-# agent-less shell sitting in the saved cwd, never the crewmate that used to
-# be there. Before this fix, every fleet respawn after such a restart needed
-# the operator to manually close each husk pane first before firstmate could
+# task tab comes back a HUSK - a dead pane, or a plain agent-less shell
+# sitting in the saved cwd - unless Herdr's resume_agents_on_restore
+# (default on) resumed an agent that had reported a session reference, which
+# classifies live and is never closed here. Before this fix, every fleet
+# respawn after such a restart needed the operator to manually close each
+# husk pane first before firstmate could
 # spawn into it again. fm_backend_herdr_tab_is_husk classifies the existing
 # tab's pane conservatively (dead or no-agent only; anything live or
 # ambiguous refuses exactly as before) and, when it is a confirmed husk,
