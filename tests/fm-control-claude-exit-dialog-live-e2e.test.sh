@@ -47,8 +47,11 @@ herdr_forget_inherited_pane
 SESSION="fm-lab-claude-exit-$$"
 SCRATCH=
 cleanup_all() {
-  [ -z "$SCRATCH" ] || rm -rf -- "$SCRATCH"
+  # The spawn leaves a read-only git-hooks directory under the fixture state.
+  [ -z "$SCRATCH" ] || fm_test_remove_tree "$SCRATCH"
   herdr_safe_stop_and_delete "$SESSION"
+  [ -z "$SCRATCH" ] || [ ! -e "$SCRATCH" ] \
+    || fail "the fixture scratch directory was left behind: $SCRATCH"
 }
 trap cleanup_all EXIT
 fm_herdr_lab_prepare "$SESSION" || fail "could not prepare the isolated Herdr lab session"

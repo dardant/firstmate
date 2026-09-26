@@ -602,7 +602,7 @@ test_changed_mode_drops_external_sources_and_excludes_cross_file_codes() {
     "changed-mode local lint did not disclose dropped source following"
   assert_grep $'analysis_mode\tlocal' "$telemetry" \
     "telemetry did not record local analysis mode"
-  assert_grep $'source_directives\t4' "$telemetry" \
+  assert_grep $'source_directives\t5' "$telemetry" \
     "telemetry did not count the changed root's source directives"
   assert_grep $'source_followed_directives\t0' "$telemetry" \
     "telemetry reported followed sources in no-external-sources mode"
@@ -743,7 +743,9 @@ test_changed_mode_hides_cross_file_codes_that_ci_still_sees() {
   fi
   local tmp fakebin diff_file fixture out rc
   tmp=$(fm_test_tmproot fm-lint-local-exclude-behavior)
-  fixture="$ROOT/tests/fm-lint-local-exclude-fixture.test.sh"
+  # Inside lint's tests/*.sh set but outside the tests/*.test.sh inventory, so
+  # a concurrently running suite that enumerates the inventory never sees it.
+  fixture="$ROOT/tests/fm-lint-local-exclude-fixture.sh"
   printf '%s\n' "$fixture" >> "$FM_TEST_CLEANUP_REGISTRY"
   cat > "$fixture" <<'SH'
 #!/usr/bin/env bash
@@ -763,7 +765,7 @@ SH
   fakebin=$(fm_fakebin "$tmp")
   fm_lint_stub_git "$fakebin"
   diff_file="$tmp/diff.nul"
-  fm_lint_write_diff_file "$diff_file" "tests/fm-lint-local-exclude-fixture.test.sh"
+  fm_lint_write_diff_file "$diff_file" "tests/fm-lint-local-exclude-fixture.sh"
 
   rc=0
   out=$(PATH="$fakebin:$PATH" GITHUB_ACTIONS='' CI='' FM_LINT_JOBS=1 \

@@ -53,7 +53,12 @@ cleanup() {
     rc=1
   fi
   [ -z "$TRANSCRIPT_DIR" ] || rm -rf "$TRANSCRIPT_DIR"
-  rm -rf "$TMP_ROOT"
+  # The spawn leaves a read-only git-hooks directory under the fixture state.
+  fm_test_remove_tree "$TMP_ROOT"
+  if [ -e "$TMP_ROOT" ]; then
+    printf 'not ok - the fixture root was left behind: %s\n' "$TMP_ROOT" >&2
+    rc=1
+  fi
   exit "$rc"
 }
 trap cleanup EXIT

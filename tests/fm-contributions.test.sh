@@ -556,6 +556,7 @@ fault=$(cat "$FORGE/fault" 2>/dev/null || true)
 advance() { printf '%s\n' "$(( $(cat "$FORGE/clock") + $1 ))" > "$FORGE/clock.$$"; mv -f "$FORGE/clock.$$" "$FORGE/clock"; }
 case "$fault" in latency) sleep "${FORGE_LATENCY:-2}" ;; esac
 case "$fault:$*" in
+  # Advance once before the parallel read wave; its readers share this clock.
   reserve:'api repos/o/r/issues/9') advance 6 ;;
   exhaust:'api repos/o/r/issues/8/comments?'*) advance 100 ;;
   fail-late:'api repos/o/r/pulls/8/reviews?'*)

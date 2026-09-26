@@ -594,6 +594,29 @@ The real pane renders this inside a bordered box, omitted here for readability; 
 That capture demonstrated why each signature function matches the FULL captured tail rather than the Grok/Rovo/AGY busy-footer convention of the last 12 non-blank lines: a bordered dialog box renders many short lines of pure border and padding (`│  ...  │`) that are NOT whitespace-only, so the 12-line reduction pushed this exact heading text out of the window and silently defeated the match on the first attempt.
 None of these three runs ever answered its dialog (Escape only, never Enter), so no credential store was written to and no model tokens were spent.
 
+## Worker account pin sign-in check
+
+`bin/fm-worker-account-lib.sh` decides whether a pinned account is signed in from vendor output: the exit status of `claude auth status`, the JSON of `pi auth check`, and the provider column of `pi --list-models`.
+`tests/fm-worker-account-live-e2e.test.sh` asks the real installed runners about synthetic roots that need no login and no network, under a throwaway `HOME`.
+A Claude root whose `settings.json` names an `apiKeyHelper` reports `loggedIn: true`, a Pi root holding a stored API key reports `ready`, and a provider registered by an extension in the Pi root's `extensions/` answers `pi auth check` with `not_ready`/`provider_not_found` while `pi --list-models` lists it.
+Each refusal is paired with the divergence it depends on: the same runner, given `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or the extension's key variable, answers signed in for the empty root, so the refusal proves the check's cleared environment.
+Replacing `env -i` with `env` in the check makes the guard fail on the Claude refusal.
+
+Verified 2026-09-22 on Claude Code 2.1.278 and pi 0.86.1 on Linux; pi-signed was not installed.
+
+```sh
+bash tests/fm-worker-account-live-e2e.test.sh
+```
+
+```
+ok - claude 2.1.278 (Claude Code): the pin check accepts a signed-in root and refuses an empty one despite an ambient API key
+ok - pi 0.86.1: the pin check reads auth check and the model listing, and refuses what only an ambient credential signs in
+skip-runner: pi-signed is not installed, so its pin check was not exercised
+# worker account live guard checked: claude pi
+```
+
+The guard submits no prompt and spends no tokens, so it runs by default wherever a runner is installed; rerun it after every Claude or Pi upgrade.
+
 ## Codex hook trust
 
 Verified 2026-09-16 on codex-cli 0.151.0, macOS arm64, in a fresh linked worktree of this repository.
@@ -798,7 +821,8 @@ ok - muse (Muse Code 0.2.1 (0.2.1-R1215.1)): the doorbell reached a real worker,
 ```
 
 All six installed harnesses honored the doorbell contract with real model turns: each listed the inbox named by the doorbell, read its record, executed the instruction inside it, and acknowledged with the atomic `mv`.
-Two findings from the run shaped the shipped behavior: an OpenCode vendor update modal swallowed the first doorbell and the single re-ring recovered it, which is exactly the watcher ladder's job; and grok 1.0.5's idle composer never classifies `empty` (a classifier drift owned by the [Composer classification matrix](#composer-classification-matrix) guard, whose refresh for grok 1.0.5 is still owed), which is why the ring's advisory pre-check skips only on an exact proven `pending` verdict - a doorbell into an ambiguous composer is a recoverable constant line, while skipping on ambiguity would starve steering for any harness the classifier cannot positively identify.
+Two findings from the run shaped the shipped behavior: an OpenCode vendor update modal swallowed the first doorbell and the single re-ring recovered it, which is exactly the watcher ladder's job; and grok 1.0.5's idle composer never classifies `empty` (a classifier drift owned by the [Composer classification matrix](#composer-classification-matrix) guard, whose refresh for grok 1.0.5 is still owed), which motivated the ring's advisory pre-check not to skip on ambiguity - a doorbell into an ambiguous composer is a recoverable constant line, while skipping on ambiguity would starve steering for any harness the classifier cannot positively identify.
+The current pending-composer ring contract is owned by `bin/fm-task-inbox-lib.sh`.
 Kimi was not installed on the verification machine; its receive path is the same one-line-plus-shell contract, and the portable ladder and enqueue regressions in `tests/fm-task-inbox.test.sh` and `tests/fm-send-inbox.test.sh` cover every harness-independent half.
 This guard is the refresh command after any harness upgrade; it spends a small number of real tokens per installed harness, reports an absent harness explicitly, and refuses a run that verified nothing.
 
@@ -1628,7 +1652,11 @@ A real Claude worker launched through `bin/fm-spawn.sh` that has started a backg
   Enter to confirm · Esc to cancel
 ```
 
-`fm_control_exit_confirmation_key` in `bin/fm-control-lib.sh` recognizes that shape, and the control plane answers it with Enter; the live guard proves the recognizer on the real viewport, then drives `relaunch` and `exit` through the dialog and requires the exact background process to be gone and an uncommitted worktree file to survive:
+`fm_control_exit_confirmation_key` in `bin/fm-control-lib.sh` recognizes that shape, and the control plane answers it with Enter; the live guard proves the recognizer on the real viewport, then drives `relaunch` and `exit` through the dialog and requires the exact background process to be gone and an uncommitted worktree file to survive.
+
+Re-verified 2026-09-25 on the same versions.
+A typed, unsubmitted `/exit` opens a completion popup of 19 rows below Claude's ruled composer, so a 20-row tail read holds only popup rows.
+With the tail-sized pre-Enter payload proof, `relaunch` stopped at `error: the exit command could not be sent to task cexit on herdr`; `fm_backend_herdr_proof_lines` now reads the whole bounded window for a `/`- or `$`-prefixed payload, and `tests/fm-backend-herdr.test.sh` pins that shape:
 
 ```sh
 FM_CONTROL_CLAUDE_EXIT_DIALOG_LIVE=1 tests/fm-control-claude-exit-dialog-live-e2e.test.sh
