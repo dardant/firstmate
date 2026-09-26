@@ -508,6 +508,36 @@ The lab home was deleted and the test entry was removed from the store and verif
 That automated spawn case runs against a fake claude, so it asserts the store entry and the launch command and nothing more; the live arms above are what establish that the entry actually suppresses the dialog.
 The composer-classification record below observes the same gate from the other side, where an untrusted worktree left Claude, Grok, and Muse unverified because the guard reads a first-launch trust dialog as an unreadable composer.
 
+### Claude external-imports dialog answers
+
+Verified 2026-09-24 on Claude Code 2.1.280 on Linux, each arm a fresh throwaway git project whose `CLAUDE.md` imports a file outside it, launched in its own tmux pane against an isolated `CLAUDE_CONFIG_DIR` whose store pre-registered only `hasTrustDialogAccepted` for that project.
+
+```sh
+tmux -L <sock> new-session -d -s <arm> -x 160 -y 45 -c <project> "env CLAUDE_CONFIG_DIR=<cfg> claude"
+```
+
+```
+  Allow external CLAUDE.md file imports?
+  This project's CLAUDE.md imports files outside the current working directory. Never allow this for third-party repositories.
+  ❯ No, disable external imports
+    Yes, allow external imports
+  Enter to confirm · Esc to cancel
+```
+
+Each arm then delivered one input and read the project entry back from the store.
+
+| Input | Pane afterwards | `hasClaudeMdExternalIncludesApproved` / `WarningShown` |
+| --- | --- | --- |
+| Escape | composer | `false` / `true` |
+| Enter (on the preselected "No") | composer | `false` / `true` |
+| Ctrl-C, twice | dialog still showing | absent / absent |
+| SIGTERM to the `claude` process | agent gone | absent / absent |
+
+Escape therefore records exactly the decline "No" records, a later launch in a declined project reaches the composer with no dialog, and only a signal leaves the question unanswered.
+Two more arms located what raises the dialog: a user-scope `CLAUDE.md` in the config directory importing a sibling file did not, and a project whose parent directory holds a `CLAUDE.md` with `@AGENTS.md` did, listing that parent `AGENTS.md` as the external import - the shape of a primary clone under a firstmate home's `projects/`.
+The same fixture then drove the shipped `bin/fm-control.sh` against a real parked pane: before this change `interrupt` delivered Escape and the store read `false` / `true`, and after it `interrupt` refused, `exit` stopped the agent by signal, and the entry stayed absent / absent.
+`tests/fm-control.test.sh` pins the no-key contract and the signal stop against a stand-in process, `tests/fm-send-strict.test.sh` pins the same refusal for `bin/fm-send.sh --key` and its typed text sends, and `tests/fm-claude-trust.test.sh` pins the refusal on a recorded decline, which names `--reset-imports-decline`, and that reset.
+
 ## Launch-prompt backstop signatures
 
 `bin/fm-busy-lib.sh`'s launch-prompt backstop (`fm_busy_launch_prompt_parked`) reclassifies a launch whose busy record is still pinned at the fm-spawn seed as `unknown launch-prompt`, rather than `busy fm-spawn`, when the captured pane matches that harness's own recognized trust, sign-in, or first-run dialog.
@@ -1691,11 +1721,48 @@ ok - real herdr: a drifted agent-free shell returns to its worktree and reuses t
 `tests/fm-control-relaunch.test.sh` drives a tmux stub and proves that tmux retains its prior refusal without sending `cd` or any other input to the pane.
 The Herdr refusal when a shell accepts the command but does not move is not exercised in this change.
 
+### Herdr restore working directory
+
+Verified 2026-09-24 on Herdr 0.9.0, Treehouse 2.3.0, and Claude Code 2.1.280 on Linux, in an isolated lab session provisioned, stopped, restarted, and torn down only through `bin/fm-herdr-lab.sh`, with the lab server started under an isolated `CLAUDE_CONFIG_DIR` whose `settings.json` registered Herdr's own Claude `SessionStart` integration hook.
+Herdr 0.9.0 ships `[session] resume_agents_on_restore`, default on (the 0.7.4 CI pin's binary and `pane report-agent-session` help carry it too), and saves each pane's root shell directory beside the agent session reference that integration reports.
+Three panes each started a real `claude` in a linked worktree of a project nested under a directory whose `CLAUDE.md` imports `@AGENTS.md`, the shape of a primary clone under a firstmate home's `projects/`.
+
+| Arm | Pane shape | Saved pane directory | After `stop` then `provision` |
+| --- | --- | --- | --- |
+| A | tab opened in the project, then `(cd <worktree> && exec bash)` as `treehouse get` does | the project | `claude --resume <id>` ran in the project and rendered "Allow external CLAUDE.md file imports?" |
+| B | tab opened directly in the worktree | the worktree | `claude --resume <id>` ran in the worktree and reached the composer |
+| C | as A, with `env -u HERDR_ENV` on the `claude` launch | the project | nothing resumed, because no session reference was saved, while Herdr still registered the running agent before the restart |
+
+Arm A is the reported incident, and arm B is the shape `bin/fm-spawn.sh` now gives every Herdr ship and scout by leasing the worktree before opening the tab.
+The guard below refreshes the result through the real spawn, with a stand-in agent that reports Herdr's Claude session reference and records where Herdr resumes it, so it spends no model tokens:
+
+```sh
+bash tests/fm-backend-herdr-restore-cwd-e2e.test.sh
+```
+
+```
+ok - real herdr: a ship's pane opens with its root shell in the leased worktree
+ok - real herdr: a restarted server resumes the ship's agent inside its recorded worktree
+```
+
+Against the spawn from before this change the same guard failed at its first assertion, naming the project as the pane's root directory.
+A Herdr release that rejects `pane report-agent-session` runs only that first assertion and prints that the restore phase was not exercised.
+On the 0.7.4 CI pin the guard passes too, but only because it attaches the lab's foreground viewer (`bin/fm-herdr-lab.sh viewer start`) after the restart, as the captain's terminal would be attached: 0.7.4 keeps the session reference and the pane's worktree directory across the restart yet starts restored panes, and so runs the resume, only once a client attaches.
+`tests/fm-spawn-herdr-lease.test.sh` pins the lease-first ordering and the abort-path lease return without Herdr or Treehouse installed: an abort returns a clean leased worktree that no surviving record names, before or after the record is published, releasing its slot claim with it, and keeps one that holds work or whose launched agent is not proven gone; a fresh spawn over a record naming a worktree that is still this task's own lease reuses it, leasing and returning nothing and keeping its work and slot claim, and on a post-publication abort restores the prior record so the next respawn reuses the same worktree, while one whose worktree is missing or leased to another holder refuses before leasing and leaves that record unchanged.
+The projection suite ran again on 2026-09-25 against Herdr 0.9.0, where its same-identity restart sections, after a lab `stop` and `provision`, now also assert that each reclaim reuses the worktree its record names instead of leasing another:
+
+```text
+ok - real Herdr lab: Hi Bit and Wheelhouse-style same-identity restarts reclaim one nested space with exact focus and idempotence
+ok - real Herdr lab: secondmate restart binding and reclaim stay isolated to the exact child home and parent
+ok - real Herdr lab: concurrent cross-home recoveries replace exact husks under one session lock with no focus drift
+ok - real Herdr lab validation completed on Herdr 0.9.0 with the default-session tripwire intact
+```
+
 ### Stale agent registration
 
 Measured 2026-09-10 on macOS aarch64 against Herdr 0.9.0 (protocol 22) and Pi 0.85.1 in an isolated `fm-lab-` session (upstream issue #4115, duplicates #3639, #3487, #2908, #3545).
 
-Herdr keeps a Pi registration after the Pi process has exited to a shell when a nested interactive shell sits under the pane's top shell, which is the crew shape `treehouse get` leaves behind; a plain `/quit` directly under the top shell, and a `kill -9` of Pi, both released it on this version.
+Herdr keeps a Pi registration after the Pi process has exited to a shell when a nested interactive shell sits under the pane's top shell, which is the shape the interactive `treehouse get` leaves behind; a plain `/quit` directly under the top shell, and a `kill -9` of Pi, both released it on this version.
 Reproduced in the lab with a nested `zsh` under the pane shell, then `pi` with no prompt, then `/quit`:
 
 ```sh

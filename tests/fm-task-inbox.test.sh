@@ -26,6 +26,8 @@
 #   6. Dead panes: the doorbell line is a shell no-op when executed by a bare
 #      shell, the ring skips an agent the backend classifies dead, and the
 #      watcher surfaces such a record exactly once instead of re-ringing.
+#   7. A pane parked on a recognized launch dialog is never rung, because the
+#      doorbell's Enter would answer it; the watcher escalates it instead.
 set -u
 
 # shellcheck source=tests/wake-helpers.sh
@@ -84,13 +86,14 @@ case "${1:-}" in
   display-message)
     for a in "$@"; do
       case "$a" in
-        *cursor_y*) printf '1\n'; exit 0 ;;
+        *cursor_y*) printf '%s\n' "${FM_FAKE_TMUX_CURSOR_Y:-1}"; exit 0 ;;
         *pane_current_command*) [ -z "${FM_FAKE_TMUX_AGENT:-}" ] || { printf '%s\n' "$FM_FAKE_TMUX_AGENT"; exit 0; } ;;
         *pane_tty*) [ -z "${FM_FAKE_TMUX_AGENT:-}" ] || { printf '\n'; exit 0; } ;;
       esac
     done
     printf 'fakepane\n'; exit 0 ;;
   capture-pane)
+    [ -z "${FM_FAKE_TMUX_CAPTURE_FAIL:-}" ] || exit 1
     if [ -n "${FM_FAKE_TMUX_CAPTURE:-}" ] && [ -f "$FM_FAKE_TMUX_CAPTURE" ]; then
       cat "$FM_FAKE_TMUX_CAPTURE"
     else
@@ -282,6 +285,71 @@ test_ring_skips_dead_agent() {
   [ "$rc" = 0 ] || fail "an endpoint the classifier cannot see should still be rung, got $rc"
   grep -qF 'Firstmate instruction waiting' "$log" || fail "an unclassifiable endpoint did not receive the doorbell"
   pass "inbox: the ring skips dead or missing endpoints and still rings live or unclassifiable endpoints"
+}
+
+# The dialog Claude Code 2.1.280 renders when a project CLAUDE.md imports a
+# file outside the launch directory, rule line included: the composer
+# classifier reads the "❯ No" row under that rule as pending text, so the ring
+# must recognize the dialog first. Enter there selects the preselected "No"
+# and records a standing decline (docs/verification/runtime-backends.md
+# "Claude external-imports dialog answers").
+imports_dialog_capture() {  # <dir>
+  cat > "$1/imports-dialog.capture" <<'EOF'
+────────────────────────────────────────────────────────────────────────────────
+  Allow external CLAUDE.md file imports?
+  This project's CLAUDE.md imports files outside the current working directory. Never allow this for third-party repositories.
+
+  External imports:
+    /home/operator/AGENTS.md
+
+  ❯ No, disable external imports
+    Yes, allow external imports
+  Enter to confirm · Esc to cancel
+EOF
+  printf '%s\n' "$1/imports-dialog.capture"
+}
+# The real pane's cursor sits on the "❯ No" row of that capture.
+IMPORTS_DIALOG_CURSOR_Y=7
+
+test_ring_skips_launch_dialog() {
+  local dir state rec log rc
+  dir="$TMP_ROOT/ring-dialog"
+  state="$dir/state"
+  mkdir -p "$state"
+  make_watch_stubs "$dir" >/dev/null
+  rec=$(inbox_lib "$state" fm_task_inbox_write "$state" t1 "please continue")
+  log="$dir/send.log"; : > "$log"
+  rc=0
+  PATH="$dir/fakebin:$PATH" FM_SEND_LOG="$log" FM_FAKE_TMUX_AGENT=claude \
+    FM_FAKE_TMUX_CAPTURE="$(imports_dialog_capture "$dir")" \
+    FM_FAKE_TMUX_CURSOR_Y="$IMPORTS_DIALOG_CURSOR_Y" \
+    inbox_lib "$state" fm_task_inbox_ring tmux sess:fm-t1 "$rec" fm-t1 || rc=$?
+  [ "$rc" = 4 ] || fail "a pane parked on a launch dialog should skip the ring with its own code 4, got $rc"
+  [ ! -s "$log" ] || fail "a launch dialog was typed into:"$'\n'"$(cat "$log")"
+  [ -f "$rec" ] || fail "skipping the ring must leave the durable record in place"
+  pass "inbox: the ring never types into a pane parked on a launch dialog"
+}
+
+# A pane that cannot be captured cannot rule a launch dialog out, so the ring
+# must not type into it: it returns the retry code 2, leaving the record for
+# the watcher's re-ring ladder, instead of letting an `unknown` composer
+# verdict ring an Enter that could answer the dialog.
+test_ring_skips_uncapturable_pane() {
+  local dir state rec log rc
+  dir="$TMP_ROOT/ring-nocapture"
+  state="$dir/state"
+  mkdir -p "$state"
+  make_watch_stubs "$dir" >/dev/null
+  rec=$(inbox_lib "$state" fm_task_inbox_write "$state" t1 "please continue")
+  log="$dir/send.log"; : > "$log"
+  rc=0
+  PATH="$dir/fakebin:$PATH" FM_SEND_LOG="$log" FM_FAKE_TMUX_AGENT=claude \
+    FM_FAKE_TMUX_CAPTURE_FAIL=1 \
+    inbox_lib "$state" fm_task_inbox_ring tmux sess:fm-t1 "$rec" fm-t1 || rc=$?
+  [ "$rc" = 2 ] || fail "an uncapturable pane should skip the ring with the retry code 2, got $rc"
+  [ ! -s "$log" ] || fail "an uncapturable pane was typed into:"$'\n'"$(cat "$log")"
+  [ -f "$rec" ] || fail "skipping the ring must leave the durable record in place"
+  pass "inbox: the ring never types into a pane it cannot capture, and asks for a re-ring"
 }
 
 test_idempotent_write_dedups_exact_body() {
@@ -646,6 +714,26 @@ test_watcher_escalates_once_after_budget() {
   pass "watcher: a spent ring budget emits exactly one ordinary stale wake for recovery"
 }
 
+test_watcher_escalates_launch_dialog_without_ringing() {
+  local dir state out log pid rec
+  dir=$(setup_watch_case dialog-pane)
+  state="$dir/state"; out="$dir/watch.out"; log="$dir/send.log"; : > "$log"
+  rec=$(inbox_lib "$state" fm_task_inbox_write "$state" t1 "please continue")
+  age_path "$rec"
+  watch_bg "$state" "$dir/fakebin" "$out" \
+    FM_SEND_LOG="$log" FM_FAKE_TMUX_CAPTURE="$(imports_dialog_capture "$dir")" \
+    FM_FAKE_TMUX_CURSOR_Y="$IMPORTS_DIALOG_CURSOR_Y" \
+    FM_TASK_INBOX_RING_MAX=2
+  pid=$!
+  wait_watcher_gone "$pid" \
+    || { kill "$pid" 2>/dev/null; fail "the watcher never escalated an instruction parked behind a launch dialog"; }
+  [ ! -s "$log" ] || fail "a launch dialog was typed into:"$'\n'"$(cat "$log")"
+  [ "$(grep -cF 'unread firstmate instruction' "$state/.wake-queue" 2>/dev/null || true)" = 1 ] \
+    || fail "a launch-dialog pane should surface exactly one stale wake:"$'\n'"$(cat "$state/.wake-queue" 2>/dev/null)"
+  [ -f "$rec" ] || fail "the durable record must survive for recovery"
+  pass "watcher: a pane parked on a launch dialog is never rung and escalates once the budget is spent"
+}
+
 test_watcher_dead_pane_escalates_once_without_ringing() {
   local dir state out log pid rec
   dir=$(setup_watch_case dead-pane)
@@ -701,6 +789,8 @@ test_write_is_durable_and_exact
 test_doorbell_is_a_shell_noop
 test_doorbell_rejects_terminal_controls
 test_ring_skips_dead_agent
+test_ring_skips_launch_dialog
+test_ring_skips_uncapturable_pane
 test_idempotent_write_dedups_exact_body
 test_idempotent_write_follows_concurrent_ack
 test_handled_mv_dedups_by_sequence
@@ -715,5 +805,6 @@ test_watcher_quiet_on_healthy_inbox
 test_watcher_ack_silences_unwritable_ladder
 test_watcher_surfaces_unwritable_ladder
 test_watcher_escalates_once_after_budget
+test_watcher_escalates_launch_dialog_without_ringing
 test_watcher_dead_pane_escalates_once_without_ringing
 test_watcher_dead_pane_ignores_stale_busy_state

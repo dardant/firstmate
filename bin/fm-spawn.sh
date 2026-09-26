@@ -79,7 +79,12 @@
 #   adapter, and experimental zellij, orca, and cmux adapters. Orca owns both
 #   the task worktree and terminal, so ship/scout Orca spawns do not run
 #   treehouse get; cmux is a session provider only, exactly like herdr/zellij,
-#   so it does. Auto-detected herdr stays silent like tmux; auto-detected cmux
+#   so it does. A herdr ship or scout leases its worktree with
+#   `treehouse get --lease` before its tab exists and opens the tab inside it,
+#   because Herdr restores a pane, and resumes its agent, in the pane's root
+#   shell directory (spawn_treehouse_lease_worktree owns the reason); tmux,
+#   zellij, and cmux run the interactive `treehouse get` in the task pane.
+#   Auto-detected herdr stays silent like tmux; auto-detected cmux
 #   prints a loud stderr notice; zellij and orca are never auto-detected.
 #   codex-app is not a known backend yet; docs/codex-app-backend.md owns that
 #   blocked backend contract. Default tmux spawns do not write backend= to meta;
@@ -1104,6 +1109,12 @@ SPAWN_TASK_SET_LOCK_HELD=0
 SPAWN_TREEHOUSE_PROJECT_LOCK=
 SPAWN_TREEHOUSE_PROJECT_LOCK_HELD=0
 SPAWN_SLOT_CLAIMED=0
+SPAWN_WT_LEASED=0
+SPAWN_WT_REUSED=0
+SPAWN_WT_PRIOR_META=
+SPAWN_WT_PRIOR_META_KEEP=0
+SPAWN_WT_LEASE_HOLDER=
+SPAWN_LAUNCH_DELIVERY_STARTED=0
 RELAUNCH_REPLACEMENT_PENDING=0
 RELAUNCH_REPLACEMENT_BUSY_GEN=
 RELAUNCH_REPLACEMENT_HARNESS=
@@ -1112,14 +1123,101 @@ RELAUNCH_REPLACEMENT_WT=
 CONFIG_INHERIT_LOCK=
 CONFIG_INHERIT_LOCK_HELD=0
 
+# A respawn that reused its recorded worktree restores the prior record it
+# snapshotted, so the lease stays named and a later respawn reuses it again.
+# The snapshot survives a failed rollback, so the exit-time retry can still
+# restore it, and a failed restore keeps it where its error names it.
 spawn_fresh_commit_rollback() {
-  if fm_backlog_atomic_transition rollback "$STATE/$ID.meta" \
+  if ! fm_backlog_atomic_transition rollback "$STATE/$ID.meta" \
     "$FM_ROOT/bin/fm-busy-event.sh" "$STATE" "$ID" "${BUSY_GEN:-}"; then
-    SPAWN_FRESH_COMMIT_PENDING=0
-    return 0
+    echo "error: $FM_BACKLOG_TRANSITION_ERROR" >&2
+    if [ -n "$SPAWN_WT_PRIOR_META" ]; then
+      SPAWN_WT_PRIOR_META_KEEP=1
+      echo "error: task $ID's prior record, which names its worktree $WT, is kept at $SPAWN_WT_PRIOR_META" >&2
+    fi
+    return 1
   fi
-  echo "error: $FM_BACKLOG_TRANSITION_ERROR" >&2
-  return 1
+  SPAWN_FRESH_COMMIT_PENDING=0
+  [ -n "$SPAWN_WT_PRIOR_META" ] || return 0
+  if ! fm_backlog_atomic_transition publish "$SPAWN_WT_PRIOR_META" "$STATE/$ID.meta" "task record" "$STATE"; then
+    SPAWN_WT_PRIOR_META_KEEP=1
+    echo "error: could not restore task $ID's prior record, which still names its worktree $WT; restore it by hand from $SPAWN_WT_PRIOR_META to $STATE/$ID.meta: $FM_BACKLOG_TRANSITION_ERROR" >&2
+    return 1
+  fi
+  SPAWN_WT_PRIOR_META=
+  SPAWN_WT_PRIOR_META_KEEP=0
+}
+
+# spawn_launched_endpoint_agent_free: whether the launched endpoint provably
+# runs no worker, by the same proof the destructive Herdr cleanup paths
+# require (bin/fm-herdr-session-cleanup.sh): the exact pane is structurally
+# gone, or it holds a provably idle, childless shell. A bare no-agent reading
+# is not enough, because Herdr registers an agent only once its integration
+# reports it, so a harness still booting reads agent-free. Only Herdr leases a
+# worktree before launch; any other backend is never proven here.
+spawn_launched_endpoint_agent_free() {
+  [ "$BACKEND" = herdr ] || return 1
+  fm_backend_source herdr || return 1
+  fm_backend_herdr_parse_target "$T" || return 1
+  case "$(fm_backend_herdr_pane_presence_state "$FM_BACKEND_HERDR_SESSION" "$FM_BACKEND_HERDR_PANE")" in
+    dead) return 0 ;;
+    present) fm_backend_herdr_pane_idle_shell_pid "$FM_BACKEND_HERDR_SESSION" "$FM_BACKEND_HERDR_PANE" >/dev/null ;;
+    *) return 1 ;;
+  esac
+}
+
+# spawn_return_leased_worktree: return an aborted spawn's leased worktree to
+# the Treehouse pool. The return runs under the Treehouse project lock, which
+# keeps any other Firstmate spawn or return off that slot; an abort after the
+# record was published has already released it, so it is taken again here,
+# bounded so an abort never waits long on another spawn. `return --force`
+# cleans and resets the slot, so it runs only on a slot git proves clean - the
+# freshen gate refuses a dirty leased slot without touching it, and its abort
+# must not then discard that work. Once the launch command may have reached
+# the pane, the slot is returned only when spawn_launched_endpoint_agent_free
+# proves no worker can still be running in it: an abort after launch can leave
+# a live worker there (the kimi and backlog-commit failures do not close their
+# endpoint), and a slot back in the pool would be leased to another task under
+# that worker. The holder guard is added where the installed Treehouse offers
+# it. Anything else leaves the lease and names the manual return. Succeeds only
+# when the slot was returned.
+spawn_return_leased_worktree() {
+  local manual="(cd '$PROJ_ABS' && treehouse return --force '$WT')" dirty
+  local -a args=(return --force)
+  if [ "$SPAWN_LAUNCH_DELIVERY_STARTED" = 1 ] && ! spawn_launched_endpoint_agent_free; then
+    echo "warning: leaving task $ID's leased worktree $WT in place; its endpoint $T was launched and is not proven agent-free. Once that endpoint is closed, return it with: $manual" >&2
+    return 1
+  fi
+  if [ "$SPAWN_TREEHOUSE_PROJECT_LOCK_HELD" != 1 ]; then
+    if [ -z "$SPAWN_TREEHOUSE_PROJECT_LOCK" ] ||
+      ! fm_lock_acquire_wait_bounded "$SPAWN_TREEHOUSE_PROJECT_LOCK" 10; then
+      echo "warning: leaving task $ID's leased worktree $WT in place; the Treehouse project lock could not be taken to return it. Return it with: $manual" >&2
+      return 1
+    fi
+    SPAWN_TREEHOUSE_PROJECT_LOCK_HELD=1
+  fi
+  if ! dirty=$(git -C "$WT" status --porcelain --ignore-submodules=none 2>/dev/null) || [ -n "$dirty" ]; then
+    echo "warning: leaving task $ID's leased worktree $WT in place; it is not provably clean, and returning it would discard its work. Once that work is saved or deliberately dropped, return it with: $manual" >&2
+    return 1
+  fi
+  if treehouse return --help 2>/dev/null | grep -q -- '--if-lease-holder'; then
+    args+=(--if-lease-holder "$SPAWN_WT_LEASE_HOLDER")
+  fi
+  if ! ( cd "$PROJ_ABS" && treehouse "${args[@]}" "$WT" ) >/dev/null 2>&1; then
+    echo "warning: could not return task $ID's leased worktree $WT; return it with: $manual" >&2
+    return 1
+  fi
+}
+
+# spawn_record_names_worktree: whether a task record survives for this task
+# and names <worktree>, so that worktree belongs to the record rather than to
+# an aborting spawn. A record that exists but cannot be read counts as naming
+# it, so an abort never returns a slot a live record may still own.
+spawn_record_names_worktree() {  # <worktree>
+  local meta="$STATE/$ID.meta"
+  [ -e "$meta" ] || [ -L "$meta" ] || return 1
+  [ -f "$meta" ] && [ -r "$meta" ] || return 0
+  [ "$(fm_meta_get "$meta" worktree)" = "$1" ]
 }
 
 parse_orca_worktree_result() {
@@ -1235,15 +1333,31 @@ spawn_abort_cleanup() {
     SPAWN_META_LOCK_HELD=0
     fm_lock_release "$SPAWN_META_LOCK" || true
   fi
+  # A worktree this spawn leased for a Herdr task
+  # (spawn_treehouse_lease_worktree) is durable until returned, so an abort
+  # returns it unless a surviving record names it, rather than stranding a
+  # slot no record describes, including one after publication whose record
+  # was rolled back (spawn_return_leased_worktree). A return re-takes the
+  # Treehouse project lock when publication had already released it.
+  if [ "$SPAWN_WT_LEASED" = 1 ] && [ -n "${WT:-}" ] && ! spawn_record_names_worktree "$WT"; then
+    SPAWN_WT_LEASED=0
+    spawn_return_leased_worktree || true
+  fi
+  # A reused worktree holds the task's own work, so an abort never returns it;
+  # the rollback restores the prior record naming it, and this says so when
+  # that restore failed.
+  if [ "$SPAWN_WT_REUSED" = 1 ] && [ -n "${WT:-}" ] && ! spawn_record_names_worktree "$WT"; then
+    echo "warning: task $ID's worktree $WT is still leased to $SPAWN_WT_LEASE_HOLDER, but no task record names it after this aborted respawn; once its work is saved, return it with: (cd '$PROJ_ABS' && treehouse return --force '$WT')" >&2
+  fi
   # A spawn that aborts after claiming its slot but before its record survives
   # must not leave a claim naming a task no record describes. The release is a
   # read-then-remove, so it runs only while the project lock that wrote the
-  # claim is still held (aborts before metadata publication); a later abort has
-  # already released that lock and leaves the claim for the next spawn's
-  # atomic replacement rather than racing it. The release itself never removes
-  # another task's claim.
+  # claim is held - through metadata publication, or again after a lease
+  # return re-took it; otherwise that lock is released and the claim is left
+  # for the next spawn's atomic replacement rather than racing it. The release
+  # itself never removes another task's claim.
   if [ "$SPAWN_SLOT_CLAIMED" = 1 ] && [ -n "${WT:-}" ] &&
-    [ ! -e "$STATE/$ID.meta" ] && [ ! -L "$STATE/$ID.meta" ] &&
+    ! spawn_record_names_worktree "$WT" &&
     fm_treehouse_pool_slot "$PROJ_ABS" "$WT"; then
     SPAWN_SLOT_CLAIMED=0
     if [ "$SPAWN_TREEHOUSE_PROJECT_LOCK_HELD" = 1 ]; then
@@ -1265,6 +1379,7 @@ spawn_abort_cleanup() {
     fm_lock_release "$SPAWN_CONTROL_LOCK" || true
   fi
   [ -z "$SPAWN_META_TMP" ] || rm -f "$SPAWN_META_TMP" 2>/dev/null || true
+  [ -z "$SPAWN_WT_PRIOR_META" ] || [ "$SPAWN_WT_PRIOR_META_KEEP" = 1 ] || rm -f "$SPAWN_WT_PRIOR_META" 2>/dev/null || true
   if [ "$CONFIG_INHERIT_LOCK_HELD" = 1 ]; then
     CONFIG_INHERIT_LOCK_HELD=0
     fm_lock_release "$CONFIG_INHERIT_LOCK" || true
@@ -2930,11 +3045,128 @@ spawn_worktree_isolated() { # <path>
   return 0
 }
 
+# spawn_treehouse_lease_worktree: acquire a ship or scout's pool slot BEFORE its
+# endpoint exists, as a durable Treehouse lease held under this task's label,
+# so the endpoint can be opened directly inside the worktree. Herdr needs this:
+# it persists each pane with its root shell's working directory and, with
+# `resume_agents_on_restore` (default on), re-runs the agent's
+# resume command there after a server restart. A tab opened in the project
+# and moved by the interactive `treehouse get` subshell keeps its root shell in
+# the primary checkout, so a restart resumed the worker in the primary checkout
+# instead of its worktree (verified in an isolated Herdr lab, recorded in
+# docs/verification/runtime-backends.md "Herdr restore working directory").
+# The lease is held until bin/fm-teardown.sh's `treehouse return --force`; an
+# abort that leaves no record naming it returns it
+# (spawn_return_leased_worktree). A fresh spawn over a record that already
+# names a worktree - a same-identity respawn after a Herdr restart - leases
+# nothing: that worktree holds a durable lease no later get or prune frees, so
+# a second lease would orphan it with its branch and work. The spawn instead
+# reuses it, exactly as it stands, once spawn_recorded_worktree_reusable proves
+# it is this task's own live lease and no worker still runs in the recorded
+# endpoint; anything else refuses and points to `fm-control.sh <id> relaunch`.
+spawn_treehouse_lease_worktree() {
+  local out meta="$STATE/$ID.meta" recorded
+  SPAWN_WT_LEASE_HOLDER="fm-task-$ID"
+  if [ -e "$meta" ] || [ -L "$meta" ]; then
+    if [ ! -f "$meta" ] || [ ! -r "$meta" ]; then
+      echo "error: task $ID has a task record at $meta that cannot be read; refusing to lease a second worktree over it" >&2
+      return 1
+    fi
+    recorded=$(fm_meta_get "$meta" worktree)
+    if [ -n "$recorded" ]; then
+      if ! spawn_recorded_worktree_reusable "$recorded"; then
+        echo "error: task $ID's record already names worktree '$recorded', which a fresh spawn cannot reuse ($SPAWN_WT_REASON); leasing another would orphan it. Use '$FM_ROOT/bin/fm-control.sh $ID relaunch', which rebinds a replacement onto the recorded worktree" >&2
+        return 1
+      fi
+      herdr_projection_existing_meta_allows_flat "$meta" || return 1
+      SPAWN_WT_PRIOR_META="$STATE/.$ID.meta.respawn-prior.${BASHPID:-$$}"
+      if ! cp -p "$meta" "$SPAWN_WT_PRIOR_META"; then
+        rm -f "$SPAWN_WT_PRIOR_META"
+        SPAWN_WT_PRIOR_META=
+        echo "error: could not snapshot task $ID's record before reusing its worktree '$recorded'" >&2
+        return 1
+      fi
+      WT=$recorded
+      SPAWN_WT_REUSED=1
+      return 0
+    fi
+  fi
+  out=$(cd "$PROJ_ABS" && treehouse get --lease --lease-holder "$SPAWN_WT_LEASE_HOLDER") || {
+    echo "error: treehouse get --lease could not lease a worktree for task $ID in project '$PROJ_ABS'" >&2
+    return 1
+  }
+  out=$(printf '%s\n' "$out" | sed -n '$p')
+  [ -n "$out" ] || {
+    echo "error: treehouse get --lease reported no worktree for task $ID in project '$PROJ_ABS'" >&2
+    return 1
+  }
+  WT=$out
+  SPAWN_WT_LEASED=1
+  validate_spawn_worktree "treehouse get --lease" "project $PROJ_ABS"
+}
+
+# spawn_recorded_worktree_reusable: whether <worktree>, named by this task's
+# existing record, may be reused by a fresh spawn: it still exists as a linked
+# worktree of this project (spawn_worktree_isolated) and Treehouse reports it
+# leased to this task's own holder. Sets SPAWN_WT_REASON on refusal.
+spawn_recorded_worktree_reusable() {  # <worktree>
+  local wt=$1 wt_real common proj_common state out path holder
+  if ! wt_real=$(cd "$wt" 2>/dev/null && pwd -P); then
+    SPAWN_WT_REASON="it no longer exists"
+    return 1
+  fi
+  spawn_worktree_isolated "$wt_real" || return 1
+  common=$(git -C "$wt_real" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) &&
+    common=$(cd "$common" 2>/dev/null && pwd -P) || common=
+  proj_common=$(git -C "$PROJ_ABS" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) &&
+    proj_common=$(cd "$proj_common" 2>/dev/null && pwd -P) || proj_common=
+  if [ -z "$common" ] || [ "$common" != "$proj_common" ]; then
+    SPAWN_WT_REASON="it is not a linked worktree of project '$PROJ_ABS'"
+    return 1
+  fi
+  # The lease lives in the slot's pool state (fm_treehouse_pool_slot), which
+  # every supported Treehouse writes; `treehouse status --json` postdates the
+  # pinned v2.0.1.
+  state="$(dirname "$(dirname "$wt_real")")/treehouse-state.json"
+  if ! out=$(jq -r '.worktrees[]? | select(.leased == true) | [.path, (.lease_holder // "")] | @tsv' \
+    "$state" 2>/dev/null); then
+    SPAWN_WT_REASON="its Treehouse pool state '$state' could not report its lease"
+    return 1
+  fi
+  while IFS=$'\t' read -r path holder; do
+    [ -n "$path" ] || continue
+    [ "$(cd "$path" 2>/dev/null && pwd -P)" = "$wt_real" ] || continue
+    if [ "$holder" = "$SPAWN_WT_LEASE_HOLDER" ]; then
+      return 0
+    fi
+    SPAWN_WT_REASON="Treehouse reports it leased to '${holder:-no holder}', not '$SPAWN_WT_LEASE_HOLDER'"
+    return 1
+  done <<EOF
+$out
+EOF
+  SPAWN_WT_REASON="Treehouse reports no lease on it for '$SPAWN_WT_LEASE_HOLDER'"
+  return 1
+}
+
 validate_spawn_worktree() { # <source> <inspect-target>
   local source=$1 inspect_target=$2
   if ! spawn_worktree_isolated "$WT"; then
     echo "error: $source did not yield an isolated worktree (resolved '$WT'; worktree root '${SPAWN_WT_TOP:-none}'; spawning project '$PROJ_ABS'); refusing to launch to avoid tangling the primary checkout. Inspect target $inspect_target" >&2
     exit 1
+  fi
+}
+
+# spawn_claim_pool_slot: record this task as the owner of its Treehouse pool
+# slot; the comment at the interactive `treehouse get` call below owns why.
+# A reused worktree's claim already belongs to the task's record, so an abort
+# leaves it rather than releasing it.
+spawn_claim_pool_slot() {
+  if fm_treehouse_pool_slot "$PROJ_ABS" "$WT"; then
+    if ! fm_treehouse_slot_owner_claim "$WT" "$ID" "$FM_HOME"; then
+      echo "error: could not claim Treehouse pool slot $WT for task $ID; refusing to launch a worker whose slot cannot later be proved to be its own; inspect window $T" >&2
+      exit 1
+    fi
+    [ "$SPAWN_WT_REUSED" = 1 ] || SPAWN_SLOT_CLAIMED=1
   fi
 }
 
@@ -3296,6 +3528,14 @@ else
       HERDR_LABEL_HOME=$PROJ_ABS
       HERDR_LAUNCHER_RELATIONSHIP=other-home
     fi
+    # A ship or scout opens its tab directly in a worktree leased first, so the
+    # pane's root shell - which Herdr restores and resumes the agent in - is the
+    # worktree, never the project (spawn_treehouse_lease_worktree owns why).
+    HERDR_TASK_CWD=$PROJ_ABS
+    if [ "$KIND" != secondmate ]; then
+      spawn_treehouse_lease_worktree || exit 1
+      HERDR_TASK_CWD=$WT
+    fi
     HERDR_PRESENTATION_JOURNAL=$(fm_backend_herdr_projection_journal_path "$STATE" "$ID")
     HERDR_PROJECTED=0
     if [ "$KIND" != secondmate ] && fm_backend_herdr_presentation_enabled "$CONFIG" "$STATE"; then
@@ -3320,7 +3560,7 @@ else
           FM_HOME="$HERDR_LABEL_HOME" fm_backend_herdr_projection_reclaim_task \
             "$HERDR_SES" "$HERDR_PRESENTATION_JOURNAL" "$ID" "$HERDR_LABEL_HOME" \
             "$HERDR_RECOVERY_WORKSPACE_ID" "$HERDR_RECOVERY_TAB_ID" "$HERDR_RECOVERY_PANE_ID" \
-            "$HERDR_PARENT_LABEL" "$W" "$PROJ_ABS"
+            "$HERDR_PARENT_LABEL" "$W" "$HERDR_TASK_CWD"
           HERDR_RECLAIM_STATUS=$?
           set -e
           case "$HERDR_RECLAIM_STATUS" in
@@ -3377,7 +3617,7 @@ else
             HERDR_PROJECTION_ID=$(fm_backend_herdr_projection_journal_create "$STATE" "$ID") || exit 1
             HERDR_PROJECTION_LABEL=$(fm_backend_herdr_projection_workspace_label "$ID" "$HERDR_PROJECTION_ID")
             if ! FM_HOME="$HERDR_LABEL_HOME" fm_backend_herdr_projection_create_task \
-              "$PROJ_ABS" "$HERDR_PROJECTION_LABEL" "$W"; then
+              "$HERDR_TASK_CWD" "$HERDR_PROJECTION_LABEL" "$W"; then
               if [ "${FM_BACKEND_HERDR_PROJECTION_CLEANUP_SAFE:-0}" = 1 ]; then
                 HERDR_PROJECTION_ABORT_CLEANUP=1
                 HERDR_PROJECTION_ABORT_SESSION=$FM_BACKEND_HERDR_PROJECTION_SESSION
@@ -3430,7 +3670,7 @@ else
       HERDR_SEEDED_DEFAULT_TAB_ID=${HERDR_CONTAINER_RAW#*$'\t'}
       HERDR_SES=${CONTAINER%%:*}
       HERDR_WORKSPACE_ID=${CONTAINER#*:}
-      HERDR_TASK_IDS=$(FM_HOME="$HERDR_LABEL_HOME" fm_backend_herdr_create_task "$CONTAINER" "$W" "$PROJ_ABS" "$HERDR_SEEDED_DEFAULT_TAB_ID") || exit 1
+      HERDR_TASK_IDS=$(FM_HOME="$HERDR_LABEL_HOME" fm_backend_herdr_create_task "$CONTAINER" "$W" "$HERDR_TASK_CWD" "$HERDR_SEEDED_DEFAULT_TAB_ID") || exit 1
       read -r HERDR_TAB_ID HERDR_PANE_ID <<EOF
 $HERDR_TASK_IDS
 EOF
@@ -3866,6 +4106,24 @@ if [ "$RELAUNCH" -eq 1 ]; then
     fi
   fi
   [ "$KIND" = secondmate ] || validate_spawn_worktree "relaunch" "$T"
+elif [ "$SPAWN_WT_LEASED" = 1 ] || [ "$SPAWN_WT_REUSED" = 1 ]; then
+  # The worktree was leased (or reused from this task's record) before the
+  # endpoint existed and the endpoint was opened inside it, so there is nothing
+  # to acquire in the pane. Still prove the shell actually sits there before
+  # anything is written into it.
+  leased_wt_real=$(real_path_or_raw "$WT")
+  leased_seen=
+  for _ in $(seq 1 20); do
+    leased_seen=$(spawn_current_path "$WT_TARGET" || true)
+    [ -z "$leased_seen" ] || [ "$(real_path_or_raw "$leased_seen")" != "$leased_wt_real" ] || break
+    sleep 0.5
+  done
+  if [ -z "$leased_seen" ] || [ "$(real_path_or_raw "$leased_seen")" != "$leased_wt_real" ]; then
+    echo "error: task $ID's endpoint opened in '${leased_seen:-unknown}', not its leased worktree '$WT'; refusing to launch outside it; inspect window $T" >&2
+    exit 1
+  fi
+  validate_spawn_worktree "treehouse get --lease" "$T"
+  spawn_claim_pool_slot
 elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
   spawn_send_text_line "$WT_TARGET" 'treehouse get'
 
@@ -3940,15 +4198,9 @@ elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
   # under its successor.
   # Written under the Treehouse project lock held from before slot allocation
   # through metadata publication, so no other spawn or return sees a half-claim.
-  if fm_treehouse_pool_slot "$PROJ_ABS" "$WT"; then
-    if ! fm_treehouse_slot_owner_claim "$WT" "$ID" "$FM_HOME"; then
-      echo "error: could not claim Treehouse pool slot $WT for task $ID; refusing to launch a worker whose slot cannot later be proved to be its own; inspect window $T" >&2
-      exit 1
-    fi
-    SPAWN_SLOT_CLAIMED=1
-  fi
+  spawn_claim_pool_slot
 fi
-if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ]; then
+if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ] && [ "$SPAWN_WT_REUSED" != 1 ]; then
   freshen_spawn_worktree_base "$WT" || exit 1
 fi
 
@@ -4861,6 +5113,7 @@ if ! (umask 077 && printf '%s\n' "$LAUNCH" >"$LAUNCH_STAGE" &&
   exit 1
 fi
 sleep 0.3
+SPAWN_LAUNCH_DELIVERY_STARTED=1
 spawn_send_literal "$T" ". $(shell_quote "$LAUNCH_FILE")"
 sleep 0.3
 if [ "${HERDR_PROJECTED:-0}" -eq 1 ]; then
@@ -4972,10 +5225,20 @@ else
 fi
 if [ "$SPAWN_BACKLOG_COMMIT_STATUS" -ne 0 ]; then
   if [ "$RELAUNCH" -eq 0 ]; then
-    if spawn_fresh_commit_rollback; then
-      echo "error: task $ID's backlog item could not be moved to In flight ($FM_BACKLOG_TRANSITION_ERROR); its record was removed so no worker is left that the backlog does not own - close out endpoint $T and local copy $WT by hand, then re-run the spawn" >&2
+    spawn_commit_error=$FM_BACKLOG_TRANSITION_ERROR
+    if [ "$SPAWN_WT_REUSED" = 1 ]; then
+      spawn_closeout="close out endpoint $T by hand, leaving its worktree $WT, which holds the task's work, in place"
+      spawn_repair="restore its prior record and remove the busy state"
     else
-      echo "error: task $ID's backlog item could not be moved to In flight ($FM_BACKLOG_TRANSITION_ERROR), and failed-dispatch cleanup is incomplete; the provisional record may remain at $STATE/$ID.meta - close out endpoint $T and local copy $WT by hand, then remove the record and busy state before retrying" >&2
+      spawn_closeout="close out endpoint $T and local copy $WT by hand"
+      spawn_repair="remove the record and busy state"
+    fi
+    if ! spawn_fresh_commit_rollback; then
+      echo "error: task $ID's backlog item could not be moved to In flight ($spawn_commit_error), and failed-dispatch cleanup is incomplete; the provisional record may remain at $STATE/$ID.meta - $spawn_closeout, then $spawn_repair before retrying" >&2
+    elif [ "$SPAWN_WT_REUSED" = 1 ]; then
+      echo "error: task $ID's backlog item could not be moved to In flight ($spawn_commit_error); its prior record was restored and still names its worktree $WT - $spawn_closeout, then re-run the spawn" >&2
+    else
+      echo "error: task $ID's backlog item could not be moved to In flight ($spawn_commit_error); its record was removed so no worker is left that the backlog does not own - $spawn_closeout, then re-run the spawn" >&2
     fi
   else
     echo "error: task $ID was republished but its backlog item could not be moved to In flight ($FM_BACKLOG_TRANSITION_ERROR); fix the backlog and re-run the relaunch" >&2

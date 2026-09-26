@@ -1218,7 +1218,11 @@ test_scripts_route_explicit_target_through_meta_backend() {
   touch "$state/.last-watcher-beat"
   zellij_pane_response "$dir" 1 7 3
   printf 'captured zellij pane\n' > "$dir/responses/2.out"
+  # fm-send --key captures the pane (3, 4) to rule out a launch dialog before
+  # it verifies the pane again (5) and sends the key.
   zellij_pane_response "$dir" 3 7 3
+  printf 'captured zellij pane\n' > "$dir/responses/4.out"
+  zellij_pane_response "$dir" 5 7 3
   fb=$(make_zellij_fakebin "$dir")
   cat > "$fb/tmux" <<'SH'
 #!/usr/bin/env bash

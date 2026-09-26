@@ -915,10 +915,11 @@ fm_busy_agy_tail_busy() {
 # ("Quick safety check: Is this a project you created or one you trust?",
 # re-verified live on Claude Code 2.1.278, docs/verification/runtime-backends.md
 # "Launch-prompt backstop signatures") and its separate external-CLAUDE.md-
-# imports dialog ("Allow external CLAUDE.md file imports?", verified by
-# disassembly, .agents/skills/harness-adapters/references/harness/claude.md
-# "Hook trust" sibling section). fm-claude-trust.sh pre-registers both before
-# launch; this is the backstop for when that registration did not take effect.
+# imports dialog ("Allow external CLAUDE.md file imports?", rendered live on
+# Claude Code 2.1.280, docs/verification/runtime-backends.md "Claude external-
+# imports dialog answers"). fm-claude-trust.sh pre-registers trust before
+# launch; this is the backstop for when a dialog renders anyway, and
+# bin/fm-control.sh also reads it to keep every key out of such a pane.
 # Each dialog's own question text is paired with one of its own rendered
 # option/footer lines, both required together: the question text alone is
 # plausible self-referential prose a firstmate-repo worker could easily render
@@ -973,19 +974,29 @@ fm_busy_pi_launch_prompt_tail() {
 # harness/gemini.md "Trust, and why the two documented options are not
 # equivalent" rather than this guard's own live capture, and stays a single
 # marker: it is reached only after actively selecting that auth method, so
-# self-referential prose is a materially smaller risk there.
+# self-referential prose is a materially smaller risk there. That reasoning
+# holds only for a known Gemini pane, so the harness-agnostic union below uses
+# fm_busy_gemini_paired_launch_prompt_tail and leaves the marker out.
 fm_busy_gemini_launch_prompt_tail() {
+  local buf
+  buf=$(cat)
+  if printf '%s' "$buf" | fm_busy_gemini_paired_launch_prompt_tail; then
+    return 0
+  fi
+  printf '%s' "$buf" | grep -qiE "${FM_BUSY_GEMINI_APIKEY_PROMPT_REGEX:-Enter Gemini API Key}"
+}
+
+# fm_busy_gemini_paired_launch_prompt_tail: only Gemini's paired signatures
+# (workspace trust and auth-method picker), each question with its own option.
+fm_busy_gemini_paired_launch_prompt_tail() {
   local buf
   buf=$(cat)
   if printf '%s' "$buf" | grep -qiE "${FM_BUSY_GEMINI_TRUST_PROMPT_REGEX:-Do you trust the files in this folder\\?}" \
     && printf '%s' "$buf" | grep -qiE "Trust folder|Don't trust"; then
     return 0
   fi
-  if printf '%s' "$buf" | grep -qiE "${FM_BUSY_GEMINI_AUTH_PROMPT_REGEX:-How would you like to authenticate for this project\\?}" \
-    && printf '%s' "$buf" | grep -qiE 'Use Gemini API Key|No authentication method selected'; then
-    return 0
-  fi
-  printf '%s' "$buf" | grep -qiE "${FM_BUSY_GEMINI_APIKEY_PROMPT_REGEX:-Enter Gemini API Key}"
+  printf '%s' "$buf" | grep -qiE "${FM_BUSY_GEMINI_AUTH_PROMPT_REGEX:-How would you like to authenticate for this project\\?}" \
+    && printf '%s' "$buf" | grep -qiE 'Use Gemini API Key|No authentication method selected'
 }
 
 # fm_busy_launch_prompt_parked: dispatch to the signature above for <harness>,
@@ -1002,6 +1013,24 @@ fm_busy_launch_prompt_parked() {  # <harness>
     gemini) fm_busy_gemini_launch_prompt_tail ;;
     *) return 1 ;;
   esac
+}
+
+# fm_busy_any_launch_prompt_parked: whether the tail on stdin shows ANY
+# harness's recognized launch dialog, for a caller that does not know the
+# endpoint's harness (bin/fm-task-inbox-lib.sh's doorbell and bin/fm-send.sh's
+# local sends, whose keys would answer the dialog). Only paired signatures
+# apply here: every harness's pane is checked against them, so a single
+# unpaired marker would fire on any worker's ordinary output that quotes it.
+fm_busy_any_launch_prompt_parked() {
+  local buf tail
+  buf=$(cat)
+  for tail in fm_busy_claude_launch_prompt_tail fm_busy_pi_launch_prompt_tail \
+    fm_busy_gemini_paired_launch_prompt_tail; do
+    if printf '%s' "$buf" | "$tail"; then
+      return 0
+    fi
+  done
+  return 1
 }
 
 # fm_busy_classify: semantic classification for a task whose endpoint the

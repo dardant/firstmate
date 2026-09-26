@@ -62,8 +62,9 @@
 # Inbox paths containing bytes outside printable ASCII are unsupported. The
 # doorbell refuses them rather than sending terminal control bytes to a pane.
 #
-# fm_task_inbox_ring requires bin/fm-backend.sh's dispatch (sourced below); the
-# other helpers are dependency-light. Sourced by bin/fm-send.sh, bin/fm-watch.sh,
+# fm_task_inbox_ring requires bin/fm-backend.sh's dispatch and
+# bin/fm-busy-lib.sh's launch-dialog signatures (sourced below); the other
+# helpers are dependency-light. Sourced by bin/fm-send.sh, bin/fm-watch.sh,
 # and tests. No side effects on source beyond its sourced libraries.
 #
 # Tunables (env):
@@ -78,6 +79,8 @@ _FM_TASK_INBOX_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$_FM_TASK_INBOX_LIB_DIR/fm-wake-lib.sh"
 # shellcheck source=/dev/null
 . "$_FM_TASK_INBOX_LIB_DIR/fm-backend.sh"
+# shellcheck source=/dev/null
+. "$_FM_TASK_INBOX_LIB_DIR/fm-busy-lib.sh"
 
 FM_TASK_INBOX_SCHEMA='fm-task-inbox.v1'
 FM_TASK_INBOX_GRACE_DEFAULT=90
@@ -299,27 +302,45 @@ fm_task_inbox_doorbell_line() {  # <record-path>
     "$quoted" "$quoted"
 }
 
-# Ring the doorbell, best-effort: one endpoint-liveness pre-check, one advisory
-# composer pre-check, then the backend's submit machinery with a minimal retry
+# Ring the doorbell, best-effort: one endpoint-liveness pre-check, one
+# launch-dialog pre-check, one advisory composer pre-check, then the backend's submit machinery with a minimal retry
 # budget, verdict discarded.
 # Returns 0 rang, 1 skipped because the composer PROVENLY holds pending text
-# (the watcher re-rings later), 2 the backend send failed, 3 skipped because
+# (the watcher re-rings later), 2 the backend send failed or the pane could not
+# be captured for the launch-dialog check (nothing typed; the watcher re-rings
+# and its ladder escalates a persistently uncapturable pane), 3 skipped because
 # the endpoint is positively dead or missing (nothing typed; recovery owns the
-# record). No return value is delivery proof; the acknowledgement move is the
-# only delivery signal.
+# record), 4 skipped because the pane shows a recognized launch dialog (the
+# watcher re-rings later and escalates; the pane needs a keyless
+# `fm-control.sh <id> exit` or `relaunch`). No return value is delivery proof;
+# the acknowledgement move is the only delivery signal.
 # The skip is deliberately narrow: only an exact `pending` verdict defers,
-# because there our Enter could submit someone's real half-typed content.
-# `pending-unproven` and `unknown` still ring - the worst outcome is a garbled
+# because there our Enter could submit someone's real half-typed content, and
+# so does a pane positively matching a launch dialog signature
+# (bin/fm-busy-lib.sh), because there our Enter would answer the operator's
+# question - on Claude's external-imports dialog it records a decline.
+# A pane that cannot be captured cannot rule a launch dialog out, so it is not
+# rung either. On a captured pane with no launch dialog, `pending-unproven` and
+# `unknown` composer verdicts still ring - the worst outcome is a garbled
 # CONSTANT line the worker recovers semantically, while skipping on ambiguous
 # verdicts would starve a harness whose idle screen the classifier cannot
 # positively identify (that classifier is advisory here by design).
 fm_task_inbox_ring() {  # <backend> <target> <record-path> [expected-label]
-  local backend=$1 target=$2 rec=$3 label=${4:-} line cstate verdict
+  local backend=$1 target=$2 rec=$3 label=${4:-} line cstate verdict tail
   case "$(fm_backend_agent_state "$backend" "$target" 2>/dev/null || true)" in
     dead|missing) return 3 ;;
   esac
   if ! line=$(fm_task_inbox_doorbell_line "$rec"); then
     return 2
+  fi
+  # The dialog check runs first: the composer classifier reads a dialog's
+  # preselected option row (Claude's "❯ No, disable external imports" under a
+  # rule) as pending text, which would mislabel the skip.
+  if ! tail=$(fm_backend_capture "$backend" "$target" 40 "$label" 2>/dev/null); then
+    return 2
+  fi
+  if printf '%s' "$tail" | fm_busy_any_launch_prompt_parked; then
+    return 4
   fi
   cstate=$(fm_backend_composer_state "$backend" "$target" "$label" 2>/dev/null) || cstate=unknown
   case "$cstate" in

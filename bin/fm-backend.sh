@@ -981,6 +981,20 @@ fm_backend_agent_state() {  # <backend> <target>
   esac
 }
 
+# fm_backend_agent_pids: the pids of the verified harness processes running at
+# <target>, one per line, attributed through the same process-level view and
+# shared classifier as fm_backend_agent_state. Only the backends with that
+# recovery-grade view implement it; every other backend prints nothing, so a
+# caller can never signal a process it could not attribute.
+fm_backend_agent_pids() {  # <backend> <target>
+  local backend=$1 target=$2
+  fm_backend_source "$backend" || return 0
+  case "$backend" in
+    tmux) fm_backend_tmux_agent_pids "$target" ;;
+    herdr) fm_backend_herdr_agent_pids "$target" ;;
+  esac
+}
+
 # Backward-compatible three-state view for existing callers. An
 # authoritatively missing endpoint is confidently not a live agent, while every
 # ambiguous, unreadable, or unverified result stays unknown.

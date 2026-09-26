@@ -532,6 +532,28 @@ MARK_FROM_FIRSTMATE=0
 PENDING_REPLY_CORR=
 PENDING_REPLY_CREATED=0
 TARGET_TASK_ID=
+# fm_send_refuse_launch_dialog: fail when <what> must not reach local pane $T
+# because it could answer a harness launch dialog (Escape or Enter on Claude's
+# external-imports dialog records a standing decline), the same signature
+# owner the doorbell and fm-control consult. A pane that cannot be captured
+# cannot rule a dialog out, so it refuses too, exactly as fm-control does.
+fm_send_refuse_launch_dialog() { # <what>
+  local what=$1 id tail recovery
+  if [ -n "$TARGET_META" ]; then
+    id=$(fm_send_id_from_meta "$TARGET_META")
+    recovery="Stop the agent without a key via '$SCRIPT_DIR/fm-control.sh $id exit' or '$SCRIPT_DIR/fm-control.sh $id relaunch', and leave any dialog's question to the operator"
+  else
+    recovery="$T is not a recorded task, so fm-control cannot stop it; clear any dialog by hand, leaving its question to the operator"
+  fi
+  if ! tail=$(fm_backend_capture "$TARGET_BACKEND" "$T" 40 "$EXPECTED_LABEL" 2>/dev/null); then
+    echo "error: $T could not be captured, so a harness launch dialog cannot be ruled out, and $what could answer one (Escape or Enter on Claude's external-imports dialog records a standing decline); nothing was sent. Retry once the pane can be read, or: $recovery" >&2
+    return 1
+  fi
+  if printf '%s' "$tail" | fm_busy_any_launch_prompt_parked; then
+    echo "error: $T shows a harness launch dialog, and $what would answer it (Escape or Enter on Claude's external-imports dialog records a standing decline); nothing was sent. $recovery" >&2
+    return 1
+  fi
+}
 fm_send_known_undelivered_cleanup() {
   [ -n "$PENDING_REPLY_CORR" ] || return 0
   if [ "$PENDING_REPLY_CREATED" = 1 ]; then
@@ -771,6 +793,9 @@ if [ "${1:-}" = "--key" ]; then
   esac
   key=$2
   semantic_key=$(fm_send_normalize_key "$key")
+  if [ "$TARGET_BACKEND" != remote ]; then
+    fm_send_refuse_launch_dialog "key '$key'" || exit 1
+  fi
   if [ "$TARGET_BACKEND" = remote ]; then
     FM_SEND_REMOTE_BUDGET=${FM_SEND_REMOTE_BUDGET:-30}
     case "$FM_SEND_REMOTE_BUDGET" in
@@ -1086,6 +1111,11 @@ else
     fm_task_inbox_ring "$TARGET_BACKEND" "$T" "$INBOX_RECORD" "$EXPECTED_LABEL" || ring_rc=$?
     case "$ring_rc" in
     1) echo "fm-send: doorbell skipped (composer visibly holds pending text); the steer is durably recorded at $INBOX_RECORD and the watcher will re-ring" >&2 ;;
+    4)
+      ring_id=$T
+      [ -z "$TARGET_META" ] || ring_id=$(fm_send_id_from_meta "$TARGET_META")
+      echo "fm-send: doorbell skipped (pane is parked on a launch dialog; use '$SCRIPT_DIR/fm-control.sh $ring_id exit' or '$SCRIPT_DIR/fm-control.sh $ring_id relaunch'); the steer is durably recorded at $INBOX_RECORD and the watcher will re-ring" >&2
+      ;;
     2) echo "fm-send: doorbell did not reach $T; the steer is durably recorded at $INBOX_RECORD and the watcher will re-ring" >&2 ;;
     3) echo "fm-send: doorbell not typed because the agent in $T has exited; the steer is durably recorded at $INBOX_RECORD for recovery (stuck-crewmate-recovery), and the watcher will not re-ring a dead pane" >&2 ;;
     esac
@@ -1126,6 +1156,11 @@ else
   # verdict preserves the loud refusal boundary. Only LOCAL targets reach this
   # block: remote text rides the inbox leg above, and remote --key exits
   # earlier.
+  if ! fm_send_refuse_launch_dialog "the typed text's Enter"; then
+    fm_send_known_undelivered_cleanup ||
+      echo "error: known-undelivered pending-reply state could not be reset for $TARGET_TASK_ID" >&2
+    exit 1
+  fi
   send_rc=0
   if verdict=$(fm_backend_send_text_submit "$TARGET_BACKEND" "$T" "$MESSAGE" "$retries" "$sleep_s" "$settle" "$EXPECTED_LABEL"); then
     :
