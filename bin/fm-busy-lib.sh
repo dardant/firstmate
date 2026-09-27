@@ -309,10 +309,15 @@ fm_busy_record_read() {  # <state-dir> <id>
 # muse persists an append-only session event log per session at
 # <sessions-root>/YYYY/MM/DD/<session-uuid>/session.jsonl, and brackets every
 # submitted turn with one run lifecycle pair. Verified live on muse
-# 0.1.0-R708.1 across completed, interrupted, and killed-mid-turn turns:
-#   {"payload":{"kind":"run","run_id":"<uuid>","event":{"kind":"started",...
-#   {"payload":{"kind":"run","run_id":"<uuid>","event":{"kind":"terminal",
-#     "terminal":"completed"|"cancelled",...
+# 0.1.0-R708.1 across completed, interrupted, and killed-mid-turn turns, and on
+# 1.4.0-R4302.1 across completed and interrupted turns. Each is a
+# payload_type "runtime.session" record whose payload is
+#   {"kind":"run","run_id":"<uuid>","event":{"kind":"started",...}}
+#   {"kind":"run","run_id":"<uuid>","event":{"kind":"terminal",
+#     "terminal":"completed"|"cancelled",...}}
+# Field order differs by version and 1.4.0 nests its permission records in a
+# retained_frame envelope, so bin/fm-muse-session.cjs decodes records
+# structurally instead of matching bytes.
 # An Escape interrupt closes its run with terminal=cancelled, so unlike Claude's
 # Stop hook this source covers the interrupt path itself. Any later
 # run_retracted records follow the terminal rather than replacing it.
@@ -370,54 +375,7 @@ fm_busy_muse_matching_logs() {  # <sessions-root> <workspace-root>
   local root=$1 ws=$2
   [ -d "$root" ] || return 1
   command -v node >/dev/null 2>&1 || return 1
-  node - "$root" "$ws" <<'NODE'
-const fs = require("fs");
-const path = require("path");
-const [root, workspace] = process.argv.slice(2);
-
-function directories(parent) {
-  try {
-    return fs.readdirSync(parent, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => path.join(parent, entry.name));
-  } catch {
-    return [];
-  }
-}
-
-function metadataWorkspace(file) {
-  let descriptor;
-  try {
-    descriptor = fs.openSync(file, "r");
-    const buffer = Buffer.alloc(65536);
-    const length = fs.readSync(descriptor, buffer, 0, buffer.length, 0);
-    const newline = buffer.indexOf(10, 0);
-    if (newline < 0 || newline >= length) return null;
-    const record = JSON.parse(buffer.subarray(0, newline).toString("utf8"));
-    return record?.payload?.record?.workspace_root ?? null;
-  } catch {
-    return null;
-  } finally {
-    if (descriptor !== undefined) fs.closeSync(descriptor);
-  }
-}
-
-for (const year of directories(root)) {
-  for (const month of directories(year)) {
-    for (const day of directories(month)) {
-      for (const session of directories(day)) {
-        const file = path.join(session, "session.jsonl");
-        try {
-          if (!fs.lstatSync(file).isFile()) continue;
-        } catch {
-          continue;
-        }
-        if (metadataWorkspace(file) === workspace) process.stdout.write(`${file}\n`);
-      }
-    }
-  }
-}
-NODE
+  node "$(dirname "${BASH_SOURCE[0]}")/fm-muse-session.cjs" matching "$root" "$ws"
 }
 
 fm_busy_muse_binding_has_prior_log() {  # <state-dir> <id> <session-log>
@@ -561,42 +519,15 @@ EOF
 
 fm_busy_muse_run_events() {  # <session-log>
   [ -f "$1" ] || return 1
-  LC_ALL=C awk '
-    BEGIN { OFS = "\t"; pre = "\"payload\":{\"kind\":\"run\",\"run_id\":\"" }
-    {
-      p = index($0, pre)
-      if (p == 0) next
-      rest = substr($0, p + length(pre))
-      q = index(rest, "\"")
-      if (q == 0) next
-      rid = substr(rest, 1, q - 1)
-      rest = substr(rest, q)
-      head = "\",\"event\":{\"kind\":\""
-      if (substr(rest, 1, length(head)) != head) next
-      rest = substr(rest, length(head) + 1)
-      q = index(rest, "\"")
-      if (q == 0) next
-      ev = substr(rest, 1, q - 1)
-      terminal = ""
-      if (ev == "terminal") {
-        marker = "\"terminal\":\""
-        p = index(rest, marker)
-        if (p != 0) {
-          value = substr(rest, p + length(marker))
-          q = index(value, "\"")
-          if (q != 0) terminal = substr(value, 1, q - 1)
-        }
-      }
-      if (ev == "started" || ev == "terminal") print rid, ev, terminal
-    }
-  ' "$1"
+  command -v node >/dev/null 2>&1 || return 1
+  node "$(dirname "${BASH_SOURCE[0]}")/fm-muse-session.cjs" events "$1"
 }
 
 # fm_busy_muse_run_state: fold one session log to busy|settled|none.
 #   busy     at least one run started with no matching terminal
 #   settled  every started run reached a terminal
 #   none     the log holds no run lifecycle records at all
-# The match is anchored on the exact structural prefix rather than a bare
+# Records are decoded structurally rather than using a bare
 # "kind":"terminal" search, because muse also emits nested "record":{"kind":
 # "terminal"} cleanup-effect payloads that are NOT run terminals and would
 # otherwise close a run that is still in flight.

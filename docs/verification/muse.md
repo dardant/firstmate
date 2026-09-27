@@ -11,6 +11,7 @@ The skill tree rooted at [`.agents/skills/harness-adapters/SKILL.md`](../../.age
 | Verified | 2026-08-05, extended 2026-08-06 with the credentialed multi-step smoke |
 | Artifact | `muse-aarch64-macos`, sha256 `4290bfafa5bbb81a6fd493aaea12f848c789b1d22edfa0c4b849151deba3e70c` |
 | Platform | macOS arm64 (Darwin 25.5.0) |
+| Re-verified | `Muse Code 1.4.0 (1.4.0-R4302.1)`, build sha `aebe0c188b`, on 2026-09-27; see [Muse Code 1.4.0](#muse-code-140-verified-2026-09-27) |
 
 The binary was fetched from the published channel and its checksum matched the published manifest before any run:
 
@@ -64,7 +65,7 @@ A two-turn session produced exactly two run brackets, the second closed by an Es
 78 {"kind":"run","run_id":"b50dac92-...","event":{"kind":"terminal","terminal":"cancelled","reason":"cancelled during model step"}}
 ```
 
-The log's first record carries the workspace binding key:
+On 0.1.0 the log's first record carries the workspace binding key:
 
 ```
 "payload_type": "runtime.session.metadata",
@@ -202,6 +203,114 @@ Its run closed as cancelled rather than staying open:
 That is the same terminal shape the `echo`-provider interrupt produced, now confirmed against a live model mid tool loop.
 
 `tests/fm-muse-harness.test.sh` pins the resulting classifier behavior: a log settled by either terminal reads `idle`, an open run reads `busy`, and only a resolution failure reads `unknown`.
+
+## Muse Code 1.4.0 (verified 2026-09-27)
+
+Every live check below ran on Linux x86_64 under WSL2 (kernel 6.18.33.2-microsoft-standard-WSL2) with the default `meta` provider and model `muse-spark-1.3-contributor` at `low` effort, unless it names the `echo` provider.
+The worker was spawned through the real `bin/fm-spawn.sh` with `--harness muse --backend herdr` into an isolated Herdr 0.9.0 lab session created by `bin/fm-herdr-lab.sh`, with a scratch Firstmate home and project.
+
+### Session log shape
+
+The first line of every 1.4.0 `session.jsonl` is a retained permission frame, and the metadata record carrying `workspace_root` follows it:
+
+```
+line 1 {"retained_frame":"session_permission_transaction","frame_schema_version":1,...,"children":[{"child_index":0,"record_json":"{\"schema_version\":1,...}"},...]}
+line 2 {...,"payload_type":"runtime.session.metadata","payload":{"kind":"metadata","record":{"build":{"semver":"1.4.0","sha":"aebe0c188b"},...,"workspace_root":"..."}}}
+```
+
+Run records moved `event` ahead of `kind` and `run_id`, and `kind` is no longer the first key inside a terminal `event`:
+
+```
+{...,"payload_type":"runtime.session","payload":{"event":{"kind":"started","prompt":"..."},"kind":"run","run_id":"94d0e69f-...",...}}
+{...,"payload_type":"runtime.session","payload":{"event":{"eot_gate_ms":4443,"kind":"terminal","reason":null,"terminal":"completed",...},"kind":"run","run_id":"94d0e69f-...",...}}
+```
+
+Across the lab's sessions every retained frame was `session_permission_transaction`, and every record with neither `payload_type` nor `retained_frame` was a `retained_marker: omitted_live_only` stand-in for an ephemeral task delta, never a run record.
+[`tests/captures/muse-1.4.0/README.md`](../../tests/captures/muse-1.4.0/README.md) records the four real lines the portable regression replays.
+
+### Busy classification
+
+On an idle worker the pre-fix classifier and the structural decoder disagreed on the same live task record:
+
+```
+unknown muse-session-log   <- pre-fix bin/fm-busy-lib.sh (first line has no workspace_root)
+idle muse-session-log      <- bin/fm-busy-lib.sh with bin/fm-muse-session.cjs
+```
+
+During a 120-second foreground `sleep` tool call the pre-fix fold returned `none` for the open run while the structural fold returned `busy`.
+On Herdr the classifier consults native agent state first, and native `working` covers streaming, so the session-log fold is what carries a long tool call.
+A `bin/fm-control.sh <id> relaunch` wrote a new binding whose `prior_log` excluded the previous session, and the fold then bound the replacement's own log.
+`muse resume <session-uuid> --yolo` in the same pane appended to that session's existing `session.jsonl`, and the fold read the resumed session `idle muse-session-log`.
+
+### Control
+
+`bin/fm-control.sh <id> interrupt` during the foreground tool call reported `cancel=confirmed` through the run-scoped terminal, and the fold then read `settled` with terminal `cancelled`.
+An Escape that lands before any output restores the prompt into the composer, and `C-u` clears it to `empty`; after a tool had run, the composer stayed empty.
+`bin/fm-control.sh <id> exit` sent `/exit`, and the pane printed `To continue this session, run muse resume <session-uuid>`.
+`--yolo` launches showed no trust dialog, and a typed-plane `/plan ...` invocation submitted with exit 0 and printed `Loaded skill plan · built-in`.
+
+### Composer and steering
+
+Captured through `herdr pane read --format ansi`, the idle and typed composer rows are:
+
+```
+^[[0m^[[2m^[[38;2;103;108;116m──────...^[[0m
+^[[0m^[[38;2;90;160;255m❯ ^[[0m
+^[[0m^[[38;2;90;160;255m❯ ^[[0m^[[38;2;204;211;219mfix the login bug^[[0m
+```
+
+Herdr natively reports the pane as agent `muse`, and `fm_backend_composer_state` read the idle row `empty` and typed text `pending`.
+Doorbells rang by `bin/fm-send.sh` submitted on an idle pane and mid-stream: twelve typed-and-Entered probes one to three seconds apart during a streaming turn all read `empty` afterwards and were processed in order after the turn.
+The observed stall reproduced only when the text and its Enter reached Muse in the same read:
+
+```
+$ fm-herdr-lab.sh run <lab> pane send-text <pane> $': burst probe A - no reply needed\r'
+❯ : burst probe A - no reply needed          (composer: pending)
+$ fm-herdr-lab.sh run <lab> pane send-keys <pane> enter
+❯ : burst probe A - no reply needed          (submitted as one line; composer: empty)
+```
+
+Muse dropped the coalesced carriage return rather than inserting a newline, so one later Enter submits the line intact.
+That is the fleet report's shape: a loaded pane coalesces the ring's text and Enter, the single Enter is lost, and each later ring skips on the pending doorbell.
+The ring now retries Enter while the composer stays proven pending; `test_ring_retries_a_swallowed_enter` in `tests/fm-task-inbox.test.sh` pins it against a real TTY stand-in that drops the first Enter the same way.
+
+### Primary and secondmate capability probe
+
+After a turn settled, a background `sleep 40` that the worker had started finished and Muse opened a new run on its own, with no input:
+
+```
+t=15 state=busy runs=2
+t=30 state=settled runs=2
+t=45 state=settled runs=2
+t=60 state=busy runs=3      <- background command finished, model re-invoked
+t=75 state=settled runs=3
+```
+
+The binary reads Claude-dialect hook configuration and carries the diagnostics `D97: asyncRewake: true handlers are unsupported` and `D97: model reawakening is unsupported`.
+Its hook-event variant table, read with `strings` from `muse-bin-1.4.0-R4302.1`, has no plain `Stop` turn-end event:
+
+```
+HookEventKindSessionStartPreToolUsePermissionRequestPostToolUsePreLLMCallPostLLMCallPreCompactPostCompactSubagentStartSubagentStopSessionEndNotificationPostToolUseFailureStopFailurePostToolBatchInterruptSessionFork
+```
+
+That is static evidence, not a live hook run, but it matches the documented refusal of model reawakening: no hook found here can block or continue a turn end.
+No Firstmate supervision protocol, turn-end guard, session-start, pre-tool, or delegation-guard integration exists for Muse, so neither the primary nor the secondmate role was exercised and both remain unverified.
+
+### Live guards
+
+```
+$ FM_MUSE_SIGNALS_LIVE=1 tests/fm-muse-signals-live-e2e.test.sh
+ok - Muse's real session protocol classifies busy in flight
+ok - Muse's real session protocol emits one matched run bracket
+ok - Muse's real bright prompt glyph classifies as an empty composer
+$ FM_SEND_INBOX_LIVE_E2E=1 FM_SEND_INBOX_LIVE_HARNESSES=muse tests/fm-send-inbox-doorbell-live-e2e.test.sh
+ok - muse (Muse Code 1.4.0 (1.4.0-R4302.1)): the doorbell reached a real worker, which acted and acked with the mv
+$ FM_HARNESS_LIVENESS_DRIFT=1 tests/fm-harness-liveness-drift-live-e2e.test.sh
+ok - harness liveness: muse Muse Code 1.4.0 (1.4.0-R4302.1) classifies alive
+ok - harness detection: muse Muse Code 1.4.0 (1.4.0-R4302.1) is identified by the ancestry walk at comm strength
+```
+
+Before the signals guard learned 1.4.0's `❯`, its glyph check failed with `the final Muse prompt glyph has no effective truecolor foreground` while its composer verdict was already `empty`.
 
 ## Refreshing this record
 
