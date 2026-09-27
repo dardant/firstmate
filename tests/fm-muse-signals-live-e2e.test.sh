@@ -145,8 +145,10 @@ export PATH
 
 "$REAL_TMUX" -L "$SOCKET" new-session -d -s "$SESSION" -n control -c "$WORKSPACE" \
   || fail "could not start the isolated tmux server"
+# Muse falls back to 256-color SGR when COLORTERM is unset, so pin the
+# truecolor terminal a captain's pane advertises instead of inheriting it.
 "$REAL_TMUX" -L "$SOCKET" new-window -d -t "$SESSION:" -n muse -c "$WORKSPACE" -- \
-  env XDG_CONFIG_HOME="$LAB/config" XDG_DATA_HOME="$LAB/data" \
+  env COLORTERM=truecolor XDG_CONFIG_HOME="$LAB/config" XDG_DATA_HOME="$LAB/data" \
   MUSE_EXPERIMENTAL_FOREIGN_PERSONAL_CONTEXT_KILL=on \
   "$MUSE_BIN" --provider echo --yolo "firstmate Muse signal drift guard" \
   || fail "could not launch Muse with the echo provider"
