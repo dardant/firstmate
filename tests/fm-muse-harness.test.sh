@@ -587,6 +587,26 @@ NODE
   pass "1.4.0 metadata, retained frames, field order, and partial writes preserve busy/idle proof"
 }
 
+# A terminal whose reason is not a plain string still closes its run. The log
+# is append-only, so failing the whole fold on it would leave that session
+# unknown for good, the false-wedge symptom this source exists to prevent.
+test_unexpected_terminal_reason_still_closes_the_run() {
+  local dir log
+  dir="$TMP_ROOT/odd-terminal"
+  mkdir -p "$dir"
+  log="$dir/session.jsonl"
+  {
+    muse_log_run_started run-object
+    printf '{"payload_type":"runtime.session","payload":{"kind":"run","run_id":"run-object","event":{"kind":"terminal","terminal":{"code":"failed"}}}}\n'
+    muse_log_run_started run-tab
+    printf '{"payload_type":"runtime.session","payload":{"kind":"run","run_id":"run-tab","event":{"kind":"terminal","terminal":"fail\\tover"}}}\n'
+  } > "$log"
+  [ "$(run_state "$log")" = settled ] || fail "an unexpected terminal reason did not close its run: $(run_state "$log")"
+  muse_log_run_started run-next >> "$log"
+  [ "$(run_state "$log")" = busy ] || fail "an unexpected terminal reason poisoned the fold for a later run"
+  pass "an unexpected terminal reason closes its run without poisoning later folds"
+}
+
 test_run_fold_tracks_open_and_settled_turns() {
   local dir log out
   dir="$TMP_ROOT/fold"
@@ -998,6 +1018,7 @@ test_muse_escape_aliases_clear_the_composer
 test_non_muse_escape_does_not_clear
 test_failed_clear_is_reported
 test_retained_frames_and_reordered_events
+test_unexpected_terminal_reason_still_closes_the_run
 test_run_fold_tracks_open_and_settled_turns
 test_nested_terminal_record_does_not_settle_a_run
 test_binding_selects_the_matching_main_log

@@ -83,8 +83,11 @@ function events(file) {
     const event = p.event;
     if (!["started", "terminal"].includes(event?.kind)) continue;
     if (typeof p.run_id !== "string" || !p.run_id || /[\t\r\n]/.test(p.run_id)) throw new Error("invalid run id");
-    const terminal = event.kind === "terminal" ? event.terminal : "";
-    if (typeof terminal !== "string" || /[\t\r\n]/.test(terminal)) throw new Error("invalid terminal");
+    // The run id is what pairs a close with its start; the terminal reason is
+    // only detail. An unexpected reason still closes the run, as it did in the
+    // byte fold, rather than failing every later read of an append-only log.
+    let terminal = event.kind === "terminal" ? event.terminal : "";
+    if (typeof terminal !== "string" || /[\t\r\n]/.test(terminal)) terminal = "";
     result.push(`${p.run_id}\t${event.kind}\t${terminal}\n`);
   }
   // Do not publish a partial fold if a complete record was corrupt.
