@@ -1,0 +1,70 @@
+lab session: fm-lab-muse-busy-2651483-29649
+== spawn (fm-spawn.sh --harness muse --backend herdr)
+spawned musebusy harness=muse kind=ship mode=local-only yolo=on window=fm-lab-muse-busy-2651483-29649:w1:p2 worktree=/tmp/fm-muse-lab.4k0cJL/treehouse/.treehouse/project-c805f3/1/project
+worktree=/tmp/fm-muse-lab.4k0cJL/treehouse/.treehouse/project-c805f3/1/project pane=w1:p2
+binding: sessions_root=/home/dardan/.local/share/muse/sessions workspace_root=/tmp/fm-muse-lab.4k0cJL/treehouse/.treehouse/project-c805f3/1/project binding_id=2651604.9756.1790520539 
+== busy/idle through a 100s foreground tool call (HEAD vs base classifier)
+t+5s native=unknown head='unknown muse-session-log' base='unknown muse-session-log' crew-state='state: unknown · source: pane · harness state unavailable (unknown muse-session-log)'
+t+10s native=working head='busy herdr-native' base='busy herdr-native' crew-state='state: working · source: pane · harness busy (herdr-native)'
+t+15s native=working head='busy herdr-native' base='busy herdr-native' crew-state='state: working · source: pane · harness busy (herdr-native)'
+t+20s native=working head='busy herdr-native' base='busy herdr-native' crew-state='state: working · source: pane · harness busy (herdr-native)'
+t+25s native=working head='busy herdr-native' base='busy herdr-native' crew-state='state: working · source: pane · harness busy (herdr-native)'
+t+30s native=working head='busy herdr-native' base='busy herdr-native' crew-state='state: working · source: pane · harness busy (herdr-native)'
+t+35s native=working head='busy herdr-native' base='busy herdr-native' crew-state='state: working · source: pane · harness busy (herdr-native)'
+t+40s native=working head='busy herdr-native' base='busy herdr-native' crew-state='state: working · source: pane · harness busy (herdr-native)'
+t+45s native=working head='busy herdr-native' base='busy herdr-native' crew-state='state: working · source: pane · harness busy (herdr-native)'
+t+50s native=working head='busy herdr-native' base='busy herdr-native' crew-state='state: working · source: pane · harness busy (herdr-native)'
+t+55s native=working head='busy herdr-native' base='busy herdr-native' crew-state='state: working · source: pane · harness busy (herdr-native)'
+t+60s native=working head='busy herdr-native' base='busy herdr-native' crew-state='state: working · source: pane · harness busy (herdr-native)'
+t+65s native=working head='busy herdr-native' base='busy herdr-native' crew-state='state: working · source: pane · harness busy (herdr-native)'
+t+70s native=working head='busy herdr-native' base='busy herdr-native' crew-state='state: working · source: pane · harness busy (herdr-native)'
+t+75s native=working head='busy herdr-native' base='busy herdr-native' crew-state='state: working · source: pane · harness busy (herdr-native)'
+t+80s native=working head='busy herdr-native' base='busy herdr-native' crew-state='state: working · source: pane · harness busy (herdr-native)'
+t+85s native=working head='busy herdr-native' base='busy herdr-native' crew-state='state: working · source: pane · harness busy (herdr-native)'
+t+90s native=working head='busy herdr-native' base='busy herdr-native' crew-state='state: working · source: pane · harness busy (herdr-native)'
+t+95s native=working head='busy herdr-native' base='busy herdr-native' crew-state='state: working · source: pane · harness busy (herdr-native)'
+t+100s native=working head='busy herdr-native' base='busy herdr-native' crew-state='state: working · source: pane · harness busy (herdr-native)'
+t+105s native=idle head='busy muse-session-log' base='unknown muse-session-log' crew-state='state: working · source: pane · harness busy (muse-session-log)'
+t+110s native=idle head='busy muse-session-log' base='unknown muse-session-log' crew-state='state: working · source: pane · harness busy (muse-session-log)'
+t+115s native=idle head='idle muse-session-log' base='unknown muse-session-log' crew-state='state: unknown · source: none · no current-state source available'
+RESULT busy-during-tool-call=1 idle-after-turn=1
+session log: /home/dardan/.local/share/muse/sessions/2026/09/27/01a0e357-3d38-7e62-b65b-9387eb2003d3/session.jsonl
+first line kind: {"retained_frame":"session_permission_transaction","frame_schema_version":1,"out
+== pane after turn 1
+  finishes, reply with the single word "slept" and stop. Do not do anything else, do not edit files, do not commit.
+
+◆ Ran command · Sleep for busy signal observation · ✓ · 1m · ctrl+o
+
+◆ slept
+
+◆ Worked for 1m 53s · 10:50 AM
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  muse-spark-1.3-contributor · low · /tmp/fm-muse-lab.4k0cJL/treehouse/.treehouse/project-c805f3/1/project · YOLO
+== adversarial: append a torn complete line to the live session.jsonl, then steer
+after torn line: head='idle muse-session-log' fold=settled
+== steer mid-turn with fm-send.sh (doorbell), turn 2 starts a sleep then three more steers
+error: refusing fleet lifecycle from inside a no-mistakes gate worktree (/home/dardan/.no-mistakes/repos/a2097c65a770.git)
+steer1 t+2s head='idle muse-session-log' composer=empty
+steer1 t+4s head='idle muse-session-log' composer=empty
+steer1 t+6s head='idle muse-session-log' composer=empty
+steer1 t+8s head='idle muse-session-log' composer=empty
+steer1 t+10s head='idle muse-session-log' composer=empty
+steer1 t+12s head='idle muse-session-log' composer=empty
+steer1 t+14s head='idle muse-session-log' composer=empty
+steer1 t+16s head='idle muse-session-log' composer=empty
+steer1 t+18s head='idle muse-session-log' composer=empty
+steer1 t+20s head='idle muse-session-log' composer=empty
+steer1 t+22s head='idle muse-session-log' composer=empty
+steer1 t+24s head='idle muse-session-log' composer=empty
+error: refusing fleet lifecycle from inside a no-mistakes gate worktree (/home/dardan/.no-mistakes/repos/a2097c65a770.git)
+after steer 2: composer=empty head='idle muse-session-log'
+error: refusing fleet lifecycle from inside a no-mistakes gate worktree (/home/dardan/.no-mistakes/repos/a2097c65a770.git)
+after steer 3: composer=empty head='idle muse-session-log'
+error: refusing fleet lifecycle from inside a no-mistakes gate worktree (/home/dardan/.no-mistakes/repos/a2097c65a770.git)
+after steer 4: composer=empty head='idle muse-session-log'
+RESULT busy-after-torn-line=0
+drain t+5s head='idle muse-session-log' composer=empty files=0
+drain t+10s head='idle muse-session-log' composer=empty files=0

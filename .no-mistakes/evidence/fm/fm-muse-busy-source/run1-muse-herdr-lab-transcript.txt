@@ -1,0 +1,48 @@
+lab session: fm-lab-muse-busy-2566154-12811
+== spawn (fm-spawn.sh --harness muse --backend herdr)
+spawned musebusy harness=muse kind=ship mode=local-only yolo=on window=fm-lab-muse-busy-2566154-12811:w1:p2 worktree=/tmp/fm-muse-lab.dKQpbP/treehouse/.treehouse/project-135790/1/project
+worktree=/tmp/fm-muse-lab.dKQpbP/treehouse/.treehouse/project-135790/1/project pane=w1:p2
+binding: sessions_root=/home/dardan/.local/share/muse/sessions workspace_root=/tmp/fm-muse-lab.dKQpbP/treehouse/.treehouse/project-135790/1/project binding_id=2566533.7295.1790520366 
+== busy/idle through a 100s foreground tool call (HEAD vs base classifier)
+t+5s native= head='unknown muse-session-log' base='unknown muse-session-log' crew-state='state: unknown · source: pane · harness state unavailable (unknown muse-session-log)'
+t+10s native=working head='busy herdr-native' base='busy herdr-native' crew-state='state: working · source: pane · harness busy (herdr-native)'
+t+15s native=working head='busy herdr-native' base='busy herdr-native' crew-state='state: working · source: pane · harness busy (herdr-native)'
+t+20s native=working head='busy herdr-native' base='busy herdr-native' crew-state='state: working · source: pane · harness busy (herdr-native)'
+t+25s native=working head='busy herdr-native' base='busy herdr-native' crew-state='state: working · source: pane · harness busy (herdr-native)'
+t+30s native=working head='busy herdr-native' base='busy herdr-native' crew-state='state: working · source: pane · harness busy (herdr-native)'
+t+35s native=working head='busy herdr-native' base='busy herdr-native' crew-state='state: working · source: pane · harness busy (herdr-native)'
+t+40s native=working head='busy herdr-native' base='busy herdr-native' crew-state='state: working · source: pane · harness busy (herdr-native)'
+t+45s native=working head='busy herdr-native' base='busy herdr-native' crew-state='state: working · source: pane · harness busy (herdr-native)'
+t+50s native=working head='busy herdr-native' base='busy herdr-native' crew-state='state: working · source: pane · harness busy (herdr-native)'
+t+55s native=working head='busy herdr-native' base='busy herdr-native' crew-state='state: working · source: pane · harness busy (herdr-native)'
+t+60s native=working head='busy herdr-native' base='busy herdr-native' crew-state='state: working · source: pane · harness busy (herdr-native)'
+t+65s native=working head='busy herdr-native' base='busy herdr-native' crew-state='state: working · source: pane · harness busy (herdr-native)'
+t+70s native=working head='busy herdr-native' base='busy herdr-native' crew-state='state: working · source: pane · harness busy (herdr-native)'
+t+75s native=working head='busy herdr-native' base='busy herdr-native' crew-state='state: working · source: pane · harness busy (herdr-native)'
+t+80s native=working head='busy herdr-native' base='busy herdr-native' crew-state='state: working · source: pane · harness busy (herdr-native)'
+t+85s native=working head='busy herdr-native' base='busy herdr-native' crew-state='state: working · source: pane · harness busy (herdr-native)'
+t+90s native=working head='busy herdr-native' base='busy herdr-native' crew-state='state: working · source: pane · harness busy (herdr-native)'
+t+95s native=working head='busy herdr-native' base='busy herdr-native' crew-state='state: working · source: pane · harness busy (herdr-native)'
+t+100s native=working head='busy herdr-native' base='busy herdr-native' crew-state='state: working · source: pane · harness busy (herdr-native)'
+t+105s native=working head='busy herdr-native' base='busy herdr-native' crew-state='state: working · source: pane · harness busy (herdr-native)'
+t+110s native=working head='busy herdr-native' base='busy herdr-native' crew-state='state: working · source: pane · harness busy (herdr-native)'
+t+115s native=idle head='busy muse-session-log' base='unknown muse-session-log' crew-state='state: working · source: pane · harness busy (muse-session-log)'
+t+120s native=idle head='busy muse-session-log' base='unknown muse-session-log' crew-state='state: working · source: pane · harness busy (muse-session-log)'
+t+125s native=idle head='busy muse-session-log' base='unknown muse-session-log' crew-state='state: working · source: pane · harness busy (muse-session-log)'
+t+130s native=idle head='idle muse-session-log' base='unknown muse-session-log' crew-state='state: unknown · source: none · no current-state source available'
+RESULT busy-during-tool-call=1 idle-after-turn=1
+session log: /home/dardan/.local/share/muse/sessions/2026/09/27/01a0e354-99be-7af3-8b8f-30a09750bd73/session.jsonl
+first line kind: {"retained_frame":"session_permission_transaction","frame_schema_version":1,"out
+== pane after turn 1
+jq: parse error: Invalid numeric literal at line 1, column 8
+== adversarial: append a torn complete line to the live session.jsonl, then steer
+after torn line: head='idle muse-session-log' fold=settled
+== steer mid-turn with fm-send.sh (doorbell), turn 2 starts a sleep then three more steers
+error: no-mistakes gate agent must not drive the fleet (NO_MISTAKES_GATE set)
+steer1 t+2s head='idle muse-session-log' composer=empty
+steer1 t+4s head='idle muse-session-log' composer=empty
+steer1 t+6s head='idle muse-session-log' composer=empty
+steer1 t+8s head='idle muse-session-log' composer=empty
+steer1 t+10s head='idle muse-session-log' composer=empty
+steer1 t+12s head='idle muse-session-log' composer=empty
+teardown exit=0

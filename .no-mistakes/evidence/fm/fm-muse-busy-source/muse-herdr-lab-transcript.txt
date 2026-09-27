@@ -1,0 +1,27 @@
+11:03:37 provisioned fm-lab-muse-busy-3020078-4779
+11:03:37 pane fm-lab-muse-busy-3020078-4779:w1:p1
+11:03:38 composer after launch: empty
+11:03:55 after-first-turn(idle) BASE(665e0e8b): herdr-path=[unknown muse-session-log] session-log-path=[unknown muse-session-log]
+11:03:56 after-first-turn(idle) HEAD(8ed03146): herdr-path=[idle muse-session-log] session-log-path=[idle muse-session-log]
+11:03:56 after-first-turn(idle) herdr native: {"agent":"muse","agent_status":"idle"}
+11:04:21 during-sleep-tool-call(busy) BASE(665e0e8b): herdr-path=[busy herdr-native] session-log-path=[unknown muse-session-log]
+11:04:21 during-sleep-tool-call(busy) HEAD(8ed03146): herdr-path=[busy herdr-native] session-log-path=[busy muse-session-log]
+11:04:21 during-sleep-tool-call(busy) herdr native: {"agent":"muse","agent_status":"working"}
+11:05:21 after-tool-turn(idle) BASE(665e0e8b): herdr-path=[unknown muse-session-log] session-log-path=[unknown muse-session-log]
+11:05:21 after-tool-turn(idle) HEAD(8ed03146): herdr-path=[idle muse-session-log] session-log-path=[idle muse-session-log]
+11:05:21 after-tool-turn(idle) herdr native: {"agent":"muse","agent_status":"idle"}
+11:05:21 ring[base] record: /tmp/fm-muse-lab.ZXDn3H/inbox-base/t1.inbox/001.msg
+11:05:22 ring[base] rc=0 trace: held send-text,coalesced text+CR into one send-text,
+11:05:25 ring[base] composer after ring: pending
+11:05:26 base second ring rc=1 (1 = skipped on pending composer)
+11:05:27 composer after clearing: pending
+11:05:27 ring[head] record: /tmp/fm-muse-lab.ZXDn3H/inbox-head/t1.inbox/001.msg
+/tmp/fm-muse-lab-driver.sh: line 130: /tmp/fm-muse-lab.ZXDn3H/co-head/trace: No such file or directory
+11:05:27 ring[head] rc=1 trace: 
+11:05:30 ring[head] composer after ring: pending
+11:05:30 after-head-doorbell-turn BASE(665e0e8b): herdr-path=[unknown muse-session-log] session-log-path=[unknown muse-session-log]
+11:05:31 after-head-doorbell-turn HEAD(8ed03146): herdr-path=[idle muse-session-log] session-log-path=[idle muse-session-log]
+11:05:31 after-head-doorbell-turn herdr native: {"agent":"muse","agent_status":"idle"}
+run started prompt: "Reply with exactly the word ready and nothing else."
+run started prompt: "Run the shell command: sleep 75 && echo slept. Run it in the foreground, wait for it, then"
+11:05:33 lab fm-lab-muse-busy-3020078-4779 torn down

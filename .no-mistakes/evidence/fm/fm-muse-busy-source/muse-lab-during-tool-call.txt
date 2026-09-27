@@ -1,0 +1,24 @@
+env COLORTERM=truecolor XDG_DATA_HOME=/tmp/fm-muse-lab.ZXDn3H/data MUSE_EXPERIMENTAL_FOREIGN_PERSONAL_CONTEXT_KILL=on m
+use --yolo --reasoning-effort low
+ws on  master
+❯ env COLORTERM=truecolor XDG_DATA_HOME=/tmp/fm-muse-lab.ZXDn3H/data MUSE_EXPERIMENTAL_FOREIGN_PERSONAL_CONTEXT_KILL=on
+ muse --yolo --reasoning-effort low
+
+  Muse Code 1.4.0
+
+  note: META_API_KEY overrides your Meta account login; unset it to use the account login, or run `muse logout` to
+  remove the login.
+
+❯ Reply with exactly the word ready and nothing else.
+
+◆ ready
+
+❯ Run the shell command: sleep 75 && echo slept. Run it in the foreground, wait for it, then reply done.
+
+◇ Running command · Sleep 75 seconds then echo — running (22s · esc to interrupt)
+└ (ctrl+b to send to background)
+
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  muse-spark-1.3-contributor · low · /tmp/fm-muse-lab.ZXDn3H/ws · YOLO

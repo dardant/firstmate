@@ -1,0 +1,15 @@
+11:05:54 provisioned fm-lab-muse-ring-3108933-21144
+11:05:54 pane fm-lab-muse-ring-3108933-21144:w1:p1
+11:05:59 composer after launch: empty
+11:05:59 ring[head] record: /tmp/fm-muse-lab.52fhZ0/inbox-head/t1.inbox/001.msg
+11:06:00 ring[head] rc=0 trace: held send-text,coalesced text+CR into one send-text,enter,
+11:06:03 ring[head] composer after ring: empty
+11:06:04 head doorbell turn observed busy
+11:06:13 head inbox after turn: pending=[] handled=[001.msg ]
+11:06:15 composer before base ring: empty
+11:06:15 ring[base] record: /tmp/fm-muse-lab.52fhZ0/inbox-base/t1.inbox/001.msg
+11:06:17 ring[base] rc=0 trace: held send-text,coalesced text+CR into one send-text,
+11:06:20 ring[base] composer after ring: pending
+11:06:20 base second ring rc=1 (1 = skipped on pending composer)
+run started prompt: ": Firstmate instruction waiting: list '/tmp/fm-muse-lab.52fhZ0/inbox-head/t1.inbox'/*.msg "
+11:06:22 lab fm-lab-muse-ring-3108933-21144 torn down

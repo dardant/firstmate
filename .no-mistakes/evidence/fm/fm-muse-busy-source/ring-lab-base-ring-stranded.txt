@@ -1,0 +1,25 @@
+
+  Muse Code 1.4.0
+
+  note: META_API_KEY overrides your Meta account login; unset it to use the account login, or run `muse logout` to
+  remove the login.
+
+❯ : Firstmate instruction waiting: list '/tmp/fm-muse-lab.52fhZ0/inbox-head/t1.inbox'/*.msg and, in numeric order, read
+  and act on each, then mv each handled file to '/tmp/fm-muse-lab.52fhZ0/inbox-head/t1.inbox'/handled/.
+
+◆ Ran command · List inbox messages in order · ✓ · 0.1s · ctrl+o
+
+  Read /tmp/fm-muse-lab.52fhZ0/inbox-head/t1.inbox/001.msg
+
+◆ Ran command · Move handled message to handled dir · ✓ · 0.1s · ctrl+o
+
+◆ ack-head
+
+  Handled 1 message: read 001.msg, moved to handled/. Inbox now empty.
+
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ : Firstmate instruction waiting: list '/tmp/fm-muse-lab.52fhZ0/inbox-base/t1.inbox'/*.msg and, in numeric order,
+  read and act on each, then mv each handled file to '/tmp/fm-muse-lab.52fhZ0/inbox-base/t1.inbox'/handled/.
+
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  muse-spark-1.3-contributor · low · /tmp/fm-muse-lab.52fhZ0/ws · YOLO
