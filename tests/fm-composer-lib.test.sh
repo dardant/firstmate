@@ -390,6 +390,36 @@ test_matrix_muse_truecolor_glyph_survives_signal_loss() {
   pass "matrix: muse's ⟩ reads empty everywhere and survives losing the styled-glyph signal"
 }
 
+test_matrix_muse_140_framed_prompt() {
+  # Real Muse 1.4.0-R4302.1 rows captured through Herdr on 2026-09-27: the
+  # prompt moved from 0.1.0's `⟩` under a titled rule to `❯` between two dim
+  # rules, in the same truecolor 38;2;90;160;255, with typed text in
+  # 38;2;204;211;219 and a model/effort footer below the frame.
+  local rule glyph footer idle typed plain_idle plain_typed muse_herdr
+  # The framed `❯` shares Pi's separator-pair shape, so identity-capable
+  # adapters resolve it with the pane's identity: Herdr natively reports muse.
+  muse_herdr=$'muse\tidle'
+  rule="${ESC}[0m${ESC}[2m${ESC}[38;2;103;108;116m────────────────────────────────${ESC}[0m"
+  glyph="${ESC}[0m${ESC}[38;2;90;160;255m❯ ${ESC}[0m"
+  footer="${ESC}[0m${ESC}[38;2;103;108;116m  ${ESC}[0m${ESC}[38;2;90;160;255mmuse-spark-1.3-contributor${ESC}[0m${ESC}[38;2;138;144;152m · ${ESC}[0m${ESC}[38;2;90;160;255mlow${ESC}[0m"
+  idle=$'◆ ready\n\n'"$rule"$'\n'"$glyph"$'\n'"$rule"$'\n'"$footer"
+  typed=$'◆ ready\n\n'"$rule"$'\n'"$glyph${ESC}[38;2;204;211;219mfix the login bug${ESC}[0m"$'\n'"$rule"$'\n'"$footer"
+  plain_idle=$'◆ ready\n\n────────────────────────────────\n❯\n────────────────────────────────\n  muse-spark-1.3-contributor · low'
+  plain_typed=$'◆ ready\n\n────────────────────────────────\n❯ fix the login bug\n────────────────────────────────\n  muse-spark-1.3-contributor · low'
+  assert_screen "muse 1.4.0 idle on tmux" empty "$CAPS_TMUX" "$idle" 3 probe-absent
+  assert_screen "muse 1.4.0 idle on herdr" empty "$CAPS_STYLED" "$idle" '' "$muse_herdr"
+  assert_screen "muse 1.4.0 idle on zellij" empty "$CAPS_STYLED_NOID" "$idle"
+  assert_screen "muse 1.4.0 idle on cmux/orca" empty "$CAPS_PLAIN" "$plain_idle"
+  assert_screen "muse 1.4.0 typed on tmux" pending "$CAPS_TMUX" "$typed" 3 probe-absent
+  assert_screen "muse 1.4.0 typed on herdr" pending "$CAPS_STYLED" "$typed" '' "$muse_herdr"
+  assert_screen "muse 1.4.0 typed on zellij" pending "$CAPS_STYLED_NOID" "$typed"
+  # Plain capture cannot prove typed text from a placeholder, the same
+  # styled=0 degradation Claude's framed row takes, so it defers rather than
+  # fabricating pending.
+  assert_screen "muse 1.4.0 typed on cmux/orca" unknown "$CAPS_PLAIN" "$plain_typed"
+  pass "matrix: muse 1.4.0's framed ❯ reads empty idle and pending when styling proves typed text"
+}
+
 test_matrix_cursor_reverse_video_placeholder_remnant() {
   # Real idle cursor-agent (2026.08.11-e8db854), captured byte-for-byte from a
   # live pane: the `→ ` glyph and the placeholder tail are dim (SGR 2), but the
@@ -957,6 +987,7 @@ test_composer_footer_zone_is_shape_independent
 test_composer_footer_zone_refuses_rather_than_allows
 test_matrix_codex_dim_hint_row
 test_matrix_muse_truecolor_glyph_survives_signal_loss
+test_matrix_muse_140_framed_prompt
 test_matrix_cursor_reverse_video_placeholder_remnant
 test_matrix_herdr_halfblock_rule_bounds_bare_wrap
 test_matrix_omp_status_row_bounds_bare_composer
