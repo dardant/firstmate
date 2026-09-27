@@ -3,8 +3,23 @@
 //        node fm-muse-session.cjs events <session.jsonl>
 // Only complete JSONL records are visible. An append still in progress is not
 // a terminal, and JSON embedded in arbitrary payload text is never a record.
+// The log is append-only, so a complete line that does not decode, such as a
+// torn append a later resume wrote onto, is skipped rather than poisoning
+// every later read of that session.
 const fs = require("fs");
 const path = require("path");
+
+function decode(line) {
+  try {
+    const record = JSON.parse(line);
+    if (record.retained_frame === "session_permission_transaction" && record.frame_schema_version === 1) {
+      return record.children.map((child) => JSON.parse(child.record_json));
+    }
+    return [record];
+  } catch {
+    return [];
+  }
+}
 
 function* records(file, maxBytes = Infinity) {
   const fd = fs.openSync(file, "r");
@@ -23,12 +38,7 @@ function* records(file, maxBytes = Infinity) {
         const line = pending.subarray(start, end).toString("utf8");
         start = end + 1;
         if (!line.trim()) continue;
-        const record = JSON.parse(line);
-        if (record.retained_frame === "session_permission_transaction" && record.frame_schema_version === 1) {
-          for (const child of record.children) yield JSON.parse(child.record_json);
-        } else {
-          yield record;
-        }
+        yield* decode(line);
       }
       pending = pending.subarray(start);
     }
@@ -90,7 +100,7 @@ function events(file) {
     if (typeof terminal !== "string" || /[\t\r\n]/.test(terminal)) terminal = "";
     result.push(`${p.run_id}\t${event.kind}\t${terminal}\n`);
   }
-  // Do not publish a partial fold if a complete record was corrupt.
+  // Do not publish a partial fold if a run record was invalid.
   process.stdout.write(result.join(""));
 }
 

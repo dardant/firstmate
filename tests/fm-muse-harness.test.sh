@@ -583,8 +583,14 @@ NODE
   printf '{"payload":' >> "$log"
   [ "$(run_state "$log")" = busy ] || fail "partial appended line hid the open run"
   printf 'broken}\n' >> "$log"
-  [ "$(classify_muse "$dir/state" task)" = 'unknown muse-session-log' ] || fail "corrupt complete record did not fail closed"
-  pass "1.4.0 metadata, retained frames, field order, and partial writes preserve busy/idle proof"
+  [ "$(classify_muse "$dir/state" task)" = 'busy muse-session-log' ] || fail "torn complete record hid the open run"
+  muse_log_run_terminal next-run completed >> "$log"
+  [ "$(classify_muse "$dir/state" task)" = 'idle muse-session-log' ] || fail "torn complete record poisoned a later terminal"
+  muse_log_run_started later-run >> "$log"
+  [ "$(classify_muse "$dir/state" task)" = 'busy muse-session-log' ] || fail "torn complete record poisoned a later run"
+  muse_log_run_terminal later-run completed >> "$log"
+  [ "$(classify_muse "$dir/state" task)" = 'idle muse-session-log' ] || fail "torn complete record poisoned a later run's terminal"
+  pass "1.4.0 metadata, retained frames, field order, partial writes, and torn records preserve busy/idle proof"
 }
 
 # A terminal whose reason is not a plain string still closes its run. The log

@@ -75,5 +75,5 @@ Muse is beta; its hourly channel poll can replace the binary and process name.
 The captain accepted this, so Firstmate does not set `MUSE_NO_AUTO_UPDATE=1`; a fleet may set it without adapter change.
 Plugins report unavailable unless `MUSE_EXPERIMENTAL_PLUGINS=on`, so busy state uses logs.
 The compatibility dialect explicitly lacks `asyncRewake` and model reawakening; the router owns the resulting primary boundary.
-Muse 1.4.0 does re-invoke an idle session when a backgrounded shell command finishes, the capability a background-notify supervision cycle needs, but its hook events include no plain turn-end `Stop`, and Firstmate has no Muse supervision protocol, turn-end guard, session-start, pre-tool, or delegation-guard integration, so primary and secondmate remain unverified.
+Muse 1.4.0 exposes no turn-end hook, so primary and secondmate remain unverified.
 `../../../docs/verification/muse.md` owns that evidence.

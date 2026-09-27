@@ -274,27 +274,10 @@ Muse dropped the coalesced carriage return rather than inserting a newline, so o
 That is the fleet report's shape: a loaded pane coalesces the ring's text and Enter, the single Enter is lost, and each later ring skips on the pending doorbell.
 The ring now retries Enter while the composer stays proven pending; `test_ring_retries_a_swallowed_enter` in `tests/fm-task-inbox.test.sh` pins it against a real TTY stand-in that drops the first Enter the same way.
 
-### Primary and secondmate capability probe
+### Primary and secondmate
 
-After a turn settled, a background `sleep 40` that the worker had started finished and Muse opened a new run on its own, with no input:
-
-```
-t=15 state=busy runs=2
-t=30 state=settled runs=2
-t=45 state=settled runs=2
-t=60 state=busy runs=3      <- background command finished, model re-invoked
-t=75 state=settled runs=3
-```
-
-The binary reads Claude-dialect hook configuration and carries the diagnostics `D97: asyncRewake: true handlers are unsupported` and `D97: model reawakening is unsupported`.
-Its hook-event variant table, read with `strings` from `muse-bin-1.4.0-R4302.1`, has no plain `Stop` turn-end event:
-
-```
-HookEventKindSessionStartPreToolUsePermissionRequestPostToolUsePreLLMCallPostLLMCallPreCompactPostCompactSubagentStartSubagentStopSessionEndNotificationPostToolUseFailureStopFailurePostToolBatchInterruptSessionFork
-```
-
-That is static evidence, not a live hook run, but it matches the documented refusal of model reawakening: no hook found here can block or continue a turn end.
-No Firstmate supervision protocol, turn-end guard, session-start, pre-tool, or delegation-guard integration exists for Muse, so neither the primary nor the secondmate role was exercised and both remain unverified.
+Muse 1.4.0 opened a new run on its own when a backgrounded shell command finished after its turn had settled.
+It exposes no turn-end hook, and Firstmate has no Muse supervision or turn-end guard integration, so the primary and secondmate roles were not exercised and remain unverified.
 
 ### Live guards
 
