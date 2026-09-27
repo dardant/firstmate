@@ -18,7 +18,7 @@ The router owns Muse's task-kind boundary.
 | Autonomy | `--yolo` disables approval and sandbox and trusts the workspace. |
 | Trust | Dialog `Do you trust this workspace?`, choice `1 Trust and continue` preselected for Enter; `--yolo` suppresses it, which fresh task paths require. |
 | Marker | None; identity comes from anchored `muse-bin-*` ancestry, which `../../../bin/fm-harness.sh` keeps a retained foreign marker from overriding, while `MUSE_CURRENT_SESSION_LOG` is a path rather than identity and its export to tools is unverified. |
-| Composer | 1.4.0 draws `❯` framed between two dim `─` rules above a model/effort footer; 0.1.0 drew bordered `⟩`. Both glyphs are truecolor `38;2;90;160;255`, luminance about 149.9 and narrowly above ghost threshold 128; typed text is `38;2;204;211;219`, about 209.8, with no observed placeholder or ghost. The framed `❯` shares Pi's separator-pair shape, so identity-capable adapters resolve it by pane identity. |
+| Composer | 1.4.0 draws `❯` between two dim `─` rules, a Pi-like frame that identity-capable adapters resolve by pane identity, where 0.1.0 drew bordered `⟩`; both glyphs are truecolor `38;2;90;160;255`, luminance about 149.9 and narrowly above ghost threshold 128, and typed text is `38;2;204;211;219`, about 209.8, with no observed placeholder or ghost. |
 | Effort | `--reasoning-effort`, default `high`, accepts `none\|minimal\|low\|medium\|high\|xhigh\|ultra` and, since 1.4.0, `max`; shared values expose low through xhigh, explicit captain `max` maps to `ultra`, and `none` or `minimal` remain unreachable. |
 
 ## Credential preflight
