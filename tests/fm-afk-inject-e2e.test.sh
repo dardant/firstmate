@@ -188,10 +188,15 @@ chmod +x "$TMUX_SHIM_DIR/tmux"
 # detection). The pane is an inert shell - it just needs to exist.
 "$REAL_TMUX" -L "$SOCKET" new-window -d -n fm-fake-c1 -t supervisor
 
-start_daemon() {  # [supervisor-pane]
+# The fixture pane is no real harness, so each scenario pins the primary harness
+# the daemon would otherwise detect from this test's own process ancestry:
+# "unknown" preserves the typed U+2063 envelope, "claude" selects the
+# record-backed doorbell that a marker-stripping Claude Code primary receives.
+start_daemon() {  # [primary-harness]
+  FM_DAEMON_PRIMARY_HARNESS="${1:-unknown}" \
   PATH="$TMUX_SHIM_DIR:$PATH" \
   FM_STATE_OVERRIDE="$STATE_DIR" \
-  FM_SUPERVISOR_TARGET="${1:-$SUPERVISOR_PANE}" \
+  FM_SUPERVISOR_TARGET="$SUPERVISOR_PANE" \
   FM_SUPERVISOR_BACKEND=tmux \
   FM_ESCALATE_BATCH_SECS=0 \
   FM_HOUSEKEEPING_TICK=1 \
@@ -447,7 +452,7 @@ test_scenario_c() {
   pass "Scenario C: a normal captain status injects exactly one clean single-line sentinel digest"
 }
 
-# --- Scenario D: the primary exited to a plain shell ------------------------
+# --- Scenario E: the primary exited to a plain shell ------------------------
 # The report's lab proof, portable: a real interactive shell with a bare `❯`
 # prompt looks like an idle empty composer to every rendered guard, and the
 # shell would run any command substitution a worker quoted. Only the process
@@ -473,10 +478,10 @@ start_bare_prompt_shell() {
     sleep 0.1
     i=$((i + 1))
   done
-  fail "Scenario D: the bare-prompt shell never drew its prompt"
+  fail "Scenario E: the bare-prompt shell never drew its prompt"
 }
 
-test_scenario_d() {
+test_scenario_e() {
   local proof="$STATE_DIR/shell-exec-proof" rc=0
   reset_state
   rm -f "$proof"
@@ -485,9 +490,9 @@ test_scenario_d() {
   # composer when the harness is not named, which is exactly how the digest
   # used to be typed into it.
   [ "$(PATH="$TMUX_SHIM_DIR:$PATH" FM_COMPOSER_HARNESS='' fm_tmux_composer_state "$SHELL_PANE")" = empty ] \
-    || fail "Scenario D: the bare-prompt shell no longer looks like an empty composer, so this case proves nothing"
+    || fail "Scenario E: the bare-prompt shell no longer looks like an empty composer, so this case proves nothing"
   if PATH="$TMUX_SHIM_DIR:$PATH" pane_is_busy "$SHELL_PANE" tmux; then
-    fail "Scenario D: the idle shell reads busy, so the busy guard would hide the ownership refusal"
+    fail "Scenario E: the idle shell reads busy, so the busy guard would hide the ownership refusal"
   fi
   afk_enter "$STATE_DIR"
   # The worker text ends in `;`, which closes the command zsh would parse from
@@ -499,23 +504,58 @@ test_scenario_d() {
     FM_SUPERVISOR_TARGET="$SHELL_PANE" FM_INJECT_CONFIRM_SLEEP=0.3 FM_INJECT_CONFIRM_RETRIES=5 \
     escalate_flush "$STATE_DIR" || rc=$?
   sleep 1
-  [ ! -e "$proof" ] || fail "Scenario D: the shell executed a command substitution from the digest"
-  [ "$rc" -ne 0 ] || fail "Scenario D: the flush reported a delivery into a plain shell"
+  [ ! -e "$proof" ] || fail "Scenario E: the shell executed a command substitution from the digest"
+  [ "$rc" -ne 0 ] || fail "Scenario E: the flush reported a delivery into a plain shell"
   [ -s "$STATE_DIR/.subsuper-escalations" ] \
-    || fail "Scenario D: the refused escalation was not kept for the wedge path"
+    || fail "Scenario E: the refused escalation was not kept for the wedge path"
   grep -F 'inject refused: supervisor pane is not owned by the primary harness (harness=claude owner=foreign)' \
     "$STATE_DIR/.supervise-daemon.log" >/dev/null \
-    || fail "Scenario D: the refusal was not logged: $(tail -5 "$STATE_DIR/.supervise-daemon.log" 2>/dev/null)"
+    || fail "Scenario E: the refusal was not logged: $(tail -5 "$STATE_DIR/.supervise-daemon.log" 2>/dev/null)"
   if "$REAL_TMUX" -L "$SOCKET" capture-pane -p -t "$SHELL_PANE" | grep -F 'Supervisor escalate' >/dev/null; then
-    fail "Scenario D: digest text reached the shell pane"
+    fail "Scenario E: digest text reached the shell pane"
   fi
   afk_exit "$STATE_DIR"
-  pass "Scenario D: a bare-❯ shell in the supervisor pane is refused; nothing is typed or executed and the escalation stays buffered"
+  pass "Scenario E: a bare-❯ shell in the supervisor pane is refused; nothing is typed or executed and the escalation stays buffered"
+}
+
+# --- Scenario D: a marker-stripping primary gets a record-backed doorbell ----
+# Claude Code removes U+2063 from submitted prompts, so for a claude primary the
+# daemon types one plain doorbell naming a record in this home, and the away-mode
+# return check still reads that submitted line as internal.
+
+test_scenario_d() {
+  reset_state
+  rm -rf "$STATE_DIR/operational-inbox"
+  afk_enter "$STATE_DIR"
+  start_daemon claude
+
+  echo "done: PR https://example.test/pr/400" > "$STATE_DIR/fake-c1.status"
+  sleep 6
+
+  local submitted_count doorbell record
+  submitted_count=$(grep -c '' "$LOG_FILE" || true)
+  [ "$submitted_count" -eq 1 ] \
+    || fail "Scenario D: expected exactly one submitted line, got $submitted_count: $(cat "$LOG_FILE")"
+  awk -F '\t' '$1 ~ /e281a3/ { found = 1 } END { exit !found }' "$LOG_FILE" \
+    && fail "Scenario D: the claude primary was typed the U+2063 marker it strips"
+  doorbell=$(cut -f2 "$LOG_FILE" | head -1)
+  fm_operational_doorbell_path "$doorbell" record \
+    || fail "Scenario D: the submitted line is not a record-backed doorbell: $doorbell"
+  grep -F "${FM_OPERATIONAL_PREFIX}v1 away-supervisor: " "$record" >/dev/null \
+    || fail "Scenario D: the named record lacks the away-supervisor envelope"
+  grep -F 'Supervisor escalate' "$record" >/dev/null \
+    || fail "Scenario D: the named record lacks the escalation digest"
+  should_exit_afk "$STATE_DIR" "$doorbell" \
+    && fail "Scenario D: the submitted doorbell would read as the captain returning"
+
+  stop_daemon
+  pass "Scenario D: a claude primary receives one plain doorbell whose record the away-mode return check reads as internal"
 }
 
 test_scenario_a
 test_scenario_b
 test_scenario_c
 test_scenario_d
+test_scenario_e
 
 echo "all e2e injection tests passed"

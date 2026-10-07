@@ -11,10 +11,13 @@
 # Usage: fm-claude-trust.sh <worktree> <project>
 #        fm-claude-trust.sh --secondmate-home <home> <id>
 #        fm-claude-trust.sh --reset-imports-decline <project>
+#        fm-claude-trust.sh --lab-home <home>
 #   <worktree>  the isolated task worktree this spawn launches into
 #   <project>   the primary checkout that worktree belongs to
 #   <home>      the seeded secondmate home this spawn launches into
 #   <id>        the secondmate id that home must already be marked for
+#   --lab-home  the disposable lab home bin/fm-live-lab.sh launches a lab
+#               primary in
 # Prints one line naming what it registered; refuses loudly on anything else,
 # including a project entry that records a decline of external CLAUDE.md
 # imports, whose refusal names the one reset command.
@@ -161,15 +164,25 @@
 # argument to gate external-imports consent against, so the two import flags
 # are never written there.
 #
+# LAB-HOME MODE. A disposable lab primary (bin/fm-live-lab.sh) launches in a lab
+# home that is neither a task worktree nor a seeded secondmate home.
+# The evidence is structural: the home must carry bin/fm-lab-home.sh's marker
+# (a regular file this user owns, never a symlink, holding the token
+# bin/fm-gate-refuse-lib.sh owns), hold
+# AGENTS.md and bin/, and be a primary git checkout whose top level is exactly
+# the argument, because Claude Code keys the launch to that root. It is
+# trust-only for the same reason as a secondmate home, and bin/fm-live-lab.sh
+# removes the entry again when it tears the lab down.
+#
 # Only the launching user's own store is written. In worktree mode: the
 # projects entries for the worktree path and the resolved canonical project
 # path in ${CLAUDE_CONFIG_DIR:-$HOME}/.claude.json, which must be a regular
 # file this uid owns; every unrelated key and project entry is preserved, and
-# both entries land in one atomic replacement. In secondmate-home mode: the
-# single projects entry for the registered home path, same store, same atomic
-# replacement. fm-spawn.sh forwards CLAUDE_CONFIG_DIR onto the claude launch
-# verbatim rather than resolving it, and the pane starts in the registered
-# directory, so only an absolute value names the same store on both sides; a
+# both entries land in one atomic replacement. In secondmate-home and lab-home
+# mode: the single projects entry for the registered home path, same store,
+# same atomic replacement. fm-spawn.sh forwards CLAUDE_CONFIG_DIR onto the
+# claude launch verbatim rather than resolving it, and the pane starts in the
+# registered directory, so only an absolute value names the same store on both sides; a
 # relative one is refused below rather than guessed at.
 set -u
 # Path resolution here must answer from the filesystem, never from the caller's
@@ -192,6 +205,7 @@ usage() {
   echo "usage: fm-claude-trust.sh <worktree> <project>" >&2
   echo "       fm-claude-trust.sh --secondmate-home <home> <id>" >&2
   echo "       fm-claude-trust.sh --reset-imports-decline <project>" >&2
+  echo "       fm-claude-trust.sh --lab-home <home>" >&2
   exit 2
 }
 
@@ -215,6 +229,14 @@ case "${1:-}" in
     PROJ_ARG=$2
     SCOPE_NOUN="project checkout"
     ;;
+  --lab-home)
+    [ "$#" -eq 2 ] || usage
+    MODE=lab-home
+    TARGET_ARG=$2
+    SUB_ID=
+    PROJ_ARG=
+    SCOPE_NOUN="lab home"
+    ;;
   '' | -h | --help)
     usage
     ;;
@@ -237,6 +259,9 @@ refuse() {
   exit 1
 }
 
+# shellcheck source=bin/fm-gate-refuse-lib.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/fm-gate-refuse-lib.sh"
+
 real_dir() { (cd -P -- "$1" 2>/dev/null && pwd -P); }
 
 # The fully resolved path of an existing file, or empty. Resolution runs in node
@@ -254,7 +279,7 @@ common_dir_of() {
 
 TARGET_REAL=$(real_dir "$TARGET_ARG") || true
 [ -n "$TARGET_REAL" ] || refuse "$SCOPE_NOUN '$TARGET_ARG' is not an accessible directory"
-if [ "$MODE" != secondmate-home ]; then
+if [ "$MODE" != secondmate-home ] && [ "$MODE" != lab-home ]; then
   PROJ_REAL=$(real_dir "$PROJ_ARG") || true
   [ -n "$PROJ_REAL" ] || refuse "project '$PROJ_ARG' is not an accessible directory"
 fi
@@ -305,7 +330,7 @@ if [ "$MODE" = worktree ]; then
   [ "$WT_GIT_DIR" != "$WT_COMMON" ] || refuse "'$TARGET_REAL' is a primary checkout, not an isolated worktree"
 fi
 
-if [ "$MODE" != secondmate-home ]; then
+if [ "$MODE" != secondmate-home ] && [ "$MODE" != lab-home ]; then
   PROJ_COMMON=$(common_dir_of "$PROJ_REAL") || true
   [ -n "$PROJ_COMMON" ] || refuse "project '$PROJ_REAL' is not inside a git repository"
   if [ "$MODE" = worktree ]; then
@@ -345,6 +370,24 @@ if [ "$MODE" != secondmate-home ]; then
     [ -n "$CANON_GIT_DIR" ] && [ "$CANON_GIT_DIR" = "$PROJ_COMMON" ] \
       || refuse "project '$PROJ_REAL' is a linked worktree whose primary checkout could not be resolved"
   fi
+fi
+
+if [ "$MODE" = lab-home ]; then
+  LAB_MARKER="$TARGET_REAL/$FM_GATE_LAB_MARKER"
+  [ ! -L "$LAB_MARKER" ] || refuse "'$LAB_MARKER' is a symlink; a lab home carries the marker as a regular file"
+  if ! { [ -f "$LAB_MARKER" ] && [ -O "$LAB_MARKER" ] && fm_gate_lab_home "$TARGET_REAL"; }; then
+    refuse "'$TARGET_REAL' carries no lab-home marker owned by this user, so it is not a disposable lab home"
+  fi
+  [ -f "$TARGET_REAL/AGENTS.md" ] || refuse "'$TARGET_REAL' has no AGENTS.md, so it is not a firstmate home"
+  [ -d "$TARGET_REAL/bin" ] || refuse "'$TARGET_REAL' has no bin/, so it is not a firstmate home"
+  LAB_TOP=$(git -C "$TARGET_REAL" rev-parse --show-toplevel 2>/dev/null) || true
+  [ -n "$LAB_TOP" ] && [ "$(real_dir "$LAB_TOP")" = "$TARGET_REAL" ] \
+    || refuse "'$TARGET_REAL' is not the top level of a git checkout"
+  LAB_GIT_DIR=$(git -C "$TARGET_REAL" rev-parse --absolute-git-dir 2>/dev/null) || true
+  LAB_GIT_DIR=$(real_dir "${LAB_GIT_DIR:-}") || true
+  LAB_COMMON=$(common_dir_of "$TARGET_REAL") || true
+  [ -n "$LAB_GIT_DIR" ] && [ "$LAB_GIT_DIR" = "$LAB_COMMON" ] \
+    || refuse "'$TARGET_REAL' is a linked worktree, not the primary checkout a lab primary launches in"
 fi
 
 if [ "$MODE" = secondmate-home ]; then

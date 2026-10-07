@@ -12,7 +12,7 @@ Busy hooks verified 2026-07-28 on Claude Code 2.1.220.
 | Skill | `/<skill>`, for example `/no-mistakes`. |
 | Model | `--model <model>`; discover through the interactive `/model` picker, with alias or full-name shape documented by `claude --help`. |
 | Effort | `--effort <low\|medium\|high\|xhigh\|max>`, verified on 2.1.196. |
-| Permissions | `--dangerously-skip-permissions` by default, or `--permission-mode auto` when `config/claude-permission-mode` is `auto`; the `auto` shape verified on 2.1.269, and `../../../../../docs/configuration.md` "Claude permission mode" owns the file. |
+| Permissions | `--dangerously-skip-permissions` by default, or `--permission-mode auto` when `config/claude-permission-mode` is `auto`; the `auto` shape verified on 2.1.269. See [`Claude permission mode`](../../../../../docs/configuration.md#claude-permission-mode-configclaude-permission-mode) for the launch grant and configuration. |
 
 ## Workspace trust
 
@@ -35,7 +35,8 @@ The why-two-entries mechanism and the consent-gating logic live in the script's 
 Never answer or dismiss either dialog with a key, including an interrupt.
 Firstmate's key plane carries only Enter, Escape, and C-c with no arrow navigation, so it cannot move a dialog's selection at all, and both dialogs render with the cursor on their declining option, which means a sent Enter ends the session instead of accepting.
 Escape is not a dismissal on the external-imports dialog: on 2.1.280 it records the same standing decline as "No" in the project entry, and Ctrl-C does nothing there.
-A visible trust dialog means pre-registration did not take effect - inspect the store and the spawn's error output rather than sending keys.
+A visible trust dialog means pre-registration did not take effect (or the project entry already carries an explicit decline) - inspect the store and the spawn's error output rather than sending keys.
+A visible external-imports dialog is expected, not a failure signal, whenever the project entry has no prior explicit approval on record - the common first-spawn case.
 For a pane parked on either dialog, `fm-control.sh <id> exit` or `relaunch` is the safe recovery: they send no key to a recognized launch dialog and stop the agent process by signal instead, which records no answer, while `interrupt` refuses there (`../../../../../bin/fm-control.sh` header owns the contract).
 Whether to allow external imports is the captain's call, made by answering the dialog in an interactive session in the primary checkout, whose approval later spawns carry forward.
 A decline recorded by mistake is undone with `fm-claude-trust.sh --reset-imports-decline <project>`, run only on the captain's word, which returns the entry to never asked without granting anything.
@@ -111,7 +112,7 @@ Hooks still run through cwd-sensitive `/bin/sh`, so tracked commands anchor thro
 
 The Stop-owned watcher hook runs every Stop, foregrounds `../../../bin/fm-watch-arm.sh` only when eligible, and uses exit-2 async reawakening as notification.
 The model handles notifications but never routine re-arm.
-In a home with `config/supervision-host` the hook foregrounds the supervision host instead, which also runs Claude's print mode as its headless engine; [`supervision-host.md`](../../../../../docs/supervision-host.md#engines) owns the verified engine facts.
+Unless `config/supervision-host-off` opts the home out, the hook foregrounds the supervision host instead, which also runs Claude's print mode as its headless engine; [`supervision-host.md`](../../../../../docs/supervision-host.md#engines) owns the verified engine facts.
 Claude's PreToolUse seatbelt blocks directly, and its deny is honored only with empty stdout; `../../../docs/arm-pretool-check.md` owns that contract.
 
 ### Delegation guard
