@@ -188,7 +188,7 @@ case "${1:-}" in
       printf '%s\n' "$payload" >> "$D/literal"
       case "$payload" in
         /exit|/quit) printf 'zsh' > "$D/command" ;;
-        *'encode launch-brief'*) printf 'claude' > "$D/command" ;;
+        *'encode launch-brief'*|*'operational input waiting'*) printf 'claude' > "$D/command" ;;
       esac
     else
       printf '%s\n' "$payload" >> "$D/keys"
@@ -244,7 +244,7 @@ test_relaunch_drops_the_marker() {
     "$CONTROL" "$id" relaunch --note 'replacement continues the same task' 2>&1)
   status=$?
   expect_code 0 "$status" "claude relaunch should succeed: $out"
-  launch=$(grep 'encode launch-brief' "$dir/fake/literal" | tail -1)
+  launch=$(grep 'operational input waiting' "$dir/fake/literal" | tail -1)
   [ -n "$launch" ] || fail "claude relaunch sent no replacement launch command"
   install_marker_probe "$dir/fakebin" claude
   preamble=$(grep '^export ' "$dir/fake/keys")
