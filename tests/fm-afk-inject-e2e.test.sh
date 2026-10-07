@@ -4,16 +4,17 @@
 #
 #   Scenario A (human-partial-input): a partial line is typed into the
 #     supervisor pane with NO Enter, then an escalation fires. The daemon must
-#     DEFER (not merge the digest into the human's text). After the pane goes
-#     idle, the digest arrives as a separate, clean submission.
+#     DEFER (nothing submitted into the human's draft). After the pane goes
+#     idle, the human line plus exactly ONE plain doorbell arrive as separate
+#     submissions, and the doorbell's record carries the digest.
 #
 #   Scenario B (swallowed-Enter): the first Enter the daemon sends is dropped.
-#     The daemon must retry Enter (NOT retype the digest) and deliver exactly
-#     ONE clean submission: no concatenation, no duplicate.
+#     The daemon must retry Enter (NOT retype) and deliver exactly ONE plain
+#     doorbell whose record carries the digest: no duplicate, no loss.
 #
 #   Scenario C (normal digest): no human input and no swallowed Enter.
-#     A captain-relevant status must deliver exactly ONE sentinel-prefixed,
-#     single-line digest with no duplicate or spurious user submission.
+#     A captain-relevant status must deliver exactly ONE plain doorbell whose
+#     record carries the digest, with no duplicate or spurious submission.
 #
 #   Scenario D (primary exited to a shell): the supervisor pane is a plain
 #     interactive shell whose prompt is a bare `❯`, and the escalation quotes a
@@ -188,10 +189,13 @@ chmod +x "$TMUX_SHIM_DIR/tmux"
 # detection). The pane is an inert shell - it just needs to exist.
 "$REAL_TMUX" -L "$SOCKET" new-window -d -n fm-fake-c1 -t supervisor
 
-# The fixture pane is no real harness, so each scenario pins the primary harness
-# the daemon would otherwise detect from this test's own process ancestry:
-# "unknown" preserves the typed U+2063 envelope, "claude" selects the
-# record-backed doorbell that a marker-stripping Claude Code primary receives.
+# The fixture pane is no real harness, so each delivery scenario pins the
+# primary harness the daemon would otherwise detect from this test's own
+# process ancestry. Every scenario pins "claude": the fixture process is
+# named claude, so the #13 ownership proof passes, and delivery is the
+# record-backed doorbell that a marker-stripping Claude Code primary
+# receives. The "unknown" default is kept only so a bare call can never
+# deliver: an unnamed harness owns no pane.
 start_daemon() {  # [primary-harness]
   FM_DAEMON_PRIMARY_HARNESS="${1:-unknown}" \
   PATH="$TMUX_SHIM_DIR:$PATH" \
@@ -294,8 +298,12 @@ selfcheck_pane_input_pending
 
 test_scenario_a() {
   reset_state
+  rm -rf "$STATE_DIR/operational-inbox"
   afk_enter "$STATE_DIR"
-  start_daemon
+  # A claude primary owns this pane (the fixture process is named claude),
+  # so the #13 ownership proof passes and the daemon answers with the
+  # record-backed doorbell a marker-stripping primary can receive.
+  start_daemon claude
 
   # Type partial text into the supervisor pane with NO Enter. This simulates the
   # captain returning and starting to type before afk has been cleared.
@@ -310,15 +318,12 @@ test_scenario_a() {
   # Wait for the watcher to detect the change and the daemon to attempt inject.
   sleep 6
 
-  # Assert: the digest was NOT injected while the pane had pending input.
-  if grep -q 'Supervisor escalate' "$LOG_FILE"; then
-    fail "Scenario A: daemon injected while pane had pending input (merged with human text?)"
-  fi
-
-  # Assert: no merged line (human text + digest) was submitted.
-  if grep -q 'human draft text.*Supervisor escalate' "$LOG_FILE" 2>/dev/null || \
-     grep -q 'Supervisor escalate.*human draft text' "$LOG_FILE" 2>/dev/null; then
-    fail "Scenario A: human text and digest were merged into one line"
+  # Assert: NOTHING was submitted while the pane had pending input - no
+  # doorbell line, so no digest reached the human's draft.
+  [ ! -s "$LOG_FILE" ] \
+    || fail "Scenario A: daemon submitted while pane had pending input: $(cat "$LOG_FILE")"
+  if "$REAL_TMUX" -L "$SOCKET" capture-pane -p -t "$SUPERVISOR_PANE" | grep -F 'Supervisor escalate' >/dev/null; then
+    fail "Scenario A: digest text reached the pane while input was pending"
   fi
 
   # Now submit the human's text (Enter). The pane goes idle.
@@ -328,50 +333,55 @@ test_scenario_a() {
   # Wait for the daemon to retry injection (housekeeping tick = 1s).
   sleep 6
 
+  # Assert: the human line plus exactly ONE doorbell were submitted, on
+  # SEPARATE lines (never merged).
+  local submitted_count
+  submitted_count=$(grep -c '' "$LOG_FILE" || true)
+  [ "$submitted_count" -eq 2 ] \
+    || fail "Scenario A: expected human line + one doorbell, got $submitted_count: $(cat "$LOG_FILE")"
+
   # Assert: human text was submitted alone (as a user message).
-  grep -q 'human draft text' "$LOG_FILE" \
-    || fail "Scenario A: human text not in log after submit"
-
-  # Assert: digest arrived after the pane went idle.
-  grep -q 'Supervisor escalate' "$LOG_FILE" \
-    || fail "Scenario A: digest not injected after pane went idle"
-
-  # Assert: human text and digest are on SEPARATE lines (never merged).
-  if grep -q 'human draft text.*Supervisor escalate' "$LOG_FILE" || \
-     grep -q 'Supervisor escalate.*human draft text' "$LOG_FILE"; then
-    fail "Scenario A: human text and digest merged into one line (after idle)"
-  fi
-
-  # Assert: the human text line is classified as "user", not "injection".
   local human_line
   human_line=$(grep 'human draft text' "$LOG_FILE" | head -1)
+  [ -n "$human_line" ] \
+    || fail "Scenario A: human text not in log after submit"
   case "$human_line" in
     *user) ;;  # correct
     *) fail "Scenario A: human text misclassified (expected user): $human_line" ;;
   esac
 
-  # Assert: the digest line is classified as "injection".
-  local digest_line
-  digest_line=$(grep 'Supervisor escalate' "$LOG_FILE" | head -1)
-  case "$digest_line" in
-    *injection) ;;  # correct
-    *) fail "Scenario A: digest misclassified (expected injection): $digest_line" ;;
-  esac
+  # Assert: the second line is a plain doorbell (no U+2063 the claude
+  # primary strips) naming a record that carries the digest.
+  local doorbell record
+  awk -F '\t' '$1 ~ /e281a3/ { found = 1 } END { exit !found }' "$LOG_FILE" \
+    && fail "Scenario A: the claude primary was typed the U+2063 marker it strips"
+  doorbell=$(grep -v 'human draft text' "$LOG_FILE" | cut -f2 | head -1)
+  fm_operational_doorbell_path "$doorbell" record \
+    || fail "Scenario A: the second line is not a record-backed doorbell: $doorbell"
+  grep -F "${FM_OPERATIONAL_PREFIX}v1 away-supervisor: " "$record" >/dev/null \
+    || fail "Scenario A: the named record lacks the away-supervisor envelope"
+  grep -F 'Supervisor escalate' "$record" >/dev/null \
+    || fail "Scenario A: the named record lacks the escalation digest"
+  should_exit_afk "$STATE_DIR" "$doorbell" \
+    && fail "Scenario A: the submitted doorbell would read as the captain returning"
 
   stop_daemon
-  pass "Scenario A: partial input defers injection; digest arrives clean after idle"
+  pass "Scenario A: partial input defers injection; doorbell arrives clean after idle"
 }
 
 # --- Scenario B: swallowed-Enter --------------------------------------------
 
 test_scenario_b() {
   reset_state
+  rm -rf "$STATE_DIR/operational-inbox"
   afk_enter "$STATE_DIR"
 
   # Arm the swallow: the daemon's first Enter will be dropped by the shim.
   touch "$STATE_DIR/.swallow-enter"
 
-  start_daemon
+  # Same claude pin as scenario A: the ownership proof passes and delivery
+  # is the record-backed doorbell.
+  start_daemon claude
 
   # Write a captain-relevant status to trigger a real escalation.
   echo "done: PR https://example.test/pr/200" > "$STATE_DIR/fake-c1.status"
@@ -380,76 +390,73 @@ test_scenario_b() {
   # swallowed Enter, the retry path fires).
   sleep 8
 
-  # Assert: exactly ONE terminal-safe marker in the log (no duplicate, no loss).
-  local marker_count
-  marker_count=$(awk -F '\t' '{ hex=$1; count += gsub(/e281a3/, "", hex) } END { print count + 0 }' "$LOG_FILE")
-  [ "$marker_count" -eq 1 ] \
-    || fail "Scenario B: expected exactly 1 U+2063 marker, got $marker_count (duplicate or lost)"
+  # Assert: exactly ONE line was submitted (no duplicate doorbell, no loss,
+  # no spurious empty line from extra Enters).
+  local submitted_count
+  submitted_count=$(grep -c '' "$LOG_FILE" || true)
+  [ "$submitted_count" -eq 1 ] \
+    || fail "Scenario B: expected exactly 1 submitted line, got $submitted_count: $(cat "$LOG_FILE")"
 
-  # Assert: the digest line is classified as "injection" and starts with the
-  # terminal-safe sentinel marker (hex starts with e281a3).
-  local digest_line digest_hex
-  digest_line=$(grep 'Supervisor escalate' "$LOG_FILE" | head -1)
-  digest_hex=$(printf '%s' "$digest_line" | cut -f1)
-  case "$digest_hex" in
-    e281a3*) ;;  # correct: starts with the terminal-safe sentinel marker
-    *) fail "Scenario B: digest does not start with sentinel marker (hex: $digest_hex)" ;;
-  esac
-
-  # Assert: exactly ONE user-message line was submitted (no spurious empty lines
-  # from extra Enters). The log should have exactly 1 injection line and 0 user
-  # lines.
-  local user_count
-  user_count=$(grep -c $'\tuser$' "$LOG_FILE" || true)
-  [ "$user_count" -eq 0 ] \
-    || fail "Scenario B: expected 0 user lines, got $user_count (spurious Enter submitted empty line?)"
+  # Assert: the single line is a plain doorbell (no U+2063 the claude
+  # primary strips) naming a record that carries the digest.
+  local doorbell record
+  awk -F '\t' '$1 ~ /e281a3/ { found = 1 } END { exit !found }' "$LOG_FILE" \
+    && fail "Scenario B: the claude primary was typed the U+2063 marker it strips"
+  doorbell=$(cut -f2 "$LOG_FILE" | head -1)
+  fm_operational_doorbell_path "$doorbell" record \
+    || fail "Scenario B: the submitted line is not a record-backed doorbell: $doorbell"
+  grep -F "${FM_OPERATIONAL_PREFIX}v1 away-supervisor: " "$record" >/dev/null \
+    || fail "Scenario B: the named record lacks the away-supervisor envelope"
+  grep -F 'Supervisor escalate' "$record" >/dev/null \
+    || fail "Scenario B: the named record lacks the escalation digest"
+  should_exit_afk "$STATE_DIR" "$doorbell" \
+    && fail "Scenario B: the submitted doorbell would read as the captain returning"
 
   stop_daemon
-  pass "Scenario B: swallowed Enter produces exactly one clean digest"
+  pass "Scenario B: swallowed Enter retries Enter only and delivers exactly one doorbell"
 }
 
-# --- Scenario C: normal status, single clean digest -------------------------
+# --- Scenario C: normal status, single clean doorbell ------------------------
 # No human input, no swallowed Enter: a captain-relevant status must produce
-# exactly ONE sentinel-prefixed, single-line digest, submitted once. This owns
-# the marker + single-line + no-duplicate operator contract that the deleted
-# fake-tmux units used to assert via internal send-keys counts.
+# exactly ONE plain doorbell naming a record that carries the digest,
+# submitted once. This owns the single-delivery + no-duplicate operator
+# contract that the deleted fake-tmux units used to assert via internal
+# send-keys counts.
 
 test_scenario_c() {
   reset_state
+  rm -rf "$STATE_DIR/operational-inbox"
   afk_enter "$STATE_DIR"
-  start_daemon
+  # Same claude pin as scenario A: the ownership proof passes and delivery
+  # is the record-backed doorbell.
+  start_daemon claude
 
   echo "done: PR https://example.test/pr/300" > "$STATE_DIR/fake-c1.status"
   sleep 6
 
-  # Exactly one terminal-safe marker in the submitted log (no duplicate, no loss).
-  local marker_count
-  marker_count=$(awk -F '\t' '{ hex=$1; count += gsub(/e281a3/, "", hex) } END { print count + 0 }' "$LOG_FILE")
-  [ "$marker_count" -eq 1 ] \
-    || fail "Scenario C: expected exactly 1 U+2063 marker, got $marker_count"
+  # Exactly one line was submitted (no duplicate doorbell, no loss).
+  local submitted_count
+  submitted_count=$(grep -c '' "$LOG_FILE" || true)
+  [ "$submitted_count" -eq 1 ] \
+    || fail "Scenario C: expected exactly 1 submitted line, got $submitted_count: $(cat "$LOG_FILE")"
 
-  # The digest is classified as an injection and starts with the sentinel byte.
-  local digest_line digest_hex
-  digest_line=$(grep 'Supervisor escalate' "$LOG_FILE" | head -1)
-  case "$digest_line" in
-    *injection) ;;
-    *) fail "Scenario C: digest misclassified (expected injection): $digest_line" ;;
-  esac
-  digest_hex=$(printf '%s' "$digest_line" | cut -f1)
-  case "$digest_hex" in
-    e281a3*) ;;
-    *) fail "Scenario C: digest does not start with sentinel marker (hex: $digest_hex)" ;;
-  esac
-
-  # The digest was submitted as ONE line (a multi-line digest would log >1 line),
-  # and no spurious user-classified lines were submitted.
-  local user_count
-  user_count=$(grep -c $'\tuser$' "$LOG_FILE" || true)
-  [ "$user_count" -eq 0 ] \
-    || fail "Scenario C: expected 0 user lines, got $user_count (spurious submission?)"
+  # The single line is a plain doorbell (no U+2063 the claude primary
+  # strips) naming a record that carries the digest.
+  local doorbell record
+  awk -F '\t' '$1 ~ /e281a3/ { found = 1 } END { exit !found }' "$LOG_FILE" \
+    && fail "Scenario C: the claude primary was typed the U+2063 marker it strips"
+  doorbell=$(cut -f2 "$LOG_FILE" | head -1)
+  fm_operational_doorbell_path "$doorbell" record \
+    || fail "Scenario C: the submitted line is not a record-backed doorbell: $doorbell"
+  grep -F "${FM_OPERATIONAL_PREFIX}v1 away-supervisor: " "$record" >/dev/null \
+    || fail "Scenario C: the named record lacks the away-supervisor envelope"
+  grep -F 'Supervisor escalate' "$record" >/dev/null \
+    || fail "Scenario C: the named record lacks the escalation digest"
+  should_exit_afk "$STATE_DIR" "$doorbell" \
+    && fail "Scenario C: the submitted doorbell would read as the captain returning"
 
   stop_daemon
-  pass "Scenario C: a normal captain status injects exactly one clean single-line sentinel digest"
+  pass "Scenario C: a normal captain status delivers exactly one clean doorbell"
 }
 
 # --- Scenario E: the primary exited to a plain shell ------------------------
