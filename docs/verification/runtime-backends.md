@@ -1800,7 +1800,7 @@ ok - pane get agent_status lag cannot keep an exited occupant classified alive
 ### Claude exit confirmation dialog
 
 Verified 2026-09-24 on Claude Code 2.1.280 through Herdr 0.9.0 in an isolated `fm-lab-` session.
-A real Claude worker launched through `bin/fm-spawn.sh` that has started a background shell answers a submitted `/exit` with this viewport instead of exiting, and before the fix `fm-control.sh <id> exit` reported `exit=unconfirmed` with the agent still alive after 30 seconds:
+A real Claude worker launched through `bin/fm-spawn.sh` that has started a background shell answers a submitted `/exit` with this viewport instead of exiting:
 
 ```text
 ❯ /exit
@@ -1818,25 +1818,9 @@ A real Claude worker launched through `bin/fm-spawn.sh` that has started a backg
   Enter to confirm · Esc to cancel
 ```
 
-`fm_control_exit_confirmation_key` in `bin/fm-control-lib.sh` recognizes that shape, and the control plane answers it with Enter; the live guard proves the recognizer on the real viewport, then drives `relaunch` and `exit` through the dialog and requires the exact background process to be gone and an uncommitted worktree file to survive.
-
-Re-verified 2026-09-25 on the same versions.
+The control plane never answers that dialog: a confirming Enter (including a retried one) would confirm the selected row, so `exit` and `relaunch` refuse with the dialog named (`tests/fm-control.test.sh` pins the refusal before, during, and after the submit).
 A typed, unsubmitted `/exit` opens a completion popup of 19 rows below Claude's ruled composer, so a 20-row tail read holds only popup rows.
 With the tail-sized pre-Enter payload proof, `relaunch` stopped at `error: the exit command could not be sent to task cexit on herdr`; the composer read is now the full visible viewport (`fm_backend_herdr_composer_content`), so no tail-sized proof window is needed for `/`- or `$`-prefixed payloads, and `tests/fm-backend-herdr.test.sh` pins that shape:
-
-```sh
-FM_CONTROL_CLAUDE_EXIT_DIALOG_LIVE=1 tests/fm-control-claude-exit-dialog-live-e2e.test.sh
-```
-
-```text
-# live claude version: 2.1.280 (Claude Code); herdr 0.9.0
-ok - real claude: /exit with a background shell renders the dialog the control plane recognizes and answers
-ok - real claude: relaunch answers the background-work exit dialog and replaces the agent
-ok - real claude: exit answers the background-work exit dialog and stops the agent and its background shell
-# verified against claude 2.1.280 (Claude Code) through herdr 0.9.0
-```
-
-It submits prompts, so it is opt-in; run it after every Claude Code upgrade rather than trusting the version above.
 
 ### Endpoint recovery classification
 

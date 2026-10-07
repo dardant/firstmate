@@ -38,11 +38,10 @@
 #              every uncommitted change. Interrupts first when the task reads
 #              busy, then submits the harness's exit command. When the harness
 #              answers that command with its own exit confirmation dialog
-#              (Claude's "Background work is running"), the dialog is answered
-#              once with the adapter-verified choice that really exits
-#              (bin/fm-control-lib.sh's fm_control_exit_confirmation_key); a
-#              dialog in any other shape is left untouched rather than
-#              guessed at. When the pane shows a launch dialog it sends no key
+#              (Claude's "Background work is running"), no confirming Enter
+#              is sent: a retried Enter would confirm the selected row, so
+#              the run refuses with the dialog named instead. When the pane
+#              shows a launch dialog it sends no key
 #              at all and stops the attributed harness process with SIGTERM
 #              instead (below). Postcondition:
 #              the backend's recovery-grade classifier reports the agent gone.
@@ -695,39 +694,6 @@ retire_busy_incarnation() {
   fi
 }
 
-# wait_exit_stopped: after the exit command, poll until the agent reads dead.
-# While it still reads alive, read the visible viewport and, when the harness
-# is showing its own exit confirmation dialog, answer it ONCE with the key the
-# adapter table verifies picks a real exit (fm_control_exit_confirmation_key),
-# then give the stop a fresh EXIT_WAIT. Prints the final agent state (dead);
-# dies with the delivered-input summary otherwise.
-wait_exit_stopped() {  # <interrupt-result>
-  local interrupt_result=$1 state screen key elapsed=0 dialog=none
-  while :; do
-    state=$(agent_state)
-    if [ "$state" = dead ]; then
-      printf '%s' "$state"
-      return 0
-    fi
-    if [ "$state" = alive ] && [ "$dialog" = none ] \
-       && fm_backend_visible_capture_supported "$BACKEND" \
-       && screen=$(fm_backend_visible_capture "$BACKEND" "$T" "$LABEL" 2>/dev/null) \
-       && key=$(printf '%s\n' "$screen" | fm_control_exit_confirmation_key "$HARNESS"); then
-      fm_control_backend_supports_key "$BACKEND" "$key" \
-        || die "task $ID's $HARNESS is showing its exit confirmation dialog, which is answered with $key, a key the $BACKEND backend cannot deliver; the agent is still running"
-      fm_backend_send_key "$BACKEND" "$T" "$key" "$LABEL" \
-        || die "task $ID's $HARNESS is showing its exit confirmation dialog, but its answer $key could not be delivered; the agent is still running"
-      dialog=answered
-      elapsed=0
-      echo "note: task $ID's $HARNESS asked to confirm exiting while background work was running; answered with the choice that exits and stops those background tasks (the worktree is untouched)" >&2
-    fi
-    awk -v e="$elapsed" -v t="$EXIT_WAIT" 'BEGIN{exit !(e < t)}' || break
-    sleep "$POLL"
-    elapsed=$(awk -v e="$elapsed" -v p="$POLL" 'BEGIN{printf "%.3f", e + p}')
-  done
-  die "exit-delivered $ID interrupt=$interrupt_result exit-command=delivered agent-state=$state exit=unconfirmed exit-dialog=$dialog; the agent did not stop within ${EXIT_WAIT}s"
-}
-
 # do_exit: stop the running agent, preserving endpoint and worktree. Prints
 # `already-stopped`, `endpoint-gone`, or `stopped`.
 do_exit() {
@@ -846,10 +812,17 @@ do_exit() {
       refuse_blocking_prompt "$dialog"
     fi
   fi
-  # A picker the submit opened is answered here, once, only on the harness's
-  # verified exit-confirmation shape (pointer on the exit choice); any other
-  # noted dialog already refused above.
-  state=$(wait_exit_stopped "$interrupt_result") || return $?
+  state=$(wait_agent_state "$EXIT_WAIT" dead) || {
+    # A submit can return before any read sees the picker: a native busy
+    # verdict needs no composer read, and a cleared composer can be read
+    # before the picker renders. Read the screen once more here.
+    : > "$FM_COMPOSER_DIALOG_SINK" || true
+    fm_backend_composer_state "$BACKEND" "$T" "$LABEL" >/dev/null 2>&1 || true
+    if [ -s "$FM_COMPOSER_DIALOG_SINK" ]; then
+      refuse_blocking_prompt "$(cat "$FM_COMPOSER_DIALOG_SINK")"
+    fi
+    die "exit-delivered $ID interrupt=$interrupt_result exit-command=delivered agent-state=$state exit=unconfirmed; the agent did not stop within ${EXIT_WAIT}s"
+  }
   # The incarnation is over: retire its busy wiring so no stale record or
   # orphaned generation survives the agent that produced it.
   retire_busy_incarnation
