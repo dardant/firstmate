@@ -453,6 +453,89 @@ test_ring_skips_uncapturable_pane() {
   pass "inbox: the ring never types into a pane it cannot capture, and asks for a re-ring"
 }
 
+# A real TTY stand-in for Muse 1.4.0's composer: it draws the captured rule,
+# `❯` row, and footer, and it drops the first Enter that follows typed text,
+# the way Muse 1.4.0 drops an Enter that reaches it in the same read as the
+# text (reproduced live against Muse Code 1.4.0-R4302.1 on 2026-09-27). Later
+# Enters submit and clear the composer, logging the submitted line.
+swallow_first_enter_standin() {  # <path>
+  cat > "$1" <<'PY'
+import os, sys, termios, tty
+submitted, dropped = sys.argv[1], sys.argv[2]
+fd = sys.stdin.fileno()
+tty.setraw(fd)
+buf, swallowed = "", False
+rule = "\033[0m\033[2m\033[38;2;103;108;116m" + "─" * 60 + "\033[0m"
+def draw():
+    glyph = "\033[0m\033[38;2;90;160;255m❯ \033[0m"
+    text = ("\033[38;2;204;211;219m" + buf + "\033[0m") if buf else ""
+    rows = ["◆ ready", "", rule, glyph + text, rule,
+            "\033[0m\033[38;2;103;108;116m  \033[0m\033[38;2;90;160;255mmuse-spark\033[0m · low · YOLO"]
+    sys.stdout.write("\033[H\033[2J" + "\r\n".join(rows) + "\033[4;%dH" % (3 + len(buf)))
+    sys.stdout.flush()
+draw()
+while True:
+    data = os.read(fd, 4096).decode("utf-8", "replace")
+    if not data:
+        break
+    for ch in data:
+        if ch == "\r":
+            if not buf:
+                continue
+            if not swallowed:
+                swallowed = True
+                open(dropped, "a").write("dropped\n")
+                continue
+            open(submitted, "a").write(buf + "\n")
+            buf, swallowed = "", False
+        elif ch == "\x03":
+            raise SystemExit(0)
+        else:
+            buf += ch
+    draw()
+PY
+}
+
+# The ring retries Enter, never retyping, while its own typed doorbell stays
+# pending. One Enter was the whole budget before, so a swallowed Enter left the
+# doorbell stranded in the composer and every later ring skipped it as pending
+# text until an operator pressed Enter by hand.
+test_ring_retries_a_swallowed_enter() {
+  local dir state rec socket shim real_tmux submitted dropped rc i
+  command -v tmux >/dev/null 2>&1 || { printf 'ok - # skip ring swallowed-Enter regression: tmux not found\n'; return 0; }
+  command -v python3 >/dev/null 2>&1 || { printf 'ok - # skip ring swallowed-Enter regression: python3 not found\n'; return 0; }
+  dir="$TMP_ROOT/ring-swallow"
+  state="$dir/state"
+  shim="$dir/shim"
+  mkdir -p "$state" "$shim"
+  socket="fm-inbox-swallow-$$"
+  real_tmux=$(command -v tmux)
+  printf '#!/usr/bin/env bash\nexec %q -L %q "$@"\n' "$real_tmux" "$socket" > "$shim/tmux"
+  chmod +x "$shim/tmux"
+  submitted="$dir/submitted"
+  dropped="$dir/dropped"
+  swallow_first_enter_standin "$dir/standin.py"
+  "$shim/tmux" -f /dev/null new-session -d -s swallow -n fm-t1 -x 120 -y 30 \
+    "exec python3 $(printf '%q %q %q' "$dir/standin.py" "$submitted" "$dropped")" \
+    || fail "could not start the private tmux server for the swallowed-Enter stand-in"
+  i=0
+  until "$shim/tmux" capture-pane -p -t swallow:fm-t1 2>/dev/null | grep -q 'muse-spark'; do
+    i=$((i + 1))
+    [ "$i" -lt 50 ] || { "$shim/tmux" kill-server 2>/dev/null; fail "the swallowed-Enter stand-in never drew its composer"; }
+    sleep 0.1
+  done
+  rec=$(inbox_lib "$state" fm_task_inbox_write "$state" t1 "please continue")
+  rc=0
+  PATH="$shim:$PATH" inbox_lib "$state" fm_task_inbox_ring tmux swallow:fm-t1 "$rec" fm-t1 || rc=$?
+  "$shim/tmux" kill-server 2>/dev/null || true
+  [ "$rc" = 0 ] || fail "ringing a live stand-in should return 0, got $rc"
+  [ "$(cat "$dropped" 2>/dev/null)" = dropped ] \
+    || fail "the stand-in did not drop the first Enter, so this regression proved nothing"
+  [ "$(grep -c 'Firstmate instruction waiting' "$submitted" 2>/dev/null)" = 1 ] \
+    || fail "the doorbell was not submitted exactly once after a swallowed Enter:"$'\n'"$(cat "$submitted" 2>/dev/null)"
+  pass "inbox: the ring retries a swallowed Enter without retyping, so the doorbell submits once"
+}
+
 test_idempotent_write_dedups_exact_body() {
   local state r1 r2 r3 r4 count text
   state="$TMP_ROOT/idem/state"; mkdir -p "$state"
@@ -893,6 +976,7 @@ test_ring_skips_dead_agent
 test_ring_submits_its_own_stuck_doorbell
 test_ring_skips_launch_dialog
 test_ring_skips_uncapturable_pane
+test_ring_retries_a_swallowed_enter
 test_idempotent_write_dedups_exact_body
 test_idempotent_write_follows_concurrent_ack
 test_handled_mv_dedups_by_sequence

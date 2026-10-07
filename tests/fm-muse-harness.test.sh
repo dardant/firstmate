@@ -554,6 +554,65 @@ run_state() {  # <log>
   )
 }
 
+test_retained_frames_and_reordered_events() {
+  local dir log out
+  dir="$TMP_ROOT/muse-140"
+  mkdir -p "$dir/sessions/2026/09/26/main" "$dir/state"
+  log="$dir/sessions/2026/09/26/main/session.jsonl"
+  # Sanitized real 1.4.0-R4302.1 records: permission frame first, metadata
+  # second, and event before kind/run_id (unlike 0.1.0's field order).
+  sed "s|MUSE_TEST_WORKSPACE|$dir/ws|g" "$ROOT/tests/captures/muse-1.4.0/session.jsonl" | head -3 > "$log"
+  printf 'sessions_root=%s\nworkspace_root=%s\n' "$dir/sessions" "$dir/ws" > "$dir/state/task.muse-session"
+  out=$(classify_muse "$dir/state" task)
+  [ "$out" = 'busy muse-session-log' ] || fail "1.4.0 open run classified '$out'"
+  muse_log_cleanup_terminal_decoy run-decoy >> "$log"
+  [ "$(run_state "$log")" = busy ] || fail "1.4.0 cleanup decoy closed the run"
+  tail -1 "$ROOT/tests/captures/muse-1.4.0/session.jsonl" >> "$log"
+  [ "$(classify_muse "$dir/state" task)" = 'idle muse-session-log' ] || fail "1.4.0 completed turn was not idle"
+  # A retained frame may contain JSON-string records. Decode only the
+  # protocol's children, never arbitrary strings in a run's prompt.
+  node - "$log" <<'NODE'
+const fs = require("fs");
+const file = process.argv[2];
+const children = fs.readFileSync(file, "utf8").trim().split("\n").slice(1)
+  .map((record_json, child_index) => ({child_index, record_json}));
+fs.writeFileSync(file, JSON.stringify({retained_frame:"session_permission_transaction",frame_schema_version:1,children}) + "\n");
+NODE
+  [ "$(classify_muse "$dir/state" task)" = 'idle muse-session-log' ] || fail "JSON-string child records were not decoded"
+  muse_log_run_started next-run >> "$log"
+  printf '{"payload":' >> "$log"
+  [ "$(run_state "$log")" = busy ] || fail "partial appended line hid the open run"
+  printf 'broken}\n' >> "$log"
+  [ "$(classify_muse "$dir/state" task)" = 'busy muse-session-log' ] || fail "torn complete record hid the open run"
+  muse_log_run_terminal next-run completed >> "$log"
+  [ "$(classify_muse "$dir/state" task)" = 'idle muse-session-log' ] || fail "torn complete record poisoned a later terminal"
+  muse_log_run_started later-run >> "$log"
+  [ "$(classify_muse "$dir/state" task)" = 'busy muse-session-log' ] || fail "torn complete record poisoned a later run"
+  muse_log_run_terminal later-run completed >> "$log"
+  [ "$(classify_muse "$dir/state" task)" = 'idle muse-session-log' ] || fail "torn complete record poisoned a later run's terminal"
+  pass "1.4.0 metadata, retained frames, field order, partial writes, and torn records preserve busy/idle proof"
+}
+
+# A terminal whose reason is not a plain string still closes its run. The log
+# is append-only, so failing the whole fold on it would leave that session
+# unknown for good, the false-wedge symptom this source exists to prevent.
+test_unexpected_terminal_reason_still_closes_the_run() {
+  local dir log
+  dir="$TMP_ROOT/odd-terminal"
+  mkdir -p "$dir"
+  log="$dir/session.jsonl"
+  {
+    muse_log_run_started run-object
+    printf '{"payload_type":"runtime.session","payload":{"kind":"run","run_id":"run-object","event":{"kind":"terminal","terminal":{"code":"failed"}}}}\n'
+    muse_log_run_started run-tab
+    printf '{"payload_type":"runtime.session","payload":{"kind":"run","run_id":"run-tab","event":{"kind":"terminal","terminal":"fail\\tover"}}}\n'
+  } > "$log"
+  [ "$(run_state "$log")" = settled ] || fail "an unexpected terminal reason did not close its run: $(run_state "$log")"
+  muse_log_run_started run-next >> "$log"
+  [ "$(run_state "$log")" = busy ] || fail "an unexpected terminal reason poisoned the fold for a later run"
+  pass "an unexpected terminal reason closes its run without poisoning later folds"
+}
+
 test_run_fold_tracks_open_and_settled_turns() {
   local dir log out
   dir="$TMP_ROOT/fold"
@@ -726,9 +785,11 @@ EOF
     || fail "the initial session did not resolve before caching: got '$verdict'"
 
   fakebin=$(fm_fakebin "$dir/fake")
-  cat > "$fakebin/node" <<'SH'
+  # The run fold also decodes through node; only a tree scan must be absent.
+  cat > "$fakebin/node" <<SH
 #!/usr/bin/env bash
-exit 97
+[ "\${2:-}" = matching ] && exit 97
+exec $(command -v node) "\$@"
 SH
   chmod +x "$fakebin/node"
   verdict=$(PATH="$fakebin:$PATH" classify_muse "$state" "$id")
@@ -962,6 +1023,8 @@ test_spawn_writes_busy_binding_and_teardown_removes_it
 test_muse_escape_aliases_clear_the_composer
 test_non_muse_escape_does_not_clear
 test_failed_clear_is_reported
+test_retained_frames_and_reordered_events
+test_unexpected_terminal_reason_still_closes_the_run
 test_run_fold_tracks_open_and_settled_turns
 test_nested_terminal_record_does_not_settle_a_run
 test_binding_selects_the_matching_main_log

@@ -856,6 +856,9 @@ The current pending-composer ring contract is owned by `bin/fm-task-inbox-lib.sh
 Kimi was not installed on the verification machine; its receive path is the same one-line-plus-shell contract, and the portable ladder and enqueue regressions in `tests/fm-task-inbox.test.sh` and `tests/fm-send-inbox.test.sh` cover every harness-independent half.
 This guard is the refresh command after any harness upgrade; it spends a small number of real tokens per installed harness, reports an absent harness explicitly, and refuses a run that verified nothing.
 
+On 2026-09-27 the guard passed for `muse` 1.4.0-R4302.1 on Linux, but a fleet worker on that version had left a doorbell pending in its composer until a manual Enter, and every later ring skipped it as pending text.
+Muse 1.4.0 drops an Enter that arrives in the same read as the typed text, so the ring now keeps the typed plane's Enter-retry budget instead of a single Enter; [`muse.md`](muse.md#composer-and-steering) owns the reproduction and `tests/fm-task-inbox.test.sh` the regression.
+
 ## Claude transcript persistence
 
 A Claude primary's tool shells carry `CLAUDE_CODE_CHILD_SESSION=1`, and a Claude agent started with that marker treats itself as a nested child session: it writes no transcript and skips prompt history.

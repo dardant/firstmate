@@ -1,6 +1,6 @@
 # Muse Code
 
-Verified 2026-08-05 on Muse Code 0.1.0-R708.1, build sha 427a430436.
+Verified 2026-08-05 on Muse Code 0.1.0-R708.1, build sha 427a430436, and re-verified for crewmate and scout work on 2026-09-27 on 1.4.0-R4302.1, build sha aebe0c188b.
 The router owns Muse's task-kind boundary.
 
 ## Operating facts
@@ -18,8 +18,8 @@ The router owns Muse's task-kind boundary.
 | Autonomy | `--yolo` disables approval and sandbox and trusts the workspace. |
 | Trust | Dialog `Do you trust this workspace?`, choice `1 Trust and continue` preselected for Enter; `--yolo` suppresses it, which fresh task paths require. |
 | Marker | None; identity comes from anchored `muse-bin-*` ancestry, which `../../../bin/fm-harness.sh` keeps a retained foreign marker from overriding, while `MUSE_CURRENT_SESSION_LOG` is a path rather than identity and its export to tools is unverified. |
-| Composer | Bordered `⟩`, truecolor `38;2;90;160;255`, luminance about 149.9 and narrowly above ghost threshold 128; typed text is `38;2;204;211;219`, about 209.8, with no observed placeholder or ghost. |
-| Effort | `--reasoning-effort`, default `high`, accepts `none\|minimal\|low\|medium\|high\|xhigh\|ultra`; shared values expose low through xhigh, explicit captain `max` maps to `ultra`, and `none` or `minimal` remain unreachable. |
+| Composer | 1.4.0 draws `❯` between two dim `─` rules, a Pi-like frame that identity-capable adapters resolve by pane identity, where 0.1.0 drew bordered `⟩`; both glyphs are truecolor `38;2;90;160;255`, luminance about 149.9 and narrowly above ghost threshold 128, and typed text is `38;2;204;211;219`, about 209.8, with no observed placeholder or ghost. |
+| Effort | `--reasoning-effort`, default `high`, accepts `none\|minimal\|low\|medium\|high\|xhigh\|ultra` and, since 1.4.0, `max`; shared values expose low through xhigh, explicit captain `max` maps to `ultra`, and `none` or `minimal` remain unreachable. |
 
 ## Credential preflight
 
@@ -46,8 +46,10 @@ Logs live at `${XDG_DATA_HOME:-$HOME/.local/share}/muse/sessions/YYYY/MM/DD/<ses
 The spawn writes `state/<id>.muse-session` with root, worktree, binding incarnation, and pre-existing matching main logs, then unique resolution pins `state/<id>.muse-session-current`.
 It folds that path while the bounded current-day main namespace is unchanged and resolves again if the namespace changes, path disappears, or a newer binding wins.
 
-Turns are bracketed by `{"payload":{"kind":"run","run_id":"<uuid>","event":{"kind":"started"` and matching `"event":{"kind":"terminal"`, observed as `completed` or `cancelled`.
+Turns are bracketed by `runtime.session` records whose payload is `{"kind":"run","run_id":"<uuid>","event":{"kind":"started"}}` and a matching `"terminal"` event, observed as `completed` or `cancelled`.
 Interrupt therefore has a real terminal, unlike Claude Stop.
+Muse 1.4.0 reorders those payload fields and opens every log with a `session_permission_transaction` retained frame that nests its records as JSON strings, so the metadata carrying `workspace_root` is no longer the first line.
+`../../../bin/fm-muse-session.cjs` therefore decodes complete records structurally for both discovery and the fold; byte-prefix matching silently reads 1.4.0 as unknown.
 Never use `--no-session-log`, which removes Muse's only busy source.
 
 The fold must reject nested `"record":{"kind":"terminal"}` cleanup effects and depth-bound away native sub-agent logs under `subagent/<child-session-id>/session.jsonl`.
@@ -62,9 +64,16 @@ Native children use per-child worktrees only with opt-in `--subagent-worktree-is
 It excludes `.claude/settings.local.json` because Firstmate writes it, but Muse scratch is worker output and must refuse cleanup when uncommitted.
 Inspect, never force past, that refusal.
 
+## Steering
+
+Muse 1.4.0 drops an Enter that reaches it in the same terminal read as typed text, leaving the line pending in the composer.
+A busy or loaded pane makes that coalescing likely, so the doorbell ring's Enter retry in `../../../bin/fm-task-inbox-lib.sh` is what submits a doorbell whose first Enter was dropped.
+
 ## Maturity and primary limit
 
-Muse 0.1.0 is day-zero beta; its hourly channel poll can replace the binary and process name.
+Muse is beta; its hourly channel poll can replace the binary and process name.
 The captain accepted this, so Firstmate does not set `MUSE_NO_AUTO_UPDATE=1`; a fleet may set it without adapter change.
 Plugins report unavailable unless `MUSE_EXPERIMENTAL_PLUGINS=on`, so busy state uses logs.
 The compatibility dialect explicitly lacks `asyncRewake` and model reawakening; the router owns the resulting primary boundary.
+Muse 1.4.0 exposes no turn-end hook, so primary and secondmate remain unverified.
+`../../../docs/verification/muse.md` owns that evidence.

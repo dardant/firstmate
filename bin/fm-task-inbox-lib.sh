@@ -305,8 +305,12 @@ fm_task_inbox_doorbell_line() {  # <record-path>
 
 # Ring the doorbell, best-effort: one endpoint-liveness pre-check, one
 # launch-dialog pre-check, one advisory composer pre-check, then the backend's
-# submit machinery with a minimal retry
-# budget, verdict discarded.
+# submit machinery, verdict discarded.
+# That machinery types the line once and retries only Enter while the composer
+# stays proven pending, never retyping. The retries matter: Muse 1.4.0 drops an
+# Enter that reaches it in the same read as the typed text, which a busy or
+# loaded pane makes likely, and a stranded doorbell then turns every later ring
+# into a pending-composer skip until someone presses Enter by hand.
 # Returns 0 rang, 1 skipped because the composer PROVENLY holds pending text
 # other than our own doorbell (the watcher re-rings later), 2 the backend send
 # failed or the pane could not be captured for the launch-dialog check (nothing
@@ -366,7 +370,7 @@ fm_task_inbox_ring() {  # <backend> <target> <record-path> [expected-label]
   # steps, so an agent exiting after the liveness check could leave a bare
   # shell only a suffix; the `: ` prefix protects complete lines only. Do not
   # add process-bound atomic delivery here unless an incident reopens this.
-  if ! verdict=$(fm_backend_send_text_submit "$backend" "$target" "$line" 2 0.4 0.3 "$label" 2>/dev/null); then
+  if ! verdict=$(fm_backend_send_text_submit "$backend" "$target" "$line" 3 0.4 0.3 "$label" 2>/dev/null); then
     return 2
   fi
   # The verdict is read only to report a failed keystroke; every other value
